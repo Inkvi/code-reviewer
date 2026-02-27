@@ -14,7 +14,18 @@ from pr_reviewer.preflight import run_preflight
 from pr_reviewer.state import StateStore
 
 app = typer.Typer(add_completion=False, help="PR review daemon")
-ConfigOption = Annotated[Path, typer.Option(..., exists=True, dir_okay=False)]
+ConfigOption = Annotated[
+    Path,
+    typer.Option(
+        "--config",
+        "-c",
+        exists=True,
+        dir_okay=False,
+        file_okay=True,
+        readable=True,
+        help="Path to TOML config file.",
+    ),
+]
 
 
 def _load_runtime(config_path: Path) -> tuple[AppConfig, StateStore]:
@@ -26,7 +37,7 @@ def _load_runtime(config_path: Path) -> tuple[AppConfig, StateStore]:
 
 
 @app.command("check")
-def check_command(config: ConfigOption) -> None:
+def check_command(config: ConfigOption = Path("config.toml")) -> None:
     """Run preflight checks and print runtime summary."""
     cfg = load_config(config)
     preflight = run_preflight()
@@ -44,7 +55,7 @@ def check_command(config: ConfigOption) -> None:
 
 
 @app.command("run-once")
-def run_once_command(config: ConfigOption) -> None:
+def run_once_command(config: ConfigOption = Path("config.toml")) -> None:
     """Run one polling cycle."""
     cfg, store = _load_runtime(config)
     try:
@@ -56,7 +67,7 @@ def run_once_command(config: ConfigOption) -> None:
 
 
 @app.command("start")
-def start_command(config: ConfigOption) -> None:
+def start_command(config: ConfigOption = Path("config.toml")) -> None:
     """Run daemon forever."""
     cfg, store = _load_runtime(config)
     try:
