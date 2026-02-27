@@ -1,0 +1,11 @@
+github_org = "Inkvi"
+poll_interval_seconds = 60
+skip_own_prs = true
+auto_post_review = false
+post_mode = "pr_comment"
+output_dir = "./reviews"
+state_file = "./.state/pr-reviewer-state.json"
+clone_root = "./.tmp/workspaces"
+claude_timeout_seconds = 900
+codex_timeout_seconds = 900
+max_parallel_prs = 1
