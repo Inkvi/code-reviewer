@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 class AppConfig(BaseModel):
     github_org: str = Field(min_length=1)
     poll_interval_seconds: int = Field(default=60, ge=15)
+    excluded_repos: list[str] = Field(default_factory=list)
     skip_own_prs: bool = True
     auto_post_review: bool = False
     post_mode: str = "pr_comment"
@@ -25,6 +26,19 @@ class AppConfig(BaseModel):
         if value != "pr_comment":
             raise ValueError("post_mode must be 'pr_comment'")
         return value
+
+    @field_validator("excluded_repos")
+    @classmethod
+    def normalize_excluded_repos(cls, value: list[str]) -> list[str]:
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for entry in value:
+            cleaned = entry.strip().lower()
+            if not cleaned or cleaned in seen:
+                continue
+            seen.add(cleaned)
+            normalized.append(cleaned)
+        return normalized
 
 
 def load_config(path: Path) -> AppConfig:

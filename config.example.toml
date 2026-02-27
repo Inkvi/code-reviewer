@@ -1,5 +1,6 @@
 github_org = "Inkvi"
 poll_interval_seconds = 60
+excluded_repos = []
 skip_own_prs = true
 auto_post_review = false
 post_mode = "pr_comment"

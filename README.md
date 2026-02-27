@@ -19,17 +19,25 @@ uv sync --extra dev
 cp config.example.toml config.toml
 ```
 
+Optional excludes (in `config.toml`):
+
+```toml
+# Exclude by full repo name and/or bare repo name
+excluded_repos = ["polymerdao/infra", "sandbox-repo"]
+```
+
 ## Commands
 
 ```bash
-uv run pr-reviewer check --config config.toml
-uv run pr-reviewer run-once --config config.toml
-uv run pr-reviewer start --config config.toml
+uv run pr-reviewer check
+uv run pr-reviewer run-once
+uv run pr-reviewer start
 ```
 
 ## Behavior
 
 - Polls open PRs in `github_org` where `review-requested:@me`
+- Excludes repos listed in `excluded_repos`
 - Skips draft PRs and (by default) PRs authored by you
 - Skips PRs when you already posted an issue comment
 - Runs Claude and Codex review in parallel

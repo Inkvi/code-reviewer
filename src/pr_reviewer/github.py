@@ -11,6 +11,22 @@ from pr_reviewer.shell import run_command, run_json
 class GitHubClient:
     viewer_login: str
 
+    @staticmethod
+    def _is_repo_excluded(config: AppConfig, owner: str, repo: str) -> bool:
+        if not config.excluded_repos:
+            return False
+
+        repo_name = repo.lower()
+        full_name = f"{owner}/{repo}".lower()
+
+        for excluded in config.excluded_repos:
+            # Support either "owner/repo" or bare "repo".
+            if "/" in excluded and excluded == full_name:
+                return True
+            if "/" not in excluded and excluded == repo_name:
+                return True
+        return False
+
     def discover_pr_candidates(self, config: AppConfig) -> list[PRCandidate]:
         data = run_json(
             [
@@ -46,6 +62,8 @@ class GitHubClient:
             if "/" not in repo_full:
                 continue
             owner, repo = repo_full.split("/", maxsplit=1)
+            if self._is_repo_excluded(config, owner, repo):
+                continue
 
             details = run_json(
                 [

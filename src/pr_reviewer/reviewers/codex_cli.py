@@ -13,17 +13,14 @@ async def run_codex_review(
     started = datetime.now(UTC)
 
     try:
-        prompt = (
-            "Review this pull request and return markdown findings ordered by severity. "
-            "Focus on correctness, regressions, and missing tests."
-        )
         code, stdout, stderr = await run_command_async(
-            ["codex", "review", "--base", f"origin/{pr.base_ref}", prompt],
+            # codex review in this CLI version rejects combining --base with a custom prompt.
+            ["codex", "review", "--base", f"origin/{pr.base_ref}"],
             cwd=workspace,
             timeout=timeout_seconds,
         )
         status = "ok" if code == 0 else "error"
-        error = None if code == 0 else f"codex exited with status {code}"
+        error = None if code == 0 else f"codex exited with status {code}: {stderr.strip()}"
         markdown = stdout.strip()
     except TimeoutError:
         stdout = ""

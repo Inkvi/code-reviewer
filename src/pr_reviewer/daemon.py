@@ -31,7 +31,8 @@ async def run_cycle(config: AppConfig, preflight: PreflightResult, store: StateS
     info(f"Found {len(candidates)} candidate PR(s)")
 
     if config.max_parallel_prs == 1:
-        for pr in candidates:
+        for index, pr in enumerate(candidates, start=1):
+            info(f"PR {index}/{len(candidates)}: {pr.key}")
             changed = await process_candidate(config, client, store, workspace_mgr, pr)
             if changed:
                 processed += 1
