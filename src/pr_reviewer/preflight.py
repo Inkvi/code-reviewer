@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import os
 import shutil
 from dataclasses import dataclass
 
+from pr_reviewer.config import AppConfig
 from pr_reviewer.shell import CommandError, run_command
 
 
@@ -11,8 +13,14 @@ class PreflightResult:
     viewer_login: str
 
 
-def run_preflight() -> PreflightResult:
-    required = ["gh", "codex", "claude"]
+def run_preflight(config: AppConfig) -> PreflightResult:
+    required = ["gh"]
+    enabled = set(config.enabled_reviewers)
+    if "claude" in enabled:
+        required.append("claude")
+    if "codex" in enabled and config.codex_backend == "cli":
+        required.append("codex")
+
     missing = [cmd for cmd in required if shutil.which(cmd) is None]
     if missing:
         raise RuntimeError(f"Missing required commands: {', '.join(missing)}")
@@ -31,12 +39,29 @@ def run_preflight() -> PreflightResult:
     if not viewer_login:
         raise RuntimeError("Could not determine authenticated GitHub login.")
 
-    run_command(["codex", "--version"])
-    run_command(["claude", "-v"])
+    if "codex" in enabled and config.codex_backend == "cli":
+        run_command(["codex", "--version"])
 
-    try:
-        from claude_agent_sdk import query  # noqa: F401
-    except Exception as exc:  # noqa: BLE001
-        raise RuntimeError("Python package claude-agent-sdk is unavailable.") from exc
+    if "claude" in enabled:
+        run_command(["claude", "-v"])
+
+    if "claude" in enabled:
+        try:
+            from claude_agent_sdk import query  # noqa: F401
+        except Exception as exc:  # noqa: BLE001
+            raise RuntimeError("Python package claude-agent-sdk is unavailable.") from exc
+
+    if "codex" in enabled and config.codex_backend == "agents_sdk":
+        if not os.environ.get("OPENAI_API_KEY"):
+            raise RuntimeError("OPENAI_API_KEY is required for codex_backend=agents_sdk.")
+        try:
+            import agents  # noqa: F401
+        except ModuleNotFoundError:
+            try:
+                import openai_agents  # noqa: F401
+            except ModuleNotFoundError as exc:
+                raise RuntimeError(
+                    "codex_backend=agents_sdk requires the OpenAI Agents SDK package."
+                ) from exc
 
     return PreflightResult(viewer_login=viewer_login)

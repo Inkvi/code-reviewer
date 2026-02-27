@@ -1,8 +1,16 @@
 github_org = "Inkvi"
 poll_interval_seconds = 60
 excluded_repos = []
+enabled_reviewers = ["claude", "codex"]
+# codex backend:
+# - "cli": uses `codex exec review` (default, stable)
+# - "agents_sdk": uses OpenAI Agents SDK (experimental)
+codex_backend = "cli"
+codex_model = "gpt-5.3-codex"
 skip_own_prs = true
 auto_post_review = false
+auto_submit_review_decision = false
+include_reviewer_stderr = true
 post_mode = "pr_comment"
 output_dir = "./reviews"
 state_file = "./.state/pr-reviewer-state.json"

@@ -23,7 +23,8 @@ async def reconcile_reviews(
     source_codex = _format_source("Codex", codex_output)
 
     prompt = f"""
-You are reconciling two PR reviews into one final markdown review.
+You are reconciling two PR reviews into one final markdown review that will be posted directly as
+a GitHub comment.
 
 PR:
 - URL: {pr.url}
@@ -37,11 +38,24 @@ Source A (Claude):
 Source B (Codex):
 {source_codex}
 
-Produce a final markdown review with:
-1) Findings (highest severity first)
-2) Open questions (if any)
-3) Test gaps
-Do not invent evidence. If uncertain, say so.
+Strict output rules:
+- Keep total output under 220 words.
+- No tables, no long summary, no praise/filler.
+- Include only these sections in this exact order:
+  1) `### Findings`
+  2) `### Test Gaps`
+- `### Findings`:
+  - 0-5 bullets, highest severity first.
+  - Each bullet format:
+    `- [P1|P2|P3] path[:line] - issue. Impact. Recommended fix.`
+  - If no material issues, write exactly:
+    `- No material findings.`
+- `### Test Gaps`:
+  - 0-3 bullets with concrete missing tests.
+  - If none, write:
+    `- None noted.`
+- Do not include a verdict section. Automation decides approve/request-changes from severity tags.
+- Do not invent evidence. If uncertain, omit.
 """.strip()
 
     return await _run_claude_prompt(prompt, workspace, timeout_seconds)

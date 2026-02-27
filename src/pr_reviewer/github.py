@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
 from pr_reviewer.config import AppConfig
 from pr_reviewer.models import PRCandidate
@@ -109,3 +110,12 @@ class GitHubClient:
 
     def post_pr_comment(self, pr: PRCandidate, body_file: str) -> None:
         run_command(["gh", "pr", "comment", pr.url, "--body-file", body_file])
+
+    def submit_pr_review(
+        self,
+        pr: PRCandidate,
+        body_file: str,
+        decision: Literal["approve", "request_changes"],
+    ) -> None:
+        decision_flag = "--approve" if decision == "approve" else "--request-changes"
+        run_command(["gh", "pr", "review", pr.url, decision_flag, "--body-file", body_file])

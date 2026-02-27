@@ -2,7 +2,7 @@
 
 A Python daemon that monitors GitHub pull requests and generates reconciled reviews using:
 - Claude Agent SDK (`/review <PR_URL>`)
-- Codex CLI (`codex review`)
+- Codex (`codex exec review` by default, or OpenAI Agents SDK experimental backend)
 
 ## Requirements
 
@@ -11,6 +11,7 @@ A Python daemon that monitors GitHub pull requests and generates reconciled revi
 - `gh` authenticated (`gh auth login`)
 - `codex` authenticated
 - `claude` authenticated (Agent SDK depends on Claude Code runtime)
+- for `codex_backend = "agents_sdk"`: OpenAI Agents SDK package + `OPENAI_API_KEY`
 
 ## Setup
 
@@ -26,6 +27,59 @@ Optional excludes (in `config.toml`):
 excluded_repos = ["polymerdao/infra", "sandbox-repo"]
 ```
 
+Choose reviewers:
+
+```toml
+# Default: run both in parallel
+enabled_reviewers = ["claude", "codex"]
+
+# Codex-only mode
+# enabled_reviewers = ["codex"]
+
+# Claude-only mode
+# enabled_reviewers = ["claude"]
+```
+
+Or override from CLI without editing config:
+
+```bash
+uv run pr-reviewer run-once --enabled-reviewer codex
+uv run pr-reviewer start --enabled-reviewer claude --enabled-reviewer codex
+```
+
+Choose Codex backend:
+
+```toml
+# Stable default:
+codex_backend = "cli"
+
+# Experimental OpenAI Agents SDK backend:
+# codex_backend = "agents_sdk"
+# codex_model = "gpt-5.3-codex"
+```
+
+Or override backend from CLI:
+
+```bash
+uv run pr-reviewer run-once --enabled-reviewer codex --codex-backend cli
+uv run pr-reviewer run-once --enabled-reviewer codex --codex-backend agents_sdk
+```
+
+Optional auto submission:
+
+```toml
+# Post concise review as a normal PR comment
+auto_post_review = false
+
+# Submit formal review decision automatically:
+# - approve when no P1/P2 findings
+# - request changes when any P1/P2 finding exists
+auto_submit_review_decision = false
+
+# Include full STDERR streams in the raw sidecar output
+include_reviewer_stderr = true
+```
+
 ## Commands
 
 ```bash
@@ -38,13 +92,18 @@ uv run pr-reviewer start
 
 - Polls open PRs in `github_org` where `review-requested:@me`
 - Excludes repos listed in `excluded_repos`
+- Runs only reviewers listed in `enabled_reviewers`
+- Uses selected Codex backend from `codex_backend`
 - Skips draft PRs and (by default) PRs authored by you
 - Skips PRs when you already posted an issue comment
 - Runs Claude and Codex review in parallel
 - Reconciles with Claude and writes:
   `reviews/<org>/<repo>/pr-<number>.md`
+- Saves raw Claude/Codex outputs to:
+  `reviews/<org>/<repo>/pr-<number>.raw.md`
 - Prints file path when ready
-- Optional posting when `auto_post_review = true`
+- Optional comment posting when `auto_post_review = true`
+- Optional formal review submission when `auto_submit_review_decision = true`
 
 ## Lint and test
 

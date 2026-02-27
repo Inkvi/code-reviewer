@@ -1,16 +1,61 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime
 from pathlib import Path
 
 from pr_reviewer.config import AppConfig
 from pr_reviewer.github import GitHubClient
 from pr_reviewer.logger import info, warn
 from pr_reviewer.models import PRCandidate, ProcessedState, ReviewerOutput
-from pr_reviewer.output import write_review_markdown
-from pr_reviewer.reviewers import reconcile_reviews, run_claude_review, run_codex_review
+from pr_reviewer.output import write_review_markdown, write_reviewer_sidecar_markdown
+from pr_reviewer.review_decision import infer_review_decision
+from pr_reviewer.reviewers import (
+    reconcile_reviews,
+    run_claude_review,
+    run_codex_review,
+    run_codex_review_via_agents_sdk,
+)
 from pr_reviewer.state import StateStore
 from pr_reviewer.workspace import PRWorkspace
+
+
+def _disabled_output(reviewer: str) -> ReviewerOutput:
+    now = datetime.now(UTC)
+    return ReviewerOutput(
+        reviewer=reviewer,
+        status="disabled",
+        markdown="",
+        stdout="",
+        stderr="",
+        error="reviewer disabled by config",
+        started_at=now,
+        ended_at=now,
+    )
+
+
+def _single_reviewer_final_review(reviewer_output: ReviewerOutput) -> str:
+    if reviewer_output.status == "ok" and reviewer_output.markdown.strip():
+        return reviewer_output.markdown.strip()
+    return (
+        "### Findings\n"
+        f"- Reviewer failed: {reviewer_output.error or 'unknown error'}.\n\n"
+        "### Test Gaps\n"
+        "- None noted."
+    )
+
+
+def _start_codex_review_task(config: AppConfig, pr: PRCandidate, workdir: Path) -> asyncio.Task:
+    if config.codex_backend == "agents_sdk":
+        return asyncio.create_task(
+            run_codex_review_via_agents_sdk(
+                pr,
+                workdir,
+                config.codex_timeout_seconds,
+                config.codex_model,
+            )
+        )
+    return asyncio.create_task(run_codex_review(pr, workdir, config.codex_timeout_seconds))
 
 
 async def process_candidate(
@@ -42,19 +87,23 @@ async def process_candidate(
         workdir = workspace_mgr.prepare(pr)
         info(f"{pr.key}: workspace ready at {workdir}")
 
-        info(f"{pr.key}: starting Claude review")
-        claude_task = asyncio.create_task(
-            run_claude_review(pr, workdir, config.claude_timeout_seconds)
-        )
-        info(f"{pr.key}: starting Codex review")
-        codex_task = asyncio.create_task(
-            run_codex_review(pr, workdir, config.codex_timeout_seconds)
-        )
+        enabled_reviewers = set(config.enabled_reviewers)
+        pending_tasks: dict[str, asyncio.Task] = {}
 
-        pending_tasks: dict[str, asyncio.Task] = {
-            "claude": claude_task,
-            "codex": codex_task,
-        }
+        if "claude" in enabled_reviewers:
+            info(f"{pr.key}: starting Claude review")
+            pending_tasks["claude"] = asyncio.create_task(
+                run_claude_review(pr, workdir, config.claude_timeout_seconds)
+            )
+        else:
+            info(f"{pr.key}: Claude reviewer disabled")
+
+        if "codex" in enabled_reviewers:
+            info(f"{pr.key}: starting Codex review (backend={config.codex_backend})")
+            pending_tasks["codex"] = _start_codex_review_task(config, pr, workdir)
+        else:
+            info(f"{pr.key}: Codex reviewer disabled")
+
         reviewer_outputs: dict[str, ReviewerOutput] = {}
 
         while pending_tasks:
@@ -80,42 +129,70 @@ async def process_candidate(
                         warn(f"{pr.key}: {reviewer_name} error: {output.error}")
                     pending_tasks.pop(reviewer_name)
 
-        claude_output = reviewer_outputs["claude"]
-        codex_output = reviewer_outputs["codex"]
+        claude_output = reviewer_outputs.get("claude", _disabled_output("claude"))
+        codex_output = reviewer_outputs.get("codex", _disabled_output("codex"))
 
-        info(f"{pr.key}: reconciling Claude and Codex outputs")
-        final_review = await reconcile_reviews(
-            pr,
-            workdir,
-            claude_output,
-            codex_output,
-            config.claude_timeout_seconds,
-        )
+        if enabled_reviewers == {"claude", "codex"}:
+            info(f"{pr.key}: reconciling Claude and Codex outputs")
+            final_review = await reconcile_reviews(
+                pr,
+                workdir,
+                claude_output,
+                codex_output,
+                config.claude_timeout_seconds,
+            )
+        elif enabled_reviewers == {"claude"}:
+            info(f"{pr.key}: single reviewer mode (claude)")
+            final_review = _single_reviewer_final_review(claude_output)
+        elif enabled_reviewers == {"codex"}:
+            info(f"{pr.key}: single reviewer mode (codex)")
+            final_review = _single_reviewer_final_review(codex_output)
+        else:
+            unsupported = sorted(enabled_reviewers)
+            raise RuntimeError(f"Unsupported enabled_reviewers configuration: {unsupported}")
         info(f"{pr.key}: writing final markdown output")
         output_path = write_review_markdown(
             Path(config.output_dir),
             pr,
             final_review,
+        )
+        raw_output_path = write_reviewer_sidecar_markdown(
+            Path(config.output_dir),
+            pr,
             claude_output,
             codex_output,
+            include_stderr=config.include_reviewer_stderr,
         )
         info(f"Final review ready: {output_path.resolve()}")
+        info(f"Raw reviewer outputs: {raw_output_path.resolve()}")
 
         posted_at = None
-        if config.auto_post_review:
+        status = "generated"
+        if config.auto_submit_review_decision:
+            decision = infer_review_decision(final_review)
+            info(f"{pr.key}: submitting PR review decision={decision}")
+            client.submit_pr_review(pr, str(output_path), decision)
+            posted_at = ProcessedState.now_iso()
+            status = "approved" if decision == "approve" else "changes_requested"
+            info(f"{pr.key}: submitted PR review ({status})")
+        elif config.auto_post_review:
             info(f"{pr.key}: posting review comment to GitHub")
             client.post_pr_comment(pr, str(output_path))
             posted_at = ProcessedState.now_iso()
+            status = "posted"
             info(f"Posted review comment for {pr.key}")
         else:
-            info(f"{pr.key}: auto_post_review disabled, not posting comment")
+            info(
+                f"{pr.key}: auto_post_review and auto_submit_review_decision are disabled; "
+                "not posting to GitHub"
+            )
 
         store.set(
             pr.key,
             ProcessedState(
                 last_reviewed_head_sha=pr.head_sha,
                 last_output_file=str(output_path.resolve()),
-                last_status="posted" if posted_at else "generated",
+                last_status=status,
                 last_posted_at=posted_at,
             ),
         )
