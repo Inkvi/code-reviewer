@@ -86,6 +86,7 @@ include_reviewer_stderr = true
 uv run pr-reviewer check
 uv run pr-reviewer run-once
 uv run pr-reviewer start
+uv run pr-reviewer force --pr-url https://github.com/<org>/<repo>/pull/<number>
 ```
 
 ## Behavior
@@ -104,6 +105,7 @@ uv run pr-reviewer start
 - Prints file path when ready
 - Optional comment posting when `auto_post_review = true`
 - Optional formal review submission when `auto_submit_review_decision = true`
+- `force` command bypasses reviewer assignment discovery and skip checks (existing comment + head SHA)
 
 ## Lint and test
 

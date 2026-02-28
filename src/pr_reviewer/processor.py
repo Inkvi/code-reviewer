@@ -64,20 +64,28 @@ async def process_candidate(
     store: StateStore,
     workspace_mgr: PRWorkspace,
     pr: PRCandidate,
+    *,
+    ignore_existing_comment: bool = False,
+    ignore_head_sha: bool = False,
 ) -> bool:
     info(f"Processing {pr.key}: {pr.title}")
-    info(f"{pr.key}: checking existing issue comments")
-    if client.has_issue_comment_by_viewer(pr):
-        info(f"Skipping {pr.key}: viewer already commented on PR thread")
-        state = store.get(pr.key)
-        state.last_status = "skipped_existing_comment"
-        store.set(pr.key, state)
-        store.save()
-        return False
+    if ignore_existing_comment:
+        info(f"{pr.key}: force mode enabled, bypassing existing issue comment check")
+    else:
+        info(f"{pr.key}: checking existing issue comments")
+        if client.has_issue_comment_by_viewer(pr):
+            info(f"Skipping {pr.key}: viewer already commented on PR thread")
+            state = store.get(pr.key)
+            state.last_status = "skipped_existing_comment"
+            store.set(pr.key, state)
+            store.save()
+            return False
 
     info(f"{pr.key}: checking previous processed head SHA")
     previous = store.get(pr.key)
-    if previous.last_reviewed_head_sha and previous.last_reviewed_head_sha == pr.head_sha:
+    if ignore_head_sha:
+        info(f"{pr.key}: force mode enabled, bypassing head SHA dedupe")
+    elif previous.last_reviewed_head_sha and previous.last_reviewed_head_sha == pr.head_sha:
         info(f"Skipping {pr.key}: head SHA unchanged ({pr.head_sha[:12]})")
         return False
 

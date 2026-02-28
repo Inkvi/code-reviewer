@@ -3,8 +3,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from pr_reviewer.config import AppConfig
+from pr_reviewer.github import GitHubClient
 from pr_reviewer.models import PRCandidate, ReviewerOutput
-from pr_reviewer.processor import _single_reviewer_final_review, _start_codex_review_task
+from pr_reviewer.processor import (
+    _single_reviewer_final_review,
+    _start_codex_review_task,
+    process_candidate,
+)
 
 
 def test_single_reviewer_final_review_uses_markdown_when_ok() -> None:
@@ -128,3 +133,71 @@ def test_start_codex_review_task_uses_agents_backend(monkeypatch) -> None:
 
     assert output.status == "ok"
     assert output.markdown == "codex output"
+
+
+def test_process_candidate_force_bypasses_existing_comment_check(monkeypatch, tmp_path) -> None:
+    class DummyStore:
+        def get(self, _key):  # noqa: ANN001
+            from pr_reviewer.models import ProcessedState
+
+            return ProcessedState()
+
+        def set(self, _key, _state):  # noqa: ANN001
+            return None
+
+        def save(self):
+            return None
+
+    class DummyWorkspace:
+        def prepare(self, _pr):  # noqa: ANN001
+            return tmp_path
+
+        def cleanup(self, _workdir):  # noqa: ANN001
+            return None
+
+    client = GitHubClient(viewer_login="Inkvi")
+    monkeypatch.setattr(
+        GitHubClient,
+        "has_issue_comment_by_viewer",
+        lambda _self, _pr: True,
+    )
+
+    now = datetime.now(UTC)
+    ok_output = ReviewerOutput(
+        reviewer="codex",
+        status="ok",
+        markdown="### Findings\n- No material findings.\n\n### Test Gaps\n- None noted.",
+        stdout="",
+        stderr="",
+        error=None,
+        started_at=now,
+        ended_at=now,
+    )
+
+    async def fake_codex(_pr, _workdir, _timeout):  # noqa: ANN001
+        return ok_output
+
+    monkeypatch.setattr("pr_reviewer.processor.run_codex_review", fake_codex)
+    monkeypatch.setattr(
+        "pr_reviewer.processor.write_review_markdown",
+        lambda *_args, **_kwargs: tmp_path / "out.md",
+    )
+    monkeypatch.setattr(
+        "pr_reviewer.processor.write_reviewer_sidecar_markdown",
+        lambda *_args, **_kwargs: tmp_path / "out.raw.md",
+    )
+
+    cfg = AppConfig(github_org="polymerdao", enabled_reviewers=["codex"])
+    changed = asyncio.run(
+        process_candidate(
+            cfg,
+            client,
+            DummyStore(),
+            DummyWorkspace(),
+            _sample_pr(),
+            ignore_existing_comment=True,
+            ignore_head_sha=True,
+        )
+    )
+
+    assert changed is True

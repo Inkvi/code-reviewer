@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Literal
+from urllib.parse import urlparse
 
 from pr_reviewer.config import AppConfig
 from pr_reviewer.models import PRCandidate
@@ -11,6 +12,16 @@ from pr_reviewer.shell import run_command, run_json
 @dataclass(slots=True)
 class GitHubClient:
     viewer_login: str
+
+    @staticmethod
+    def _parse_owner_repo_from_pr_url(pr_url: str) -> tuple[str, str]:
+        parsed = urlparse(pr_url)
+        if parsed.netloc.lower() != "github.com":
+            raise ValueError(f"Unsupported PR URL host: {parsed.netloc or '<empty>'}")
+        parts = [part for part in parsed.path.split("/") if part]
+        if len(parts) < 4 or parts[2] != "pull":
+            raise ValueError(f"Invalid GitHub PR URL: {pr_url}")
+        return parts[0], parts[1]
 
     @staticmethod
     def _is_repo_excluded(config: AppConfig, owner: str, repo: str) -> bool:
@@ -93,6 +104,31 @@ class GitHubClient:
 
         candidates.sort(key=lambda pr: pr.updated_at)
         return candidates
+
+    def get_pr_candidate(self, pr_url: str) -> PRCandidate:
+        owner, repo = self._parse_owner_repo_from_pr_url(pr_url)
+        details = run_json(
+            [
+                "gh",
+                "pr",
+                "view",
+                pr_url,
+                "--json",
+                "number,url,title,author,baseRefName,headRefOid,updatedAt",
+            ]
+        )
+        author = details.get("author") or {}
+        return PRCandidate(
+            owner=owner,
+            repo=repo,
+            number=int(details["number"]),
+            url=details["url"],
+            title=details.get("title", ""),
+            author_login=author.get("login", ""),
+            base_ref=details.get("baseRefName", "main"),
+            head_sha=details.get("headRefOid", ""),
+            updated_at=details.get("updatedAt", ""),
+        )
 
     def has_issue_comment_by_viewer(self, pr: PRCandidate) -> bool:
         endpoint = f"repos/{pr.owner}/{pr.repo}/issues/{pr.number}/comments"

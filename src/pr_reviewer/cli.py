@@ -10,9 +10,12 @@ from rich.table import Table
 
 from pr_reviewer.config import AppConfig, load_config
 from pr_reviewer.daemon import run_cycle, start_daemon
+from pr_reviewer.github import GitHubClient
 from pr_reviewer.logger import console, error, info
 from pr_reviewer.preflight import run_preflight
+from pr_reviewer.processor import process_candidate
 from pr_reviewer.state import StateStore
+from pr_reviewer.workspace import PRWorkspace
 
 app = typer.Typer(add_completion=False, help="PR review daemon")
 ConfigOption = Annotated[
@@ -46,6 +49,13 @@ CodexBackendOption = Annotated[
             "Override codex_backend from config. "
             "Allowed: cli, agents_sdk."
         ),
+    ),
+]
+PrUrlOption = Annotated[
+    list[str],
+    typer.Option(
+        "--pr-url",
+        help="GitHub pull request URL to review in force mode. Repeat for multiple PRs.",
     ),
 ]
 
@@ -153,5 +163,48 @@ def start_command(
     except Exception as exc:  # noqa: BLE001
         error(str(exc))
         raise typer.Exit(code=1) from exc
+    finally:
+        store.release_lock()
+
+
+@app.command("force")
+def force_command(
+    pr_url: PrUrlOption,
+    config: ConfigOption = Path("config.toml"),
+    enabled_reviewer: EnabledReviewerOption = None,
+    codex_backend: CodexBackendOption = None,
+) -> None:
+    """Force review specific PR URL(s), bypassing reviewer-assignment and skip checks."""
+    if not pr_url:
+        raise typer.BadParameter("Provide at least one --pr-url value.")
+
+    cfg, store = _load_runtime(config, enabled_reviewer, codex_backend)
+    try:
+        preflight = run_preflight(cfg)
+        client = GitHubClient(viewer_login=preflight.viewer_login)
+        workspace_mgr = PRWorkspace(Path(cfg.clone_root))
+
+        deduped_urls = list(dict.fromkeys(pr_url))
+
+        async def _run_force() -> int:
+            processed = 0
+            for index, url in enumerate(deduped_urls, start=1):
+                info(f"Force PR {index}/{len(deduped_urls)}: {url}")
+                candidate = client.get_pr_candidate(url)
+                changed = await process_candidate(
+                    cfg,
+                    client,
+                    store,
+                    workspace_mgr,
+                    candidate,
+                    ignore_existing_comment=True,
+                    ignore_head_sha=True,
+                )
+                if changed:
+                    processed += 1
+            return processed
+
+        processed = asyncio.run(_run_force())
+        info(f"force finished. Processed {processed} PR(s)")
     finally:
         store.release_lock()

@@ -40,3 +40,46 @@ def test_discover_pr_candidates_skips_excluded_repo(monkeypatch):
     assert candidates[0].owner == "polymerdao"
     assert candidates[0].repo == "obul"
     assert candidates[0].number == 64
+
+
+def test_parse_owner_repo_from_pr_url() -> None:
+    owner, repo = GitHubClient._parse_owner_repo_from_pr_url(
+        "https://github.com/polymerdao/obul/pull/64"
+    )
+    assert owner == "polymerdao"
+    assert repo == "obul"
+
+
+def test_parse_owner_repo_from_pr_url_invalid_host() -> None:
+    try:
+        GitHubClient._parse_owner_repo_from_pr_url("https://gitlab.com/polymerdao/obul/pull/64")
+    except ValueError as exc:
+        assert "Unsupported PR URL host" in str(exc)
+    else:
+        raise AssertionError("Expected ValueError for unsupported host")
+
+
+def test_get_pr_candidate(monkeypatch) -> None:
+    client = GitHubClient(viewer_login="Inkvi")
+
+    def fake_run_json(args):
+        assert args[:4] == ["gh", "pr", "view", "https://github.com/polymerdao/obul/pull/64"]
+        return {
+            "number": 64,
+            "url": "https://github.com/polymerdao/obul/pull/64",
+            "title": "bump versions",
+            "author": {"login": "alice"},
+            "baseRefName": "main",
+            "headRefOid": "deadbeef",
+            "updatedAt": "2026-02-27T20:00:00Z",
+        }
+
+    monkeypatch.setattr("pr_reviewer.github.run_json", fake_run_json)
+
+    pr = client.get_pr_candidate("https://github.com/polymerdao/obul/pull/64")
+
+    assert pr.owner == "polymerdao"
+    assert pr.repo == "obul"
+    assert pr.number == 64
+    assert pr.base_ref == "main"
+    assert pr.head_sha == "deadbeef"
