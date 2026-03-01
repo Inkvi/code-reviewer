@@ -58,4 +58,10 @@ Strict output rules:
 - Do not invent evidence. If uncertain, omit.
 """.strip()
 
-    return await _run_claude_prompt(prompt, workspace, timeout_seconds)
+    return await _run_claude_prompt(
+        prompt,
+        workspace,
+        timeout_seconds,
+        system_prompt="You are a code review reconciler. Respond only with the requested markdown sections. Do not use any tools.",
+        max_turns=1,
+    )

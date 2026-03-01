@@ -17,11 +17,19 @@ def _collect_text_from_assistant(message: AssistantMessage) -> str:
     return "\n".join(chunks)
 
 
-async def _run_claude_prompt(prompt: str, cwd: Path, timeout_seconds: int) -> str:
+async def _run_claude_prompt(
+    prompt: str,
+    cwd: Path,
+    timeout_seconds: int,
+    *,
+    system_prompt: str | None = None,
+    max_turns: int = 20,
+) -> str:
     options = ClaudeAgentOptions(
         cwd=cwd,
         permission_mode="bypassPermissions",
-        max_turns=20,
+        max_turns=max_turns,
+        system_prompt=system_prompt,
     )
 
     parts: list[str] = []
