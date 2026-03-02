@@ -11,8 +11,11 @@ class AppConfig(BaseModel):
     poll_interval_seconds: int = Field(default=60, ge=15)
     excluded_repos: list[str] = Field(default_factory=list)
     enabled_reviewers: list[str] = Field(default_factory=lambda: ["claude", "codex"])
+    claude_model: str | None = None
+    claude_reasoning_effort: str | None = None
     codex_backend: str = "cli"
     codex_model: str = Field(default="gpt-5.3-codex", min_length=1)
+    codex_reasoning_effort: str | None = None
     skip_own_prs: bool = True
     auto_post_review: bool = False
     auto_submit_review_decision: bool = False
@@ -70,6 +73,36 @@ class AppConfig(BaseModel):
         if normalized not in {"cli", "agents_sdk"}:
             raise ValueError("codex_backend must be one of: cli, agents_sdk")
         return normalized
+
+    @field_validator("claude_reasoning_effort")
+    @classmethod
+    def validate_claude_reasoning_effort(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip().lower()
+        if normalized not in {"low", "medium", "high", "max"}:
+            raise ValueError("claude_reasoning_effort must be one of: low, medium, high, max")
+        return normalized
+
+    @field_validator("codex_reasoning_effort")
+    @classmethod
+    def validate_codex_reasoning_effort(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip().lower()
+        if normalized not in {"low", "medium", "high"}:
+            raise ValueError("codex_reasoning_effort must be one of: low, medium, high")
+        return normalized
+
+    @field_validator("claude_model")
+    @classmethod
+    def validate_claude_model(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("claude_model cannot be empty")
+        return cleaned
 
 
 def load_config(path: Path) -> AppConfig:

@@ -61,7 +61,31 @@ def _extract_result_markdown(result: Any) -> str:
     return ""
 
 
-def _run_agents_codex_review_sync(pr: PRCandidate, workspace: Path, model: str) -> str:
+def _build_agent_model_settings(openai_agents: Any, reasoning_effort: str | None) -> Any:
+    if reasoning_effort is None or not hasattr(openai_agents, "ModelSettings"):
+        return None
+
+    model_settings_cls = openai_agents.ModelSettings
+    try:
+        parameters = inspect.signature(model_settings_cls).parameters
+    except (TypeError, ValueError):
+        parameters = {}
+
+    if "reasoning" in parameters:
+        return model_settings_cls(reasoning={"effort": reasoning_effort})
+    if "reasoning_effort" in parameters:
+        return model_settings_cls(reasoning_effort=reasoning_effort)
+
+    # Fallback for versions where signature introspection is unavailable.
+    try:
+        return model_settings_cls(reasoning={"effort": reasoning_effort})
+    except Exception:  # noqa: BLE001
+        return model_settings_cls(reasoning_effort=reasoning_effort)
+
+
+def _run_agents_codex_review_sync(
+    pr: PRCandidate, workspace: Path, model: str, reasoning_effort: str | None
+) -> str:
     openai_agents = _load_agents_sdk()
     if not hasattr(openai_agents, "Agent") or not hasattr(openai_agents, "Runner"):
         raise RuntimeError("OpenAI Agents SDK does not provide Agent/Runner")
@@ -83,7 +107,16 @@ def _run_agents_codex_review_sync(pr: PRCandidate, workspace: Path, model: str) 
         "You are a strict code reviewer. Use repository context and git diff against the provided "
         "base branch. Do not add filler, and do not invent evidence."
     )
-    agent = openai_agents.Agent(name="Codex PR Reviewer", instructions=instructions, model=model)
+    agent_kwargs: dict[str, Any] = {
+        "name": "Codex PR Reviewer",
+        "instructions": instructions,
+        "model": model,
+    }
+    model_settings = _build_agent_model_settings(openai_agents, reasoning_effort)
+    if model_settings is not None:
+        agent_kwargs["model_settings"] = model_settings
+
+    agent = openai_agents.Agent(**agent_kwargs)
     result = _invoke_runner_sync(openai_agents.Runner, agent, prompt)
     markdown = _extract_result_markdown(result)
     if not markdown:
@@ -92,12 +125,22 @@ def _run_agents_codex_review_sync(pr: PRCandidate, workspace: Path, model: str) 
 
 
 async def run_codex_review_via_agents_sdk(
-    pr: PRCandidate, workspace: Path, timeout_seconds: int, model: str
+    pr: PRCandidate,
+    workspace: Path,
+    timeout_seconds: int,
+    model: str,
+    reasoning_effort: str | None = None,
 ) -> ReviewerOutput:
     started = datetime.now(UTC)
     try:
         markdown = await asyncio.wait_for(
-            asyncio.to_thread(_run_agents_codex_review_sync, pr, workspace, model),
+            asyncio.to_thread(
+                _run_agents_codex_review_sync,
+                pr,
+                workspace,
+                model,
+                reasoning_effort,
+            ),
             timeout=timeout_seconds,
         )
         status = "ok"

@@ -24,12 +24,16 @@ async def _run_claude_prompt(
     *,
     system_prompt: str | None = None,
     max_turns: int = 20,
+    model: str | None = None,
+    reasoning_effort: str | None = None,
 ) -> str:
     options = ClaudeAgentOptions(
         cwd=cwd,
         permission_mode="bypassPermissions",
         max_turns=max_turns,
         system_prompt=system_prompt,
+        model=model,
+        effort=reasoning_effort,
     )
 
     parts: list[str] = []
@@ -52,12 +56,23 @@ async def _run_claude_prompt(
 
 
 async def run_claude_review(
-    pr: PRCandidate, workspace: Path, timeout_seconds: int
+    pr: PRCandidate,
+    workspace: Path,
+    timeout_seconds: int,
+    *,
+    model: str | None = None,
+    reasoning_effort: str | None = None,
 ) -> ReviewerOutput:
     started = datetime.now(UTC)
     try:
         prompt = f"/review {pr.url}\n\nReview this PR and produce a concise markdown review."
-        markdown = await _run_claude_prompt(prompt, workspace, timeout_seconds)
+        markdown = await _run_claude_prompt(
+            prompt,
+            workspace,
+            timeout_seconds,
+            model=model,
+            reasoning_effort=reasoning_effort,
+        )
         status = "ok"
         error = None
         stderr = ""

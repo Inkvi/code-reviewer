@@ -18,8 +18,11 @@ def test_load_config_success(tmp_path: Path) -> None:
     assert cfg.include_reviewer_stderr is True
     assert cfg.excluded_repos == []
     assert cfg.enabled_reviewers == ["claude", "codex"]
+    assert cfg.claude_model is None
+    assert cfg.claude_reasoning_effort is None
     assert cfg.codex_backend == "cli"
     assert cfg.codex_model == "gpt-5.3-codex"
+    assert cfg.codex_reasoning_effort is None
 
 
 def test_load_config_invalid_interval(tmp_path: Path) -> None:
@@ -83,6 +86,30 @@ def test_load_config_rejects_invalid_codex_backend(tmp_path: Path) -> None:
     path.write_text(
         'github_org = "polymerdao"\n'
         'codex_backend = "invalid"\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError):
+        load_config(path)
+
+
+def test_load_config_rejects_invalid_claude_reasoning_effort(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text(
+        'github_org = "polymerdao"\n'
+        'claude_reasoning_effort = "invalid"\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError):
+        load_config(path)
+
+
+def test_load_config_rejects_invalid_codex_reasoning_effort(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text(
+        'github_org = "polymerdao"\n'
+        'codex_reasoning_effort = "max"\n',
         encoding="utf-8",
     )
 

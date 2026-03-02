@@ -58,11 +58,25 @@ codex_backend = "cli"
 # codex_model = "gpt-5.3-codex"
 ```
 
+Model and reasoning tuning:
+
+```toml
+# Claude backend (review + reconciliation)
+# claude_model = "claude-sonnet-4-5"
+# claude_reasoning_effort = "low"    # low|medium|high|max
+
+# Codex backend
+codex_model = "gpt-5.3-codex"
+# codex_reasoning_effort = "medium"  # low|medium|high
+```
+
 Or override backend from CLI:
 
 ```bash
 uv run pr-reviewer run-once --enabled-reviewer codex --codex-backend cli
 uv run pr-reviewer run-once --enabled-reviewer codex --codex-backend agents_sdk
+uv run pr-reviewer run-once --codex-model gpt-5.3-codex --codex-reasoning-effort high
+uv run pr-reviewer run-once --claude-model claude-sonnet-4-5 --claude-reasoning-effort medium
 ```
 
 Optional auto submission:

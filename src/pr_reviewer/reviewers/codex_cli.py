@@ -47,23 +47,48 @@ def _sanitize_codex_markdown(text: str) -> str:
     return "\n".join(lines).strip()
 
 
+def _build_codex_review_command(
+    pr: PRCandidate,
+    output_file: Path,
+    *,
+    model: str | None,
+    reasoning_effort: str | None,
+) -> list[str]:
+    args = [
+        "codex",
+        "exec",
+        "review",
+        "--base",
+        f"origin/{pr.base_ref}",
+        "--output-last-message",
+        str(output_file),
+    ]
+    if model:
+        args.extend(["--model", model])
+    if reasoning_effort:
+        args.extend(["-c", f'model_reasoning_effort="{reasoning_effort}"'])
+    return args
+
+
 async def run_codex_review(
-    pr: PRCandidate, workspace: Path, timeout_seconds: int
+    pr: PRCandidate,
+    workspace: Path,
+    timeout_seconds: int,
+    *,
+    model: str | None = None,
+    reasoning_effort: str | None = None,
 ) -> ReviewerOutput:
     started = datetime.now(UTC)
     output_file = (workspace / f".codex-review-last-message-{uuid4().hex}.md").resolve()
 
     try:
         code, stdout, stderr = await run_command_async(
-            [
-                "codex",
-                "exec",
-                "review",
-                "--base",
-                f"origin/{pr.base_ref}",
-                "--output-last-message",
-                str(output_file),
-            ],
+            _build_codex_review_command(
+                pr,
+                output_file,
+                model=model,
+                reasoning_effort=reasoning_effort,
+            ),
             cwd=workspace,
             timeout=timeout_seconds,
         )

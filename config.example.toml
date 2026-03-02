@@ -2,11 +2,16 @@ github_org = "Inkvi"
 poll_interval_seconds = 60
 excluded_repos = []
 enabled_reviewers = ["claude", "codex"]
+# Optional Claude tuning:
+# claude_model = "claude-sonnet-4-5"
+# claude_reasoning_effort = "medium"
 # codex backend:
 # - "cli": uses `codex exec review` (default, stable)
 # - "agents_sdk": uses OpenAI Agents SDK (experimental)
 codex_backend = "cli"
 codex_model = "gpt-5.3-codex"
+# Optional Codex tuning:
+# codex_reasoning_effort = "medium"
 skip_own_prs = true
 auto_post_review = false
 auto_submit_review_decision = false

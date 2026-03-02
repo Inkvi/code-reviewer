@@ -53,9 +53,18 @@ def _start_codex_review_task(config: AppConfig, pr: PRCandidate, workdir: Path) 
                 workdir,
                 config.codex_timeout_seconds,
                 config.codex_model,
+                config.codex_reasoning_effort,
             )
         )
-    return asyncio.create_task(run_codex_review(pr, workdir, config.codex_timeout_seconds))
+    return asyncio.create_task(
+        run_codex_review(
+            pr,
+            workdir,
+            config.codex_timeout_seconds,
+            model=config.codex_model,
+            reasoning_effort=config.codex_reasoning_effort,
+        )
+    )
 
 
 async def process_candidate(
@@ -99,15 +108,29 @@ async def process_candidate(
         pending_tasks: dict[str, asyncio.Task] = {}
 
         if "claude" in enabled_reviewers:
-            info(f"{pr.key}: starting Claude review")
+            info(
+                f"{pr.key}: starting Claude review "
+                f"(model={config.claude_model or 'default'}, "
+                f"effort={config.claude_reasoning_effort or 'default'})"
+            )
             pending_tasks["claude"] = asyncio.create_task(
-                run_claude_review(pr, workdir, config.claude_timeout_seconds)
+                run_claude_review(
+                    pr,
+                    workdir,
+                    config.claude_timeout_seconds,
+                    model=config.claude_model,
+                    reasoning_effort=config.claude_reasoning_effort,
+                )
             )
         else:
             info(f"{pr.key}: Claude reviewer disabled")
 
         if "codex" in enabled_reviewers:
-            info(f"{pr.key}: starting Codex review (backend={config.codex_backend})")
+            info(
+                f"{pr.key}: starting Codex review "
+                f"(backend={config.codex_backend}, model={config.codex_model}, "
+                f"effort={config.codex_reasoning_effort or 'default'})"
+            )
             pending_tasks["codex"] = _start_codex_review_task(config, pr, workdir)
         else:
             info(f"{pr.key}: Codex reviewer disabled")
@@ -148,6 +171,8 @@ async def process_candidate(
                 claude_output,
                 codex_output,
                 config.claude_timeout_seconds,
+                claude_model=config.claude_model,
+                claude_reasoning_effort=config.claude_reasoning_effort,
             )
         elif enabled_reviewers == {"claude"}:
             info(f"{pr.key}: single reviewer mode (claude)")

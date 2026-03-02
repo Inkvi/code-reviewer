@@ -18,6 +18,9 @@ async def reconcile_reviews(
     claude_output: ReviewerOutput,
     codex_output: ReviewerOutput,
     timeout_seconds: int,
+    *,
+    claude_model: str | None = None,
+    claude_reasoning_effort: str | None = None,
 ) -> str:
     source_claude = _format_source("Claude", claude_output)
     source_codex = _format_source("Codex", codex_output)
@@ -62,6 +65,11 @@ Strict output rules:
         prompt,
         workspace,
         timeout_seconds,
-        system_prompt="You are a code review reconciler. Respond only with the requested markdown sections. Do not use any tools.",
+        system_prompt=(
+            "You are a code review reconciler. Respond only with the requested markdown "
+            "sections. Do not use any tools."
+        ),
         max_turns=1,
+        model=claude_model,
+        reasoning_effort=claude_reasoning_effort,
     )

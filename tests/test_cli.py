@@ -1,7 +1,11 @@
 import pytest
 import typer
 
-from pr_reviewer.cli import _apply_codex_backend_override, _apply_enabled_reviewer_override
+from pr_reviewer.cli import (
+    _apply_codex_backend_override,
+    _apply_enabled_reviewer_override,
+    _apply_field_override,
+)
 from pr_reviewer.config import AppConfig
 
 
@@ -49,3 +53,23 @@ def test_apply_codex_backend_override_invalid_raises_bad_parameter() -> None:
 
     with pytest.raises(typer.BadParameter):
         _apply_codex_backend_override(cfg, "invalid")
+
+
+def test_apply_field_override_codex_model() -> None:
+    cfg = AppConfig(github_org="polymerdao")
+
+    out = _apply_field_override(cfg, "codex_model", "gpt-5.3-codex-mini", "--codex-model")
+
+    assert out.codex_model == "gpt-5.3-codex-mini"
+
+
+def test_apply_field_override_invalid_reasoning_raises_bad_parameter() -> None:
+    cfg = AppConfig(github_org="polymerdao")
+
+    with pytest.raises(typer.BadParameter):
+        _apply_field_override(
+            cfg,
+            "codex_reasoning_effort",
+            "max",
+            "--codex-reasoning-effort",
+        )

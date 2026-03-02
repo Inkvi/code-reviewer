@@ -77,10 +77,14 @@ async def _ok_output(name: str) -> ReviewerOutput:
 
 
 def test_start_codex_review_task_uses_cli_backend(monkeypatch) -> None:
-    async def fake_codex_cli(pr, workdir, timeout_seconds):  # noqa: ANN001
+    async def fake_codex_cli(  # noqa: ANN001
+        pr, workdir, timeout_seconds, *, model=None, reasoning_effort=None
+    ):
         assert pr.number == 64
         assert workdir == Path("/tmp/repo")
         assert timeout_seconds == 30
+        assert model == "gpt-5.3-codex"
+        assert reasoning_effort == "high"
         return await _ok_output("codex")
 
     async def fake_codex_agents(*_args, **_kwargs):  # noqa: ANN001
@@ -93,6 +97,7 @@ def test_start_codex_review_task_uses_cli_backend(monkeypatch) -> None:
         github_org="polymerdao",
         enabled_reviewers=["codex"],
         codex_backend="cli",
+        codex_reasoning_effort="high",
         codex_timeout_seconds=30,
     )
     async def _run() -> ReviewerOutput:
@@ -109,11 +114,14 @@ def test_start_codex_review_task_uses_agents_backend(monkeypatch) -> None:
     async def fake_codex_cli(*_args, **_kwargs):  # noqa: ANN001
         raise AssertionError("cli backend should not be called")
 
-    async def fake_codex_agents(pr, workdir, timeout_seconds, model):  # noqa: ANN001
+    async def fake_codex_agents(  # noqa: ANN001
+        pr, workdir, timeout_seconds, model, reasoning_effort=None
+    ):
         assert pr.number == 64
         assert workdir == Path("/tmp/repo")
         assert timeout_seconds == 30
         assert model == "gpt-5.3-codex"
+        assert reasoning_effort == "medium"
         return await _ok_output("codex")
 
     monkeypatch.setattr("pr_reviewer.processor.run_codex_review", fake_codex_cli)
@@ -123,6 +131,7 @@ def test_start_codex_review_task_uses_agents_backend(monkeypatch) -> None:
         github_org="polymerdao",
         enabled_reviewers=["codex"],
         codex_backend="agents_sdk",
+        codex_reasoning_effort="medium",
         codex_timeout_seconds=30,
     )
     async def _run() -> ReviewerOutput:
@@ -174,7 +183,11 @@ def test_process_candidate_force_bypasses_existing_comment_check(monkeypatch, tm
         ended_at=now,
     )
 
-    async def fake_codex(_pr, _workdir, _timeout):  # noqa: ANN001
+    async def fake_codex(  # noqa: ANN001
+        _pr, _workdir, _timeout, *, model=None, reasoning_effort=None
+    ):
+        assert model == "gpt-5.3-codex"
+        assert reasoning_effort is None
         return ok_output
 
     monkeypatch.setattr("pr_reviewer.processor.run_codex_review", fake_codex)

@@ -51,6 +51,34 @@ CodexBackendOption = Annotated[
         ),
     ),
 ]
+ClaudeModelOption = Annotated[
+    str | None,
+    typer.Option(
+        "--claude-model",
+        help="Override claude_model from config.",
+    ),
+]
+ClaudeReasoningEffortOption = Annotated[
+    str | None,
+    typer.Option(
+        "--claude-reasoning-effort",
+        help="Override claude_reasoning_effort from config. Allowed: low, medium, high, max.",
+    ),
+]
+CodexModelOption = Annotated[
+    str | None,
+    typer.Option(
+        "--codex-model",
+        help="Override codex_model from config.",
+    ),
+]
+CodexReasoningEffortOption = Annotated[
+    str | None,
+    typer.Option(
+        "--codex-reasoning-effort",
+        help="Override codex_reasoning_effort from config. Allowed: low, medium, high.",
+    ),
+]
 PrUrlOption = Annotated[
     list[str],
     typer.Option(
@@ -76,15 +104,24 @@ def _apply_enabled_reviewer_override(
 
 
 def _apply_codex_backend_override(config: AppConfig, codex_backend: str | None) -> AppConfig:
-    if codex_backend is None:
+    return _apply_field_override(config, "codex_backend", codex_backend, "--codex-backend")
+
+
+def _apply_field_override(
+    config: AppConfig,
+    field_name: str,
+    value: str | None,
+    flag_name: str,
+) -> AppConfig:
+    if value is None:
         return config
     payload = config.model_dump()
-    payload["codex_backend"] = codex_backend
+    payload[field_name] = value
     try:
         return AppConfig.model_validate(payload)
     except ValidationError as exc:
         raise typer.BadParameter(
-            f"Invalid --codex-backend value: {exc.errors(include_url=False)}"
+            f"Invalid {flag_name} value: {exc.errors(include_url=False)}"
         ) from exc
 
 
@@ -92,10 +129,28 @@ def _load_runtime(
     config_path: Path,
     enabled_reviewer: list[str] | None,
     codex_backend: str | None,
+    claude_model: str | None,
+    claude_reasoning_effort: str | None,
+    codex_model: str | None,
+    codex_reasoning_effort: str | None,
 ) -> tuple[AppConfig, StateStore]:
     config = load_config(config_path)
     config = _apply_enabled_reviewer_override(config, enabled_reviewer)
     config = _apply_codex_backend_override(config, codex_backend)
+    config = _apply_field_override(config, "claude_model", claude_model, "--claude-model")
+    config = _apply_field_override(
+        config,
+        "claude_reasoning_effort",
+        claude_reasoning_effort,
+        "--claude-reasoning-effort",
+    )
+    config = _apply_field_override(config, "codex_model", codex_model, "--codex-model")
+    config = _apply_field_override(
+        config,
+        "codex_reasoning_effort",
+        codex_reasoning_effort,
+        "--codex-reasoning-effort",
+    )
     store = StateStore(Path(config.state_file))
     store.acquire_lock()
     store.load()
@@ -107,11 +162,29 @@ def check_command(
     config: ConfigOption = Path("config.toml"),
     enabled_reviewer: EnabledReviewerOption = None,
     codex_backend: CodexBackendOption = None,
+    claude_model: ClaudeModelOption = None,
+    claude_reasoning_effort: ClaudeReasoningEffortOption = None,
+    codex_model: CodexModelOption = None,
+    codex_reasoning_effort: CodexReasoningEffortOption = None,
 ) -> None:
     """Run preflight checks and print runtime summary."""
     cfg = load_config(config)
     cfg = _apply_enabled_reviewer_override(cfg, enabled_reviewer)
     cfg = _apply_codex_backend_override(cfg, codex_backend)
+    cfg = _apply_field_override(cfg, "claude_model", claude_model, "--claude-model")
+    cfg = _apply_field_override(
+        cfg,
+        "claude_reasoning_effort",
+        claude_reasoning_effort,
+        "--claude-reasoning-effort",
+    )
+    cfg = _apply_field_override(cfg, "codex_model", codex_model, "--codex-model")
+    cfg = _apply_field_override(
+        cfg,
+        "codex_reasoning_effort",
+        codex_reasoning_effort,
+        "--codex-reasoning-effort",
+    )
     preflight = run_preflight(cfg)
 
     table = Table(title="pr-reviewer check")
@@ -124,8 +197,11 @@ def check_command(
     table.add_row("Auto submit decision", str(cfg.auto_submit_review_decision))
     table.add_row("Include reviewer stderr", str(cfg.include_reviewer_stderr))
     table.add_row("Enabled reviewers", ", ".join(cfg.enabled_reviewers))
+    table.add_row("Claude model", cfg.claude_model or "default")
+    table.add_row("Claude reasoning effort", cfg.claude_reasoning_effort or "default")
     table.add_row("Codex backend", cfg.codex_backend)
     table.add_row("Codex model", cfg.codex_model)
+    table.add_row("Codex reasoning effort", cfg.codex_reasoning_effort or "default")
     table.add_row("Output dir", str(Path(cfg.output_dir).resolve()))
     table.add_row("State file", str(Path(cfg.state_file).resolve()))
     console.print(table)
@@ -136,9 +212,21 @@ def run_once_command(
     config: ConfigOption = Path("config.toml"),
     enabled_reviewer: EnabledReviewerOption = None,
     codex_backend: CodexBackendOption = None,
+    claude_model: ClaudeModelOption = None,
+    claude_reasoning_effort: ClaudeReasoningEffortOption = None,
+    codex_model: CodexModelOption = None,
+    codex_reasoning_effort: CodexReasoningEffortOption = None,
 ) -> None:
     """Run one polling cycle."""
-    cfg, store = _load_runtime(config, enabled_reviewer, codex_backend)
+    cfg, store = _load_runtime(
+        config,
+        enabled_reviewer,
+        codex_backend,
+        claude_model,
+        claude_reasoning_effort,
+        codex_model,
+        codex_reasoning_effort,
+    )
     try:
         preflight = run_preflight(cfg)
         processed = asyncio.run(run_cycle(cfg, preflight, store))
@@ -152,9 +240,21 @@ def start_command(
     config: ConfigOption = Path("config.toml"),
     enabled_reviewer: EnabledReviewerOption = None,
     codex_backend: CodexBackendOption = None,
+    claude_model: ClaudeModelOption = None,
+    claude_reasoning_effort: ClaudeReasoningEffortOption = None,
+    codex_model: CodexModelOption = None,
+    codex_reasoning_effort: CodexReasoningEffortOption = None,
 ) -> None:
     """Run daemon forever."""
-    cfg, store = _load_runtime(config, enabled_reviewer, codex_backend)
+    cfg, store = _load_runtime(
+        config,
+        enabled_reviewer,
+        codex_backend,
+        claude_model,
+        claude_reasoning_effort,
+        codex_model,
+        codex_reasoning_effort,
+    )
     try:
         preflight = run_preflight(cfg)
         asyncio.run(start_daemon(cfg, preflight, store))
@@ -173,12 +273,24 @@ def force_command(
     config: ConfigOption = Path("config.toml"),
     enabled_reviewer: EnabledReviewerOption = None,
     codex_backend: CodexBackendOption = None,
+    claude_model: ClaudeModelOption = None,
+    claude_reasoning_effort: ClaudeReasoningEffortOption = None,
+    codex_model: CodexModelOption = None,
+    codex_reasoning_effort: CodexReasoningEffortOption = None,
 ) -> None:
     """Force review specific PR URL(s), bypassing reviewer-assignment and skip checks."""
     if not pr_url:
         raise typer.BadParameter("Provide at least one --pr-url value.")
 
-    cfg, store = _load_runtime(config, enabled_reviewer, codex_backend)
+    cfg, store = _load_runtime(
+        config,
+        enabled_reviewer,
+        codex_backend,
+        claude_model,
+        claude_reasoning_effort,
+        codex_model,
+        codex_reasoning_effort,
+    )
     try:
         preflight = run_preflight(cfg)
         client = GitHubClient(viewer_login=preflight.viewer_login)
