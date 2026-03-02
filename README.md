@@ -110,6 +110,7 @@ uv run pr-reviewer force --pr-url https://github.com/<org>/<repo>/pull/<number>
 - Excludes repos listed in `excluded_repos`
 - Runs only reviewers listed in `enabled_reviewers`
 - Uses selected Codex backend from `codex_backend`
+- Codex CLI backend uses `codex review` and, when supported by CLI version, can parse JSON event output
 - Skips draft PRs and (by default) PRs authored by you
 - Skips PRs when you already posted an issue comment
 - Runs Claude and Codex review in parallel

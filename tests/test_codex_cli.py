@@ -1,6 +1,8 @@
 from pr_reviewer.models import PRCandidate
 from pr_reviewer.reviewers.codex_cli import (
     _build_codex_review_command,
+    _codex_review_json_unsupported,
+    _extract_codex_markdown_from_jsonl,
     _extract_codex_review_text,
     _sanitize_codex_markdown,
 )
@@ -47,9 +49,31 @@ def test_build_codex_review_command_includes_model_and_reasoning() -> None:
         pr,
         model="gpt-5.3-codex",
         reasoning_effort="high",
+        json_mode=True,
     )
 
-    assert args[:4] == ["codex", "review", "--base", "origin/main"]
+    assert args[:5] == ["codex", "review", "--base", "origin/main", "--json"]
     assert "-c" in args
     assert 'model="gpt-5.3-codex"' in args
     assert 'model_reasoning_effort="high"' in args
+
+
+def test_codex_review_json_unsupported_detection() -> None:
+    assert _codex_review_json_unsupported("error: unexpected argument '--json' found")
+    assert not _codex_review_json_unsupported("some other error")
+
+
+def test_extract_codex_markdown_from_jsonl_uses_last_agent_message() -> None:
+    stream = "\n".join(
+        [
+            "2026-03-02T00:00:00Z WARN something",
+            '{"type":"thread.started","thread_id":"abc"}',
+            '{"type":"item.completed","item":{"type":"agent_message","text":"first"}}',
+            '{"type":"item.completed","item":{"type":"agent_message","text":"second"}}',
+        ]
+    )
+
+    markdown, event_count = _extract_codex_markdown_from_jsonl(stream)
+
+    assert markdown == "second"
+    assert event_count == 3

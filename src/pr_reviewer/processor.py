@@ -156,6 +156,10 @@ async def process_candidate(
                         f"{pr.key}: {reviewer_name} finished "
                         f"status={output.status} duration={output.duration_seconds:.1f}s"
                     )
+                    if reviewer_name == "codex" and output.stdout.startswith(
+                        "codex JSON events captured:"
+                    ):
+                        info(f"{pr.key}: {output.stdout}")
                     if output.status != "ok" and output.error:
                         warn(f"{pr.key}: {reviewer_name} error: {output.error}")
                     pending_tasks.pop(reviewer_name)
