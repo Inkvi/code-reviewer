@@ -6,12 +6,12 @@ enabled_reviewers = ["claude", "codex"]
 # claude_model = "claude-sonnet-4-5"
 # claude_reasoning_effort = "medium"
 # codex backend:
-# - "cli": uses `codex exec review` (default, stable)
+# - "cli": uses `codex review` (default, stable)
 # - "agents_sdk": uses OpenAI Agents SDK (experimental)
 codex_backend = "cli"
 codex_model = "gpt-5.3-codex"
-# Optional Codex tuning:
-# codex_reasoning_effort = "medium"
+# Default Codex tuning for development:
+codex_reasoning_effort = "low"
 skip_own_prs = true
 auto_post_review = false
 auto_submit_review_decision = false

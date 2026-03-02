@@ -2,7 +2,7 @@
 
 A Python daemon that monitors GitHub pull requests and generates reconciled reviews using:
 - Claude Agent SDK (`/review <PR_URL>`)
-- Codex (`codex exec review` by default, or OpenAI Agents SDK experimental backend)
+- Codex (`codex review` by default, or OpenAI Agents SDK experimental backend)
 
 ## Requirements
 
@@ -67,7 +67,8 @@ Model and reasoning tuning:
 
 # Codex backend
 codex_model = "gpt-5.3-codex"
-# codex_reasoning_effort = "medium"  # low|medium|high
+codex_reasoning_effort = "low"   # default for local dev/test
+# # low|medium|high
 ```
 
 Or override backend from CLI:

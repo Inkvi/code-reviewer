@@ -15,7 +15,7 @@ class AppConfig(BaseModel):
     claude_reasoning_effort: str | None = None
     codex_backend: str = "cli"
     codex_model: str = Field(default="gpt-5.3-codex", min_length=1)
-    codex_reasoning_effort: str | None = None
+    codex_reasoning_effort: str | None = "low"
     skip_own_prs: bool = True
     auto_post_review: bool = False
     auto_submit_review_decision: bool = False

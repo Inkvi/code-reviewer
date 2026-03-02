@@ -22,7 +22,7 @@ def test_load_config_success(tmp_path: Path) -> None:
     assert cfg.claude_reasoning_effort is None
     assert cfg.codex_backend == "cli"
     assert cfg.codex_model == "gpt-5.3-codex"
-    assert cfg.codex_reasoning_effort is None
+    assert cfg.codex_reasoning_effort == "low"
 
 
 def test_load_config_invalid_interval(tmp_path: Path) -> None:

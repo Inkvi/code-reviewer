@@ -1,5 +1,3 @@
-from pathlib import Path
-
 from pr_reviewer.models import PRCandidate
 from pr_reviewer.reviewers.codex_cli import (
     _build_codex_review_command,
@@ -45,16 +43,13 @@ def test_build_codex_review_command_includes_model_and_reasoning() -> None:
         head_sha="deadbeef",
         updated_at="2026-02-27T20:00:00Z",
     )
-    output_file = Path("/tmp/codex.md")
     args = _build_codex_review_command(
         pr,
-        output_file,
         model="gpt-5.3-codex",
         reasoning_effort="high",
     )
 
-    assert args[:5] == ["codex", "exec", "review", "--base", "origin/main"]
-    assert "--model" in args
-    assert "gpt-5.3-codex" in args
-    assert '-c' in args
+    assert args[:4] == ["codex", "review", "--base", "origin/main"]
+    assert "-c" in args
+    assert 'model="gpt-5.3-codex"' in args
     assert 'model_reasoning_effort="high"' in args

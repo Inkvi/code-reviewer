@@ -187,7 +187,7 @@ def test_process_candidate_force_bypasses_existing_comment_check(monkeypatch, tm
         _pr, _workdir, _timeout, *, model=None, reasoning_effort=None
     ):
         assert model == "gpt-5.3-codex"
-        assert reasoning_effort is None
+        assert reasoning_effort == "low"
         return ok_output
 
     monkeypatch.setattr("pr_reviewer.processor.run_codex_review", fake_codex)

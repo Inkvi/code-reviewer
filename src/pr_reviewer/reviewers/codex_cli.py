@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
-from uuid import uuid4
 
 from pr_reviewer.models import PRCandidate, ReviewerOutput
 from pr_reviewer.shell import run_command_async
@@ -11,7 +10,7 @@ from pr_reviewer.shell import run_command_async
 def _extract_codex_review_text(stdout: str, stderr: str) -> str:
     stdout_text = stdout.strip()
     if stdout_text:
-        return stdout_text
+        return _sanitize_codex_markdown(stdout_text)
 
     lines = stderr.splitlines()
     if not lines:
@@ -49,22 +48,18 @@ def _sanitize_codex_markdown(text: str) -> str:
 
 def _build_codex_review_command(
     pr: PRCandidate,
-    output_file: Path,
     *,
     model: str | None,
     reasoning_effort: str | None,
 ) -> list[str]:
     args = [
         "codex",
-        "exec",
         "review",
         "--base",
         f"origin/{pr.base_ref}",
-        "--output-last-message",
-        str(output_file),
     ]
     if model:
-        args.extend(["--model", model])
+        args.extend(["-c", f'model="{model}"'])
     if reasoning_effort:
         args.extend(["-c", f'model_reasoning_effort="{reasoning_effort}"'])
     return args
@@ -79,13 +74,11 @@ async def run_codex_review(
     reasoning_effort: str | None = None,
 ) -> ReviewerOutput:
     started = datetime.now(UTC)
-    output_file = (workspace / f".codex-review-last-message-{uuid4().hex}.md").resolve()
 
     try:
         code, stdout, stderr = await run_command_async(
             _build_codex_review_command(
                 pr,
-                output_file,
                 model=model,
                 reasoning_effort=reasoning_effort,
             ),
@@ -94,21 +87,13 @@ async def run_codex_review(
         )
         status = "ok" if code == 0 else "error"
         error = None if code == 0 else f"codex exited with status {code}: {stderr.strip()}"
-        markdown = (
-            output_file.read_text(encoding="utf-8").strip() if output_file.exists() else ""
-        )
-        if not markdown:
-            markdown = _extract_codex_review_text(stdout, stderr)
-        else:
-            markdown = _sanitize_codex_markdown(markdown)
+        markdown = _extract_codex_review_text(stdout, stderr)
     except TimeoutError:
         stdout = ""
         stderr = f"codex review timed out after {timeout_seconds}s"
         status = "error"
         error = stderr
         markdown = ""
-    finally:
-        output_file.unlink(missing_ok=True)
 
     ended = datetime.now(UTC)
     return ReviewerOutput(
