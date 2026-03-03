@@ -93,6 +93,37 @@ ForceOption = Annotated[
         help="Bypass skip checks when reviewing specific PR URL(s) via --pr-url.",
     ),
 ]
+UseSavedReviewOption = Annotated[
+    bool,
+    typer.Option(
+        "--use-saved-review",
+        help=(
+            "If a saved review markdown already exists, reuse it and continue with posting/"
+            "submission instead of generating a new review."
+        ),
+    ),
+]
+IgnoreSavedReviewOption = Annotated[
+    bool,
+    typer.Option(
+        "--ignore-saved-review",
+        help="Bypass the saved-review dedupe check for targeted PR URL(s).",
+    ),
+]
+IgnoreExistingCommentOption = Annotated[
+    bool,
+    typer.Option(
+        "--ignore-existing-comment",
+        help="Bypass the existing-issue-comment check for targeted PR URL(s).",
+    ),
+]
+IgnoreHeadShaOption = Annotated[
+    bool,
+    typer.Option(
+        "--ignore-head-sha",
+        help="Bypass the head-SHA dedupe check for targeted PR URL(s).",
+    ),
+]
 PrUrlOption = Annotated[
     list[str] | None,
     typer.Option(
@@ -196,11 +227,47 @@ def _load_runtime(
     return config, store
 
 
-def _target_pr_urls_for_run_once(pr_url: list[str] | None, force: bool) -> list[str]:
+def _target_pr_urls_for_run_once(
+    pr_url: list[str] | None,
+    *,
+    force: bool,
+    use_saved_review: bool,
+    ignore_saved_review: bool,
+    ignore_existing_comment: bool,
+    ignore_head_sha: bool,
+) -> list[str]:
     deduped_urls = list(dict.fromkeys(pr_url or []))
     if force and not deduped_urls:
         raise typer.BadParameter("--force requires at least one --pr-url value.")
+    if use_saved_review and not deduped_urls:
+        raise typer.BadParameter("--use-saved-review requires at least one --pr-url value.")
+    if ignore_saved_review and not deduped_urls:
+        raise typer.BadParameter("--ignore-saved-review requires at least one --pr-url value.")
+    if ignore_existing_comment and not deduped_urls:
+        raise typer.BadParameter("--ignore-existing-comment requires at least one --pr-url value.")
+    if ignore_head_sha and not deduped_urls:
+        raise typer.BadParameter("--ignore-head-sha requires at least one --pr-url value.")
+    if use_saved_review and force:
+        raise typer.BadParameter("--use-saved-review cannot be combined with --force.")
+    if use_saved_review and ignore_saved_review:
+        raise typer.BadParameter(
+            "--use-saved-review cannot be combined with --ignore-saved-review."
+        )
     return deduped_urls
+
+
+def _resolve_skip_overrides(
+    *,
+    force: bool,
+    ignore_saved_review: bool,
+    ignore_existing_comment: bool,
+    ignore_head_sha: bool,
+) -> tuple[bool, bool, bool]:
+    return (
+        force or ignore_saved_review,
+        force or ignore_existing_comment,
+        force or ignore_head_sha,
+    )
 
 
 @app.command("check")
@@ -272,9 +339,30 @@ def run_once_command(
     auto_post_review: AutoPostReviewOption = None,
     force: ForceOption = False,
     pr_url: PrUrlOption = None,
+    use_saved_review: UseSavedReviewOption = False,
+    ignore_saved_review: IgnoreSavedReviewOption = False,
+    ignore_existing_comment: IgnoreExistingCommentOption = False,
+    ignore_head_sha: IgnoreHeadShaOption = False,
 ) -> None:
     """Run one polling cycle."""
-    target_pr_urls = _target_pr_urls_for_run_once(pr_url, force)
+    target_pr_urls = _target_pr_urls_for_run_once(
+        pr_url,
+        force=force,
+        use_saved_review=use_saved_review,
+        ignore_saved_review=ignore_saved_review,
+        ignore_existing_comment=ignore_existing_comment,
+        ignore_head_sha=ignore_head_sha,
+    )
+    (
+        resolved_ignore_saved_review,
+        resolved_ignore_existing_comment,
+        resolved_ignore_head_sha,
+    ) = _resolve_skip_overrides(
+        force=force,
+        ignore_saved_review=ignore_saved_review,
+        ignore_existing_comment=ignore_existing_comment,
+        ignore_head_sha=ignore_head_sha,
+    )
     cfg, store = _load_runtime(
         config,
         enabled_reviewer,
@@ -302,9 +390,10 @@ def run_once_command(
                         store,
                         workspace_mgr,
                         candidate,
-                        ignore_saved_review=force,
-                        ignore_existing_comment=force,
-                        ignore_head_sha=force,
+                        use_saved_review=use_saved_review,
+                        ignore_saved_review=resolved_ignore_saved_review,
+                        ignore_existing_comment=resolved_ignore_existing_comment,
+                        ignore_head_sha=resolved_ignore_head_sha,
                     )
                     if changed:
                         processed += 1
@@ -350,4 +439,3 @@ def start_command(
         raise typer.Exit(code=1) from exc
     finally:
         store.release_lock()
-

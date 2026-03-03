@@ -80,6 +80,9 @@ uv run pr-reviewer run-once --codex-model gpt-5.3-codex --codex-reasoning-effort
 uv run pr-reviewer run-once --claude-model claude-sonnet-4-5 --claude-reasoning-effort medium
 uv run pr-reviewer run-once --pr-url https://github.com/<org>/<repo>/pull/<number> --auto-post-review
 uv run pr-reviewer run-once --pr-url https://github.com/<org>/<repo>/pull/<number> --force
+uv run pr-reviewer run-once --pr-url https://github.com/<org>/<repo>/pull/<number> --ignore-existing-comment
+uv run pr-reviewer run-once --pr-url https://github.com/<org>/<repo>/pull/<number> --ignore-head-sha
+uv run pr-reviewer run-once --pr-url https://github.com/<org>/<repo>/pull/<number> --use-saved-review --auto-post-review
 uv run pr-reviewer run-once --no-auto-post-review
 ```
 
@@ -127,6 +130,8 @@ uv run pr-reviewer run-once --pr-url https://github.com/<org>/<repo>/pull/<numbe
 - Optional formal review submission when `auto_submit_review_decision = true`
 - `run-once --pr-url ...` reviews only specific PR URL(s)
 - `run-once --pr-url ... --force` bypasses skip checks (saved review + existing comment + head SHA)
+- `run-once --pr-url ... --ignore-saved-review|--ignore-existing-comment|--ignore-head-sha` bypasses individual checks
+- `run-once --pr-url ... --use-saved-review` reuses existing `pr-<number>.md` and continues to posting/submission without regenerating
 
 ## Lint and test
 

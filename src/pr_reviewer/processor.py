@@ -88,6 +88,48 @@ def _existing_saved_review_path(
     return None
 
 
+def _publish_and_persist(
+    config: AppConfig,
+    client: GitHubClient,
+    store: StateStore,
+    pr: PRCandidate,
+    output_path: Path,
+    review_text_for_decision: str,
+    status_when_not_posted: str,
+) -> None:
+    posted_at = None
+    status = status_when_not_posted
+    if config.auto_submit_review_decision:
+        decision = infer_review_decision(review_text_for_decision)
+        info(f"{pr.key}: submitting PR review decision={decision}")
+        client.submit_pr_review(pr, str(output_path), decision)
+        posted_at = ProcessedState.now_iso()
+        status = "approved" if decision == "approve" else "changes_requested"
+        info(f"{pr.key}: submitted PR review ({status})")
+    elif config.auto_post_review:
+        info(f"{pr.key}: posting review comment to GitHub")
+        client.post_pr_comment(pr, str(output_path))
+        posted_at = ProcessedState.now_iso()
+        status = "posted"
+        info(f"Posted review comment for {pr.key}")
+    else:
+        info(
+            f"{pr.key}: auto_post_review and auto_submit_review_decision are disabled; "
+            "not posting to GitHub"
+        )
+
+    store.set(
+        pr.key,
+        ProcessedState(
+            last_reviewed_head_sha=pr.head_sha,
+            last_output_file=str(output_path.resolve()),
+            last_status=status,
+            last_posted_at=posted_at,
+        ),
+    )
+    store.save()
+
+
 async def process_candidate(
     config: AppConfig,
     client: GitHubClient,
@@ -95,18 +137,31 @@ async def process_candidate(
     workspace_mgr: PRWorkspace,
     pr: PRCandidate,
     *,
+    use_saved_review: bool = False,
     ignore_saved_review: bool = False,
     ignore_existing_comment: bool = False,
     ignore_head_sha: bool = False,
 ) -> bool:
     info(f"Processing {pr.key}: {pr.title}")
     previous = store.get(pr.key)
+    saved_review_path = _existing_saved_review_path(Path(config.output_dir), pr, previous)
 
-    if ignore_saved_review:
-        info(f"{pr.key}: force mode enabled, bypassing saved review dedupe")
-    else:
-        saved_review_path = _existing_saved_review_path(Path(config.output_dir), pr, previous)
-        if saved_review_path is not None:
+    if use_saved_review and ignore_saved_review:
+        raise ValueError("use_saved_review and ignore_saved_review cannot be enabled together")
+
+    if use_saved_review:
+        if saved_review_path is None:
+            info(f"Skipping {pr.key}: use_saved_review requested but no saved review exists")
+            previous.last_status = "skipped_missing_saved_review"
+            store.set(pr.key, previous)
+            store.save()
+            return False
+        info(f"{pr.key}: using saved review file ({saved_review_path})")
+
+    if not use_saved_review:
+        if ignore_saved_review:
+            info(f"{pr.key}: force mode enabled, bypassing saved review dedupe")
+        elif saved_review_path is not None:
             info(f"Skipping {pr.key}: saved review already exists ({saved_review_path})")
             previous.last_status = "skipped_existing_saved_review"
             store.set(pr.key, previous)
@@ -125,11 +180,27 @@ async def process_candidate(
             return False
 
     info(f"{pr.key}: checking previous processed head SHA")
-    if ignore_head_sha:
+    if use_saved_review:
+        info(f"{pr.key}: use_saved_review enabled, bypassing head SHA dedupe")
+    elif ignore_head_sha:
         info(f"{pr.key}: force mode enabled, bypassing head SHA dedupe")
     elif previous.last_reviewed_head_sha and previous.last_reviewed_head_sha == pr.head_sha:
         info(f"Skipping {pr.key}: head SHA unchanged ({pr.head_sha[:12]})")
         return False
+
+    if use_saved_review and saved_review_path is not None:
+        review_text_for_decision = saved_review_path.read_text(encoding="utf-8")
+        _publish_and_persist(
+            config,
+            client,
+            store,
+            pr,
+            saved_review_path,
+            review_text_for_decision,
+            status_when_not_posted="reused_saved_review",
+        )
+        info(f"{pr.key}: processing complete (reused saved review)")
+        return True
 
     workdir: Path | None = None
     try:
@@ -236,37 +307,15 @@ async def process_candidate(
         info(f"Final review ready: {output_path.resolve()}")
         info(f"Raw reviewer outputs: {raw_output_path.resolve()}")
 
-        posted_at = None
-        status = "generated"
-        if config.auto_submit_review_decision:
-            decision = infer_review_decision(final_review)
-            info(f"{pr.key}: submitting PR review decision={decision}")
-            client.submit_pr_review(pr, str(output_path), decision)
-            posted_at = ProcessedState.now_iso()
-            status = "approved" if decision == "approve" else "changes_requested"
-            info(f"{pr.key}: submitted PR review ({status})")
-        elif config.auto_post_review:
-            info(f"{pr.key}: posting review comment to GitHub")
-            client.post_pr_comment(pr, str(output_path))
-            posted_at = ProcessedState.now_iso()
-            status = "posted"
-            info(f"Posted review comment for {pr.key}")
-        else:
-            info(
-                f"{pr.key}: auto_post_review and auto_submit_review_decision are disabled; "
-                "not posting to GitHub"
-            )
-
-        store.set(
-            pr.key,
-            ProcessedState(
-                last_reviewed_head_sha=pr.head_sha,
-                last_output_file=str(output_path.resolve()),
-                last_status=status,
-                last_posted_at=posted_at,
-            ),
+        _publish_and_persist(
+            config,
+            client,
+            store,
+            pr,
+            output_path,
+            final_review,
+            status_when_not_posted="generated",
         )
-        store.save()
         info(f"{pr.key}: processing complete")
         return True
     except Exception as exc:  # noqa: BLE001

@@ -276,3 +276,123 @@ def test_process_candidate_skips_when_saved_review_exists(monkeypatch, tmp_path)
     assert changed is False
     assert store.saved is True
     assert store.state.last_status == "skipped_existing_saved_review"
+
+
+def test_process_candidate_use_saved_review_posts(monkeypatch, tmp_path) -> None:
+    class DummyStore:
+        def __init__(self) -> None:
+            from pr_reviewer.models import ProcessedState
+
+            self.state = ProcessedState(last_reviewed_head_sha="deadbeef")
+            self.saved = False
+
+        def get(self, _key):  # noqa: ANN001
+            return self.state
+
+        def set(self, _key, state):  # noqa: ANN001
+            self.state = state
+
+        def save(self):
+            self.saved = True
+
+    class DummyWorkspace:
+        def prepare(self, _pr):  # noqa: ANN001
+            raise AssertionError("workspace should not be prepared when using saved review")
+
+        def cleanup(self, _workdir):  # noqa: ANN001
+            return None
+
+    pr = _sample_pr()
+    review_path = tmp_path / pr.owner / pr.repo / f"pr-{pr.number}.md"
+    review_path.parent.mkdir(parents=True, exist_ok=True)
+    review_path.write_text("### Findings\n- [P3] Existing review.\n", encoding="utf-8")
+
+    posted: list[str] = []
+    client = GitHubClient(viewer_login="Inkvi")
+    monkeypatch.setattr(GitHubClient, "has_issue_comment_by_viewer", lambda _self, _pr: False)
+    monkeypatch.setattr(
+        GitHubClient,
+        "post_pr_comment",
+        lambda _self, _pr, body_file: posted.append(body_file),
+    )
+    monkeypatch.setattr(
+        "pr_reviewer.processor.run_codex_review",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("reviewer should not run when using saved review")
+        ),
+    )
+
+    cfg = AppConfig(
+        github_org="polymerdao",
+        enabled_reviewers=["codex"],
+        output_dir=str(tmp_path),
+        auto_post_review=True,
+    )
+    store = DummyStore()
+    changed = asyncio.run(
+        process_candidate(
+            cfg,
+            client,
+            store,
+            DummyWorkspace(),
+            pr,
+            use_saved_review=True,
+        )
+    )
+
+    assert changed is True
+    assert posted == [str(review_path)]
+    assert store.saved is True
+    assert store.state.last_status == "posted"
+    assert store.state.last_output_file == str(review_path.resolve())
+
+
+def test_process_candidate_use_saved_review_skips_when_missing(monkeypatch, tmp_path) -> None:
+    class DummyStore:
+        def __init__(self) -> None:
+            from pr_reviewer.models import ProcessedState
+
+            self.state = ProcessedState()
+            self.saved = False
+
+        def get(self, _key):  # noqa: ANN001
+            return self.state
+
+        def set(self, _key, state):  # noqa: ANN001
+            self.state = state
+
+        def save(self):
+            self.saved = True
+
+    class DummyWorkspace:
+        def prepare(self, _pr):  # noqa: ANN001
+            raise AssertionError("workspace should not be prepared when saved review is missing")
+
+        def cleanup(self, _workdir):  # noqa: ANN001
+            return None
+
+    client = GitHubClient(viewer_login="Inkvi")
+    monkeypatch.setattr(
+        GitHubClient,
+        "has_issue_comment_by_viewer",
+        lambda _self, _pr: (_ for _ in ()).throw(
+            AssertionError("issue comment check should not run when saved review is missing")
+        ),
+    )
+
+    cfg = AppConfig(github_org="polymerdao", enabled_reviewers=["codex"], output_dir=str(tmp_path))
+    store = DummyStore()
+    changed = asyncio.run(
+        process_candidate(
+            cfg,
+            client,
+            store,
+            DummyWorkspace(),
+            _sample_pr(),
+            use_saved_review=True,
+        )
+    )
+
+    assert changed is False
+    assert store.saved is True
+    assert store.state.last_status == "skipped_missing_saved_review"
