@@ -113,6 +113,7 @@ uv run pr-reviewer force --pr-url https://github.com/<org>/<repo>/pull/<number>
 - Codex CLI backend uses `codex review` and, when supported by CLI version, can parse JSON event output
 - Skips draft PRs and (by default) PRs authored by you
 - Skips PRs when you already posted an issue comment
+- Skips PRs when a saved review markdown already exists for that PR
 - Runs Claude and Codex review in parallel
 - Reconciles with Claude and writes:
   `reviews/<org>/<repo>/pr-<number>.md`
@@ -121,7 +122,7 @@ uv run pr-reviewer force --pr-url https://github.com/<org>/<repo>/pull/<number>
 - Prints file path when ready
 - Optional comment posting when `auto_post_review = true`
 - Optional formal review submission when `auto_submit_review_decision = true`
-- `force` command bypasses reviewer assignment discovery and skip checks (existing comment + head SHA)
+- `force` command bypasses reviewer assignment discovery and skip checks (saved review + existing comment + head SHA)
 
 ## Lint and test
 

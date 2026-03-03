@@ -309,6 +309,7 @@ def force_command(
                     store,
                     workspace_mgr,
                     candidate,
+                    ignore_saved_review=True,
                     ignore_existing_comment=True,
                     ignore_head_sha=True,
                 )

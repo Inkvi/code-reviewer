@@ -67,6 +67,27 @@ def _start_codex_review_task(config: AppConfig, pr: PRCandidate, workdir: Path) 
     )
 
 
+def _existing_saved_review_path(
+    output_root: Path,
+    pr: PRCandidate,
+    previous: ProcessedState,
+) -> Path | None:
+    candidates: list[Path] = []
+    if previous.last_output_file:
+        candidates.append(Path(previous.last_output_file))
+    candidates.append(output_root / pr.owner / pr.repo / f"pr-{pr.number}.md")
+
+    seen: set[str] = set()
+    for candidate in candidates:
+        key = str(candidate)
+        if key in seen:
+            continue
+        seen.add(key)
+        if candidate.exists():
+            return candidate
+    return None
+
+
 async def process_candidate(
     config: AppConfig,
     client: GitHubClient,
@@ -74,24 +95,36 @@ async def process_candidate(
     workspace_mgr: PRWorkspace,
     pr: PRCandidate,
     *,
+    ignore_saved_review: bool = False,
     ignore_existing_comment: bool = False,
     ignore_head_sha: bool = False,
 ) -> bool:
     info(f"Processing {pr.key}: {pr.title}")
+    previous = store.get(pr.key)
+
+    if ignore_saved_review:
+        info(f"{pr.key}: force mode enabled, bypassing saved review dedupe")
+    else:
+        saved_review_path = _existing_saved_review_path(Path(config.output_dir), pr, previous)
+        if saved_review_path is not None:
+            info(f"Skipping {pr.key}: saved review already exists ({saved_review_path})")
+            previous.last_status = "skipped_existing_saved_review"
+            store.set(pr.key, previous)
+            store.save()
+            return False
+
     if ignore_existing_comment:
         info(f"{pr.key}: force mode enabled, bypassing existing issue comment check")
     else:
         info(f"{pr.key}: checking existing issue comments")
         if client.has_issue_comment_by_viewer(pr):
             info(f"Skipping {pr.key}: viewer already commented on PR thread")
-            state = store.get(pr.key)
-            state.last_status = "skipped_existing_comment"
-            store.set(pr.key, state)
+            previous.last_status = "skipped_existing_comment"
+            store.set(pr.key, previous)
             store.save()
             return False
 
     info(f"{pr.key}: checking previous processed head SHA")
-    previous = store.get(pr.key)
     if ignore_head_sha:
         info(f"{pr.key}: force mode enabled, bypassing head SHA dedupe")
     elif previous.last_reviewed_head_sha and previous.last_reviewed_head_sha == pr.head_sha:

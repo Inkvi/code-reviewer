@@ -208,9 +208,71 @@ def test_process_candidate_force_bypasses_existing_comment_check(monkeypatch, tm
             DummyStore(),
             DummyWorkspace(),
             _sample_pr(),
+            ignore_saved_review=True,
             ignore_existing_comment=True,
             ignore_head_sha=True,
         )
     )
 
     assert changed is True
+
+
+def test_process_candidate_skips_when_saved_review_exists(monkeypatch, tmp_path) -> None:
+    class DummyStore:
+        def __init__(self) -> None:
+            from pr_reviewer.models import ProcessedState
+
+            self.state = ProcessedState()
+            self.saved = False
+
+        def get(self, _key):  # noqa: ANN001
+            return self.state
+
+        def set(self, _key, state):  # noqa: ANN001
+            self.state = state
+
+        def save(self):
+            self.saved = True
+
+    class DummyWorkspace:
+        def prepare(self, _pr):  # noqa: ANN001
+            raise AssertionError("workspace should not be prepared when saved review exists")
+
+        def cleanup(self, _workdir):  # noqa: ANN001
+            return None
+
+    pr = _sample_pr()
+    review_path = tmp_path / pr.owner / pr.repo / f"pr-{pr.number}.md"
+    review_path.parent.mkdir(parents=True, exist_ok=True)
+    review_path.write_text("existing review", encoding="utf-8")
+
+    client = GitHubClient(viewer_login="Inkvi")
+    monkeypatch.setattr(
+        GitHubClient,
+        "has_issue_comment_by_viewer",
+        lambda _self, _pr: (_ for _ in ()).throw(
+            AssertionError("issue comment check should be skipped when saved review exists")
+        ),
+    )
+    monkeypatch.setattr(
+        "pr_reviewer.processor.run_codex_review",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("reviewer should not run when saved review exists")
+        ),
+    )
+
+    cfg = AppConfig(github_org="polymerdao", enabled_reviewers=["codex"], output_dir=str(tmp_path))
+    store = DummyStore()
+    changed = asyncio.run(
+        process_candidate(
+            cfg,
+            client,
+            store,
+            DummyWorkspace(),
+            pr,
+        )
+    )
+
+    assert changed is False
+    assert store.saved is True
+    assert store.state.last_status == "skipped_existing_saved_review"
