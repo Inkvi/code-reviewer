@@ -17,13 +17,16 @@ def test_write_review_markdown(tmp_path: Path) -> None:
         head_sha="deadbeef",
         updated_at="2026-01-01T00:00:00Z",
     )
-    path = write_review_markdown(tmp_path, pr, "final")
+    final_review = "### Findings\n- [P3] note.\n\n### Test Gaps\n- None noted."
+    path = write_review_markdown(tmp_path, pr, final_review)
 
     assert path.exists()
     text = path.read_text(encoding="utf-8")
-    assert "Automated Review" in text
-    assert "final" in text
-    assert "Codex Raw Output" not in text
+    assert text == f"{final_review}\n"
+    assert "Automated Review" not in text
+    assert "URL:" not in text
+    assert "Base:" not in text
+    assert "Head:" not in text
     assert "pr-42.md" in str(path)
 
 

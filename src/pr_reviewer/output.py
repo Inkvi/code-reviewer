@@ -14,15 +14,7 @@ def write_review_markdown(
     target_dir.mkdir(parents=True, exist_ok=True)
     file_path = target_dir / f"pr-{pr.number}.md"
 
-    content = f"""### Automated Review: {pr.owner}/{pr.repo}#{pr.number}
-
-- URL: {pr.url}
-- Title: {pr.title}
-- Base: `{pr.base_ref}`
-- Head: `{pr.head_sha[:12]}`
-
-{final_review.strip()}
-"""
+    content = f"{final_review.strip()}\n"
 
     file_path.write_text(content, encoding="utf-8")
     return file_path
