@@ -2,9 +2,11 @@ import pytest
 import typer
 
 from pr_reviewer.cli import (
+    _apply_bool_override,
     _apply_codex_backend_override,
     _apply_enabled_reviewer_override,
     _apply_field_override,
+    _target_pr_urls_for_run_once,
 )
 from pr_reviewer.config import AppConfig
 
@@ -73,3 +75,49 @@ def test_apply_field_override_invalid_reasoning_raises_bad_parameter() -> None:
             "max",
             "--codex-reasoning-effort",
         )
+
+
+def test_apply_bool_override_none_keeps_config() -> None:
+    cfg = AppConfig(github_org="polymerdao", auto_post_review=False)
+
+    out = _apply_bool_override(
+        cfg,
+        "auto_post_review",
+        None,
+        "--auto-post-review/--no-auto-post-review",
+    )
+
+    assert out.auto_post_review is False
+
+
+def test_apply_bool_override_true() -> None:
+    cfg = AppConfig(github_org="polymerdao", auto_post_review=False)
+
+    out = _apply_bool_override(
+        cfg,
+        "auto_post_review",
+        True,
+        "--auto-post-review/--no-auto-post-review",
+    )
+
+    assert out.auto_post_review is True
+
+
+def test_target_pr_urls_for_run_once_force_requires_url() -> None:
+    with pytest.raises(typer.BadParameter):
+        _target_pr_urls_for_run_once(None, True)
+
+
+def test_target_pr_urls_for_run_once_dedupes_values() -> None:
+    urls = [
+        "https://github.com/polymerdao/obul/pull/1",
+        "https://github.com/polymerdao/obul/pull/1",
+        "https://github.com/polymerdao/obul/pull/2",
+    ]
+
+    out = _target_pr_urls_for_run_once(urls, False)
+
+    assert out == [
+        "https://github.com/polymerdao/obul/pull/1",
+        "https://github.com/polymerdao/obul/pull/2",
+    ]

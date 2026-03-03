@@ -79,11 +79,25 @@ CodexReasoningEffortOption = Annotated[
         help="Override codex_reasoning_effort from config. Allowed: low, medium, high.",
     ),
 ]
+AutoPostReviewOption = Annotated[
+    bool | None,
+    typer.Option(
+        "--auto-post-review/--no-auto-post-review",
+        help="Override auto_post_review from config.",
+    ),
+]
+ForceOption = Annotated[
+    bool,
+    typer.Option(
+        "--force",
+        help="Bypass skip checks when reviewing specific PR URL(s) via --pr-url.",
+    ),
+]
 PrUrlOption = Annotated[
-    list[str],
+    list[str] | None,
     typer.Option(
         "--pr-url",
-        help="GitHub pull request URL to review in force mode. Repeat for multiple PRs.",
+        help="GitHub pull request URL to review directly. Repeat for multiple PRs.",
     ),
 ]
 
@@ -125,6 +139,24 @@ def _apply_field_override(
         ) from exc
 
 
+def _apply_bool_override(
+    config: AppConfig,
+    field_name: str,
+    value: bool | None,
+    flag_name: str,
+) -> AppConfig:
+    if value is None:
+        return config
+    payload = config.model_dump()
+    payload[field_name] = value
+    try:
+        return AppConfig.model_validate(payload)
+    except ValidationError as exc:
+        raise typer.BadParameter(
+            f"Invalid {flag_name} value: {exc.errors(include_url=False)}"
+        ) from exc
+
+
 def _load_runtime(
     config_path: Path,
     enabled_reviewer: list[str] | None,
@@ -133,6 +165,7 @@ def _load_runtime(
     claude_reasoning_effort: str | None,
     codex_model: str | None,
     codex_reasoning_effort: str | None,
+    auto_post_review: bool | None,
 ) -> tuple[AppConfig, StateStore]:
     config = load_config(config_path)
     config = _apply_enabled_reviewer_override(config, enabled_reviewer)
@@ -151,10 +184,23 @@ def _load_runtime(
         codex_reasoning_effort,
         "--codex-reasoning-effort",
     )
+    config = _apply_bool_override(
+        config,
+        "auto_post_review",
+        auto_post_review,
+        "--auto-post-review/--no-auto-post-review",
+    )
     store = StateStore(Path(config.state_file))
     store.acquire_lock()
     store.load()
     return config, store
+
+
+def _target_pr_urls_for_run_once(pr_url: list[str] | None, force: bool) -> list[str]:
+    deduped_urls = list(dict.fromkeys(pr_url or []))
+    if force and not deduped_urls:
+        raise typer.BadParameter("--force requires at least one --pr-url value.")
+    return deduped_urls
 
 
 @app.command("check")
@@ -166,6 +212,7 @@ def check_command(
     claude_reasoning_effort: ClaudeReasoningEffortOption = None,
     codex_model: CodexModelOption = None,
     codex_reasoning_effort: CodexReasoningEffortOption = None,
+    auto_post_review: AutoPostReviewOption = None,
 ) -> None:
     """Run preflight checks and print runtime summary."""
     cfg = load_config(config)
@@ -184,6 +231,12 @@ def check_command(
         "codex_reasoning_effort",
         codex_reasoning_effort,
         "--codex-reasoning-effort",
+    )
+    cfg = _apply_bool_override(
+        cfg,
+        "auto_post_review",
+        auto_post_review,
+        "--auto-post-review/--no-auto-post-review",
     )
     preflight = run_preflight(cfg)
 
@@ -216,8 +269,12 @@ def run_once_command(
     claude_reasoning_effort: ClaudeReasoningEffortOption = None,
     codex_model: CodexModelOption = None,
     codex_reasoning_effort: CodexReasoningEffortOption = None,
+    auto_post_review: AutoPostReviewOption = None,
+    force: ForceOption = False,
+    pr_url: PrUrlOption = None,
 ) -> None:
     """Run one polling cycle."""
+    target_pr_urls = _target_pr_urls_for_run_once(pr_url, force)
     cfg, store = _load_runtime(
         config,
         enabled_reviewer,
@@ -226,10 +283,36 @@ def run_once_command(
         claude_reasoning_effort,
         codex_model,
         codex_reasoning_effort,
+        auto_post_review,
     )
     try:
         preflight = run_preflight(cfg)
-        processed = asyncio.run(run_cycle(cfg, preflight, store))
+        if target_pr_urls:
+            client = GitHubClient(viewer_login=preflight.viewer_login)
+            workspace_mgr = PRWorkspace(Path(cfg.clone_root))
+
+            async def _run_targeted() -> int:
+                processed = 0
+                for index, url in enumerate(target_pr_urls, start=1):
+                    info(f"PR {index}/{len(target_pr_urls)}: {url}")
+                    candidate = client.get_pr_candidate(url)
+                    changed = await process_candidate(
+                        cfg,
+                        client,
+                        store,
+                        workspace_mgr,
+                        candidate,
+                        ignore_saved_review=force,
+                        ignore_existing_comment=force,
+                        ignore_head_sha=force,
+                    )
+                    if changed:
+                        processed += 1
+                return processed
+
+            processed = asyncio.run(_run_targeted())
+        else:
+            processed = asyncio.run(run_cycle(cfg, preflight, store))
         info(f"run-once finished. Processed {processed} PR(s)")
     finally:
         store.release_lock()
@@ -244,6 +327,7 @@ def start_command(
     claude_reasoning_effort: ClaudeReasoningEffortOption = None,
     codex_model: CodexModelOption = None,
     codex_reasoning_effort: CodexReasoningEffortOption = None,
+    auto_post_review: AutoPostReviewOption = None,
 ) -> None:
     """Run daemon forever."""
     cfg, store = _load_runtime(
@@ -254,6 +338,7 @@ def start_command(
         claude_reasoning_effort,
         codex_model,
         codex_reasoning_effort,
+        auto_post_review,
     )
     try:
         preflight = run_preflight(cfg)
@@ -266,58 +351,3 @@ def start_command(
     finally:
         store.release_lock()
 
-
-@app.command("force")
-def force_command(
-    pr_url: PrUrlOption,
-    config: ConfigOption = Path("config.toml"),
-    enabled_reviewer: EnabledReviewerOption = None,
-    codex_backend: CodexBackendOption = None,
-    claude_model: ClaudeModelOption = None,
-    claude_reasoning_effort: ClaudeReasoningEffortOption = None,
-    codex_model: CodexModelOption = None,
-    codex_reasoning_effort: CodexReasoningEffortOption = None,
-) -> None:
-    """Force review specific PR URL(s), bypassing reviewer-assignment and skip checks."""
-    if not pr_url:
-        raise typer.BadParameter("Provide at least one --pr-url value.")
-
-    cfg, store = _load_runtime(
-        config,
-        enabled_reviewer,
-        codex_backend,
-        claude_model,
-        claude_reasoning_effort,
-        codex_model,
-        codex_reasoning_effort,
-    )
-    try:
-        preflight = run_preflight(cfg)
-        client = GitHubClient(viewer_login=preflight.viewer_login)
-        workspace_mgr = PRWorkspace(Path(cfg.clone_root))
-
-        deduped_urls = list(dict.fromkeys(pr_url))
-
-        async def _run_force() -> int:
-            processed = 0
-            for index, url in enumerate(deduped_urls, start=1):
-                info(f"Force PR {index}/{len(deduped_urls)}: {url}")
-                candidate = client.get_pr_candidate(url)
-                changed = await process_candidate(
-                    cfg,
-                    client,
-                    store,
-                    workspace_mgr,
-                    candidate,
-                    ignore_saved_review=True,
-                    ignore_existing_comment=True,
-                    ignore_head_sha=True,
-                )
-                if changed:
-                    processed += 1
-            return processed
-
-        processed = asyncio.run(_run_force())
-        info(f"force finished. Processed {processed} PR(s)")
-    finally:
-        store.release_lock()

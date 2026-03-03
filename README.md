@@ -78,6 +78,9 @@ uv run pr-reviewer run-once --enabled-reviewer codex --codex-backend cli
 uv run pr-reviewer run-once --enabled-reviewer codex --codex-backend agents_sdk
 uv run pr-reviewer run-once --codex-model gpt-5.3-codex --codex-reasoning-effort high
 uv run pr-reviewer run-once --claude-model claude-sonnet-4-5 --claude-reasoning-effort medium
+uv run pr-reviewer run-once --pr-url https://github.com/<org>/<repo>/pull/<number> --auto-post-review
+uv run pr-reviewer run-once --pr-url https://github.com/<org>/<repo>/pull/<number> --force
+uv run pr-reviewer run-once --no-auto-post-review
 ```
 
 Optional auto submission:
@@ -101,7 +104,7 @@ include_reviewer_stderr = true
 uv run pr-reviewer check
 uv run pr-reviewer run-once
 uv run pr-reviewer start
-uv run pr-reviewer force --pr-url https://github.com/<org>/<repo>/pull/<number>
+uv run pr-reviewer run-once --pr-url https://github.com/<org>/<repo>/pull/<number>
 ```
 
 ## Behavior
@@ -122,7 +125,8 @@ uv run pr-reviewer force --pr-url https://github.com/<org>/<repo>/pull/<number>
 - Prints file path when ready
 - Optional comment posting when `auto_post_review = true`
 - Optional formal review submission when `auto_submit_review_decision = true`
-- `force` command bypasses reviewer assignment discovery and skip checks (saved review + existing comment + head SHA)
+- `run-once --pr-url ...` reviews only specific PR URL(s)
+- `run-once --pr-url ... --force` bypasses skip checks (saved review + existing comment + head SHA)
 
 ## Lint and test
 
