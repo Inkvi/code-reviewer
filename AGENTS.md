@@ -12,8 +12,9 @@ This repository uses a `src/` layout.
 - `uv sync --extra dev`: install runtime + dev dependencies.
 - `uv run pr-reviewer check`: run preflight checks and print runtime config summary.
 - `uv run pr-reviewer run-once`: execute one polling/review cycle.
+- `uv run pr-reviewer run-once --pr-url <PR_URL>`: review specific PR URL(s) directly.
+- `uv run pr-reviewer run-once --pr-url <PR_URL> --force`: bypass normal skip checks for specific PR URL(s).
 - `uv run pr-reviewer start`: run the daemon continuously.
-- `uv run pr-reviewer force --pr-url <PR_URL>`: force-review specific PR(s), bypassing normal skip checks.
 - `uv run ruff check .`: lint.
 - `uv run ruff format .`: format code.
 - `uv run pytest`: run tests (`-q` is configured in `pyproject.toml`).
