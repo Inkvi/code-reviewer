@@ -65,7 +65,7 @@ async def run_claude_review(
 ) -> ReviewerOutput:
     started = datetime.now(UTC)
     try:
-        prompt = f"/review {pr.url}\n\nReview this PR and produce a concise markdown review."
+        prompt = f"/review {pr.url}"
         markdown = await _run_claude_prompt(
             prompt,
             workspace,
