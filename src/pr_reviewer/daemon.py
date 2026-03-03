@@ -13,7 +13,13 @@ from pr_reviewer.state import StateStore
 from pr_reviewer.workspace import PRWorkspace
 
 
-async def run_cycle(config: AppConfig, preflight: PreflightResult, store: StateStore) -> int:
+async def run_cycle(
+    config: AppConfig,
+    preflight: PreflightResult,
+    store: StateStore,
+    *,
+    verbose: bool = True,
+) -> int:
     client = GitHubClient(viewer_login=preflight.viewer_login)
     workspace_mgr = PRWorkspace(Path(config.clone_root))
 
@@ -25,15 +31,25 @@ async def run_cycle(config: AppConfig, preflight: PreflightResult, store: StateS
         return 0
 
     if not candidates:
-        info("No candidate PRs found")
+        if verbose:
+            info("No candidate PRs found")
         return 0
 
-    info(f"Found {len(candidates)} candidate PR(s)")
+    if verbose:
+        info(f"Found {len(candidates)} candidate PR(s)")
 
     if config.max_parallel_prs == 1:
         for index, pr in enumerate(candidates, start=1):
-            info(f"PR {index}/{len(candidates)}: {pr.key}")
-            changed = await process_candidate(config, client, store, workspace_mgr, pr)
+            if verbose:
+                info(f"PR {index}/{len(candidates)}: {pr.key}")
+            changed = await process_candidate(
+                config,
+                client,
+                store,
+                workspace_mgr,
+                pr,
+                verbose=verbose,
+            )
             if changed:
                 processed += 1
         return processed
@@ -42,7 +58,14 @@ async def run_cycle(config: AppConfig, preflight: PreflightResult, store: StateS
 
     async def _bounded_process(pr: PRCandidate) -> bool:
         async with semaphore:
-            return await process_candidate(config, client, store, workspace_mgr, pr)
+            return await process_candidate(
+                config,
+                client,
+                store,
+                workspace_mgr,
+                pr,
+                verbose=verbose,
+            )
 
     tasks = [asyncio.create_task(_bounded_process(pr)) for pr in candidates]
     results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -59,7 +82,7 @@ async def start_daemon(config: AppConfig, preflight: PreflightResult, store: Sta
     info(f"Starting daemon with interval={config.poll_interval_seconds}s org={config.github_org}")
     while True:
         try:
-            processed = await run_cycle(config, preflight, store)
+            processed = await run_cycle(config, preflight, store, verbose=False)
             info(f"Cycle complete. Processed {processed} PR(s)")
         except Exception as exc:  # noqa: BLE001
             warn(f"Cycle failed: {exc}")

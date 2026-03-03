@@ -141,8 +141,13 @@ async def process_candidate(
     ignore_saved_review: bool = False,
     ignore_existing_comment: bool = False,
     ignore_head_sha: bool = False,
+    verbose: bool = True,
 ) -> bool:
-    info(f"Processing {pr.key}: {pr.title}")
+    def detail(message: str) -> None:
+        if verbose:
+            info(message)
+
+    detail(f"Processing {pr.key}: {pr.title}")
     previous = store.get(pr.key)
     saved_review_path = _existing_saved_review_path(Path(config.output_dir), pr, previous)
 
@@ -151,41 +156,41 @@ async def process_candidate(
 
     if use_saved_review:
         if saved_review_path is None:
-            info(f"Skipping {pr.key}: use_saved_review requested but no saved review exists")
+            detail(f"Skipping {pr.key}: use_saved_review requested but no saved review exists")
             previous.last_status = "skipped_missing_saved_review"
             store.set(pr.key, previous)
             store.save()
             return False
-        info(f"{pr.key}: using saved review file ({saved_review_path})")
+        detail(f"{pr.key}: using saved review file ({saved_review_path})")
 
     if not use_saved_review:
         if ignore_saved_review:
-            info(f"{pr.key}: force mode enabled, bypassing saved review dedupe")
+            detail(f"{pr.key}: force mode enabled, bypassing saved review dedupe")
         elif saved_review_path is not None:
-            info(f"Skipping {pr.key}: saved review already exists ({saved_review_path})")
+            detail(f"Skipping {pr.key}: saved review already exists ({saved_review_path})")
             previous.last_status = "skipped_existing_saved_review"
             store.set(pr.key, previous)
             store.save()
             return False
 
     if ignore_existing_comment:
-        info(f"{pr.key}: force mode enabled, bypassing existing issue comment check")
+        detail(f"{pr.key}: force mode enabled, bypassing existing issue comment check")
     else:
-        info(f"{pr.key}: checking existing issue comments")
+        detail(f"{pr.key}: checking existing issue comments")
         if client.has_issue_comment_by_viewer(pr):
-            info(f"Skipping {pr.key}: viewer already commented on PR thread")
+            detail(f"Skipping {pr.key}: viewer already commented on PR thread")
             previous.last_status = "skipped_existing_comment"
             store.set(pr.key, previous)
             store.save()
             return False
 
-    info(f"{pr.key}: checking previous processed head SHA")
+    detail(f"{pr.key}: checking previous processed head SHA")
     if use_saved_review:
-        info(f"{pr.key}: use_saved_review enabled, bypassing head SHA dedupe")
+        detail(f"{pr.key}: use_saved_review enabled, bypassing head SHA dedupe")
     elif ignore_head_sha:
-        info(f"{pr.key}: force mode enabled, bypassing head SHA dedupe")
+        detail(f"{pr.key}: force mode enabled, bypassing head SHA dedupe")
     elif previous.last_reviewed_head_sha and previous.last_reviewed_head_sha == pr.head_sha:
-        info(f"Skipping {pr.key}: head SHA unchanged ({pr.head_sha[:12]})")
+        detail(f"Skipping {pr.key}: head SHA unchanged ({pr.head_sha[:12]})")
         return False
 
     if use_saved_review and saved_review_path is not None:
