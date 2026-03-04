@@ -55,6 +55,12 @@ PR issue-thread comments to consider for additional context:
 
 {sources_text}
 
+Your primary job is validation, not aggregation. Treat all findings as suspects:
+- Reviewers can be wrong. Findings may be hallucinated, misread, or based on incorrect assumptions.
+- Overlapping findings across reviewers do not automatically mean they are correct.
+- For each finding, verify it is supported by actual evidence in the code context. Discard any finding you cannot confirm.
+- Only include findings you are confident are real issues.
+
 Strict output rules:
 - Keep total output under 220 words.
 - No tables, no long summary, no praise/filler.
