@@ -3,7 +3,7 @@ from __future__ import annotations
 import tomllib
 from pathlib import Path
 
-from pydantic import BaseModel, Field, ValidationError, field_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
 
 class AppConfig(BaseModel):
@@ -13,6 +13,9 @@ class AppConfig(BaseModel):
     enabled_reviewers: list[str] = Field(default_factory=lambda: ["claude", "codex"])
     claude_model: str | None = None
     claude_reasoning_effort: str | None = None
+    reconciler_backend: str = "claude"
+    reconciler_model: str | None = None
+    reconciler_reasoning_effort: str | None = None
     codex_backend: str = "cli"
     codex_model: str = Field(default="gpt-5.3-codex", min_length=1)
     codex_reasoning_effort: str | None = "low"
@@ -77,6 +80,14 @@ class AppConfig(BaseModel):
             raise ValueError("codex_backend must be one of: cli, agents_sdk")
         return normalized
 
+    @field_validator("reconciler_backend")
+    @classmethod
+    def validate_reconciler_backend(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in {"claude", "codex", "gemini"}:
+            raise ValueError("reconciler_backend must be one of: claude, codex, gemini")
+        return normalized
+
     @field_validator("claude_reasoning_effort")
     @classmethod
     def validate_claude_reasoning_effort(cls, value: str | None) -> str | None:
@@ -85,6 +96,16 @@ class AppConfig(BaseModel):
         normalized = value.strip().lower()
         if normalized not in {"low", "medium", "high", "max"}:
             raise ValueError("claude_reasoning_effort must be one of: low, medium, high, max")
+        return normalized
+
+    @field_validator("reconciler_reasoning_effort")
+    @classmethod
+    def validate_reconciler_reasoning_effort(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip().lower()
+        if normalized not in {"low", "medium", "high", "max"}:
+            raise ValueError("reconciler_reasoning_effort must be one of: low, medium, high, max")
         return normalized
 
     @field_validator("codex_reasoning_effort")
@@ -107,6 +128,16 @@ class AppConfig(BaseModel):
             raise ValueError("claude_model cannot be empty")
         return cleaned
 
+    @field_validator("reconciler_model")
+    @classmethod
+    def validate_reconciler_model(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("reconciler_model cannot be empty")
+        return cleaned
+
     @field_validator("gemini_model")
     @classmethod
     def validate_gemini_model(cls, value: str | None) -> str | None:
@@ -124,6 +155,15 @@ class AppConfig(BaseModel):
         if normalized not in {"rerequest_only", "rerequest_or_commit"}:
             raise ValueError("trigger_mode must be one of: rerequest_only, rerequest_or_commit")
         return normalized
+
+    @model_validator(mode="after")
+    def validate_reconciler_backend_settings(self) -> AppConfig:
+        if self.reconciler_backend == "codex" and self.reconciler_reasoning_effort == "max":
+            raise ValueError(
+                "reconciler_reasoning_effort must be one of: low, medium, high "
+                "when reconciler_backend=codex"
+            )
+        return self
 
 
 def load_config(path: Path) -> AppConfig:

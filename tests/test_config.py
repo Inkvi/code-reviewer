@@ -20,6 +20,9 @@ def test_load_config_success(tmp_path: Path) -> None:
     assert cfg.enabled_reviewers == ["claude", "codex"]
     assert cfg.claude_model is None
     assert cfg.claude_reasoning_effort is None
+    assert cfg.reconciler_backend == "claude"
+    assert cfg.reconciler_model is None
+    assert cfg.reconciler_reasoning_effort is None
     assert cfg.codex_backend == "cli"
     assert cfg.codex_model == "gpt-5.3-codex"
     assert cfg.codex_reasoning_effort == "low"
@@ -96,6 +99,18 @@ def test_load_config_rejects_invalid_codex_backend(tmp_path: Path) -> None:
         load_config(path)
 
 
+def test_load_config_rejects_invalid_reconciler_backend(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text(
+        'github_org = "polymerdao"\n'
+        'reconciler_backend = "invalid"\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError):
+        load_config(path)
+
+
 def test_load_config_rejects_invalid_claude_reasoning_effort(tmp_path: Path) -> None:
     path = tmp_path / "config.toml"
     path.write_text(
@@ -113,6 +128,31 @@ def test_load_config_rejects_invalid_codex_reasoning_effort(tmp_path: Path) -> N
     path.write_text(
         'github_org = "polymerdao"\n'
         'codex_reasoning_effort = "max"\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError):
+        load_config(path)
+
+
+def test_load_config_rejects_invalid_reconciler_reasoning_effort(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text(
+        'github_org = "polymerdao"\n'
+        'reconciler_reasoning_effort = "invalid"\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError):
+        load_config(path)
+
+
+def test_load_config_rejects_reconciler_max_effort_for_codex_backend(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text(
+        'github_org = "polymerdao"\n'
+        'reconciler_backend = "codex"\n'
+        'reconciler_reasoning_effort = "max"\n',
         encoding="utf-8",
     )
 
@@ -149,6 +189,18 @@ def test_load_config_rejects_empty_gemini_model(tmp_path: Path) -> None:
     path.write_text(
         'github_org = "polymerdao"\n'
         'gemini_model = ""\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError):
+        load_config(path)
+
+
+def test_load_config_rejects_empty_reconciler_model(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text(
+        'github_org = "polymerdao"\n'
+        'reconciler_model = ""\n',
         encoding="utf-8",
     )
 

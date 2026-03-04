@@ -32,6 +32,21 @@ def _build_gemini_review_command(
     return args
 
 
+def _build_gemini_prompt_command(prompt: str, *, model: str | None) -> list[str]:
+    args = [
+        "gemini",
+        "-p",
+        prompt,
+        "--approval-mode",
+        "yolo",
+        "--output-format",
+        "json",
+    ]
+    if model:
+        args.extend(["-m", model])
+    return args
+
+
 def _extract_markdown_from_payload(payload: object) -> str:
     if not isinstance(payload, dict):
         return ""
@@ -148,3 +163,28 @@ async def run_gemini_review(
         started_at=started,
         ended_at=ended,
     )
+
+
+async def run_gemini_prompt(
+    prompt: str,
+    workspace: Path,
+    timeout_seconds: int,
+    *,
+    model: str | None = None,
+) -> str:
+    try:
+        code, raw_stdout, stderr = await run_command_async(
+            _build_gemini_prompt_command(prompt, model=model),
+            cwd=workspace,
+            timeout=timeout_seconds,
+        )
+    except TimeoutError as exc:
+        raise RuntimeError(f"gemini reconciliation timed out after {timeout_seconds}s") from exc
+
+    if code != 0:
+        raise RuntimeError(f"gemini exited with status {code}: {stderr.strip()}")
+
+    markdown = _extract_gemini_review_text(raw_stdout, stderr)
+    if not markdown:
+        raise RuntimeError("Gemini returned an empty response")
+    return markdown

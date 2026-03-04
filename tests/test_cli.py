@@ -79,6 +79,56 @@ def test_apply_field_override_invalid_reasoning_raises_bad_parameter() -> None:
         )
 
 
+def test_apply_field_override_reconciler_model() -> None:
+    cfg = AppConfig(github_org="polymerdao")
+
+    out = _apply_field_override(
+        cfg,
+        "reconciler_model",
+        "claude-sonnet-4-5",
+        "--reconciler-model",
+    )
+
+    assert out.reconciler_model == "claude-sonnet-4-5"
+
+
+def test_apply_field_override_reconciler_backend() -> None:
+    cfg = AppConfig(github_org="polymerdao")
+
+    out = _apply_field_override(
+        cfg,
+        "reconciler_backend",
+        "codex",
+        "--reconciler-backend",
+    )
+
+    assert out.reconciler_backend == "codex"
+
+
+def test_apply_field_override_invalid_reconciler_backend_raises_bad_parameter() -> None:
+    cfg = AppConfig(github_org="polymerdao")
+
+    with pytest.raises(typer.BadParameter):
+        _apply_field_override(
+            cfg,
+            "reconciler_backend",
+            "invalid",
+            "--reconciler-backend",
+        )
+
+
+def test_apply_field_override_invalid_reconciler_reasoning_raises_bad_parameter() -> None:
+    cfg = AppConfig(github_org="polymerdao")
+
+    with pytest.raises(typer.BadParameter):
+        _apply_field_override(
+            cfg,
+            "reconciler_reasoning_effort",
+            "invalid",
+            "--reconciler-reasoning-effort",
+        )
+
+
 def test_apply_bool_override_none_keeps_config() -> None:
     cfg = AppConfig(github_org="polymerdao", auto_post_review=False)
 
@@ -129,6 +179,8 @@ def test_target_pr_urls_for_run_once_dedupes_values() -> None:
         "https://github.com/polymerdao/obul/pull/1",
         "https://github.com/polymerdao/obul/pull/2",
     ]
+
+
 def test_apply_enabled_reviewer_override_gemini_only() -> None:
     cfg = AppConfig(github_org="polymerdao")
 

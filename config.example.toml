@@ -5,6 +5,14 @@ enabled_reviewers = ["claude", "codex"]
 # Optional Claude tuning:
 # claude_model = "claude-sonnet-4-5"
 # claude_reasoning_effort = "medium"
+# Reconciler backend (claude|codex|gemini):
+reconciler_backend = "claude"
+# Optional reconciliation tuning:
+# - when reconciler_backend="claude", falls back to claude_* when unset
+# - when reconciler_backend="codex", falls back to codex_* when unset
+# - when reconciler_backend="gemini", falls back to gemini_model when unset
+# reconciler_model = "claude-opus-4-1"
+# reconciler_reasoning_effort = "high" # claude: low|medium|high|max, codex: low|medium|high
 # codex backend:
 # - "cli": uses `codex review` (default, stable)
 # - "agents_sdk": uses OpenAI Agents SDK (experimental)

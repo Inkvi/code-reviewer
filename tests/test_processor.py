@@ -7,6 +7,7 @@ from pr_reviewer.github import GitHubClient
 from pr_reviewer.models import PRCandidate, ProcessedState, ReviewerOutput
 from pr_reviewer.processor import (
     _compute_processing_decision,
+    _resolve_reconciler_settings,
     _single_reviewer_final_review,
     _start_codex_review_task,
     process_candidate,
@@ -181,6 +182,56 @@ def test_start_codex_review_task_uses_agents_backend(monkeypatch) -> None:
 
     assert output.status == "ok"
     assert output.markdown == "codex output"
+
+
+def test_resolve_reconciler_settings_defaults_to_claude_backend() -> None:
+    cfg = AppConfig(
+        github_org="polymerdao",
+        reconciler_backend="claude",
+        claude_model="claude-sonnet-4-5",
+        claude_reasoning_effort="high",
+        claude_timeout_seconds=321,
+    )
+
+    backend, timeout_seconds, model, reasoning_effort = _resolve_reconciler_settings(cfg)
+
+    assert backend == "claude"
+    assert timeout_seconds == 321
+    assert model == "claude-sonnet-4-5"
+    assert reasoning_effort == "high"
+
+
+def test_resolve_reconciler_settings_can_use_codex_backend() -> None:
+    cfg = AppConfig(
+        github_org="polymerdao",
+        reconciler_backend="codex",
+        codex_model="gpt-5.3-codex",
+        codex_reasoning_effort="medium",
+        codex_timeout_seconds=222,
+    )
+
+    backend, timeout_seconds, model, reasoning_effort = _resolve_reconciler_settings(cfg)
+
+    assert backend == "codex"
+    assert timeout_seconds == 222
+    assert model == "gpt-5.3-codex"
+    assert reasoning_effort == "medium"
+
+
+def test_resolve_reconciler_settings_can_use_gemini_backend() -> None:
+    cfg = AppConfig(
+        github_org="polymerdao",
+        reconciler_backend="gemini",
+        gemini_model="gemini-3.1-pro-preview",
+        gemini_timeout_seconds=123,
+    )
+
+    backend, timeout_seconds, model, reasoning_effort = _resolve_reconciler_settings(cfg)
+
+    assert backend == "gemini"
+    assert timeout_seconds == 123
+    assert model == "gemini-3.1-pro-preview"
+    assert reasoning_effort is None
 
 
 def test_compute_processing_decision_bootstrap_state() -> None:
@@ -553,6 +604,9 @@ def test_process_candidate_reconcile_uses_enabled_reviewer_order(monkeypatch, tm
 
     seen_order: list[str] = []
     seen_comments: list[str] = []
+    seen_reconciler_backend: str | None = None
+    seen_reconciler_model: str | None = None
+    seen_reconciler_reasoning_effort: str | None = None
 
     async def fake_reconcile(  # noqa: ANN001
         _pr,
@@ -560,12 +614,17 @@ def test_process_candidate_reconcile_uses_enabled_reviewer_order(monkeypatch, tm
         reviewer_outputs,
         _timeout,
         *,
+        reconciler_backend="claude",
         pr_comments=None,
-        claude_model=None,
-        claude_reasoning_effort=None,
+        reconciler_model=None,
+        reconciler_reasoning_effort=None,
     ):
+        nonlocal seen_reconciler_backend, seen_reconciler_model, seen_reconciler_reasoning_effort
+        seen_reconciler_backend = reconciler_backend
         seen_order.extend(output.reviewer for output in reviewer_outputs)
         seen_comments.extend(pr_comments or [])
+        seen_reconciler_model = reconciler_model
+        seen_reconciler_reasoning_effort = reconciler_reasoning_effort
         return "### Findings\n- No material findings.\n\n### Test Gaps\n- None noted."
 
     monkeypatch.setattr("pr_reviewer.processor.run_codex_review", fake_codex)
@@ -585,9 +644,103 @@ def test_process_candidate_reconcile_uses_enabled_reviewer_order(monkeypatch, tm
         lambda *_args, **_kwargs: tmp_path / "out.raw.md",
     )
 
-    cfg = AppConfig(github_org="polymerdao", enabled_reviewers=["gemini", "codex"])
+    cfg = AppConfig(
+        github_org="polymerdao",
+        enabled_reviewers=["gemini", "codex"],
+        reconciler_backend="codex",
+        codex_model="gpt-5.3-codex",
+        codex_reasoning_effort="medium",
+        reconciler_model="gpt-5.3-codex-mini",
+        reconciler_reasoning_effort="high",
+    )
     changed = asyncio.run(process_candidate(cfg, client, store, workspace, _sample_pr()))
 
     assert changed is True
     assert seen_order == ["gemini", "codex"]
     assert seen_comments == ["@alice (2026-03-03T00:00:00Z): please verify x"]
+    assert seen_reconciler_backend == "codex"
+    assert seen_reconciler_model == "gpt-5.3-codex-mini"
+    assert seen_reconciler_reasoning_effort == "high"
+
+
+def test_process_candidate_reconcile_falls_back_to_claude_settings(monkeypatch, tmp_path) -> None:
+    store = DummyStore()
+    workspace = DummyWorkspace(tmp_path)
+    client = GitHubClient(viewer_login="Inkvi")
+
+    now = datetime.now(UTC)
+    codex_output = ReviewerOutput(
+        reviewer="codex",
+        status="ok",
+        markdown="### Findings\n- [P3] a.py:1 - codex note.\n\n### Test Gaps\n- None noted.",
+        stdout="",
+        stderr="",
+        error=None,
+        started_at=now,
+        ended_at=now,
+    )
+    gemini_output = ReviewerOutput(
+        reviewer="gemini",
+        status="ok",
+        markdown="### Findings\n- [P3] b.py:2 - gemini note.\n\n### Test Gaps\n- None noted.",
+        stdout="",
+        stderr="",
+        error=None,
+        started_at=now,
+        ended_at=now,
+    )
+
+    async def fake_codex(_pr, _workdir, _timeout, *, model=None, reasoning_effort=None):  # noqa: ANN001
+        return codex_output
+
+    async def fake_gemini(_pr, _workdir, _timeout, *, model=None):  # noqa: ANN001
+        return gemini_output
+
+    seen_reconciler_backend: str | None = None
+    seen_reconciler_model: str | None = None
+    seen_reconciler_reasoning_effort: str | None = None
+
+    async def fake_reconcile(  # noqa: ANN001
+        _pr,
+        _workdir,
+        reviewer_outputs,
+        _timeout,
+        *,
+        reconciler_backend="claude",
+        pr_comments=None,
+        reconciler_model=None,
+        reconciler_reasoning_effort=None,
+    ):
+        nonlocal seen_reconciler_backend, seen_reconciler_model, seen_reconciler_reasoning_effort
+        seen_reconciler_backend = reconciler_backend
+        _ = reviewer_outputs
+        _ = pr_comments
+        seen_reconciler_model = reconciler_model
+        seen_reconciler_reasoning_effort = reconciler_reasoning_effort
+        return "### Findings\n- No material findings.\n\n### Test Gaps\n- None noted."
+
+    monkeypatch.setattr("pr_reviewer.processor.run_codex_review", fake_codex)
+    monkeypatch.setattr("pr_reviewer.processor.run_gemini_review", fake_gemini)
+    monkeypatch.setattr(GitHubClient, "get_pr_issue_comments", lambda _self, _pr: [])
+    monkeypatch.setattr("pr_reviewer.processor.reconcile_reviews", fake_reconcile)
+    monkeypatch.setattr(
+        "pr_reviewer.processor.write_review_markdown",
+        lambda *_args, **_kwargs: tmp_path / "out.md",
+    )
+    monkeypatch.setattr(
+        "pr_reviewer.processor.write_reviewer_sidecar_markdown",
+        lambda *_args, **_kwargs: tmp_path / "out.raw.md",
+    )
+
+    cfg = AppConfig(
+        github_org="polymerdao",
+        enabled_reviewers=["gemini", "codex"],
+        claude_model="claude-sonnet-4-5",
+        claude_reasoning_effort="medium",
+    )
+    changed = asyncio.run(process_candidate(cfg, client, store, workspace, _sample_pr()))
+
+    assert changed is True
+    assert seen_reconciler_backend == "claude"
+    assert seen_reconciler_model == "claude-sonnet-4-5"
+    assert seen_reconciler_reasoning_effort == "medium"

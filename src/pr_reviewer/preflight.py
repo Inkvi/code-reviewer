@@ -18,12 +18,22 @@ class PreflightResult:
 def run_preflight(config: AppConfig) -> PreflightResult:
     required = ["gh"]
     enabled = set(config.enabled_reviewers)
-    uses_claude_reconciler = "claude" in enabled or len(enabled) >= 2
-    if uses_claude_reconciler:
+    uses_reconciler = len(enabled) >= 2
+    uses_claude_runtime = "claude" in enabled or (
+        uses_reconciler and config.reconciler_backend == "claude"
+    )
+    uses_codex_cli = ("codex" in enabled and config.codex_backend == "cli") or (
+        uses_reconciler and config.reconciler_backend == "codex"
+    )
+    uses_gemini_cli = "gemini" in enabled or (
+        uses_reconciler and config.reconciler_backend == "gemini"
+    )
+
+    if uses_claude_runtime:
         required.append("claude")
-    if "codex" in enabled and config.codex_backend == "cli":
+    if uses_codex_cli:
         required.append("codex")
-    if "gemini" in enabled:
+    if uses_gemini_cli:
         required.append("gemini")
 
     missing = [cmd for cmd in required if shutil.which(cmd) is None]
@@ -44,20 +54,20 @@ def run_preflight(config: AppConfig) -> PreflightResult:
     if not viewer_login:
         raise RuntimeError("Could not determine authenticated GitHub login.")
 
-    if "codex" in enabled and config.codex_backend == "cli":
+    if uses_codex_cli:
         run_command(["codex", "--version"])
 
-    if uses_claude_reconciler:
+    if uses_claude_runtime:
         run_command(["claude", "-v"])
 
-    if uses_claude_reconciler:
+    if uses_claude_runtime:
         try:
             from claude_agent_sdk import query  # noqa: F401
         except Exception as exc:  # noqa: BLE001
             if "claude" in enabled:
                 raise RuntimeError("Python package claude-agent-sdk is unavailable.") from exc
             raise RuntimeError(
-                "Python package claude-agent-sdk is required for multi-reviewer reconciliation."
+                "Python package claude-agent-sdk is required for reconciler_backend=claude."
             ) from exc
 
     if "codex" in enabled and config.codex_backend == "agents_sdk":
@@ -73,8 +83,9 @@ def run_preflight(config: AppConfig) -> PreflightResult:
                     "codex_backend=agents_sdk requires the OpenAI Agents SDK package."
                 ) from exc
 
-    if "gemini" in enabled:
+    if uses_gemini_cli:
         run_command(["gemini", "--version"])
+    if "gemini" in enabled:
         try:
             extension_proc = run_command(["gemini", "extensions", "list"])
         except CommandError as exc:

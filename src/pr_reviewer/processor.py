@@ -97,6 +97,23 @@ def _start_codex_review_task(config: AppConfig, pr: PRCandidate, workdir: Path) 
     )
 
 
+def _resolve_reconciler_settings(config: AppConfig) -> tuple[str, int, str | None, str | None]:
+    backend = config.reconciler_backend
+    if backend == "claude":
+        model = config.reconciler_model or config.claude_model
+        reasoning_effort = config.reconciler_reasoning_effort or config.claude_reasoning_effort
+        timeout_seconds = config.claude_timeout_seconds
+    elif backend == "codex":
+        model = config.reconciler_model or config.codex_model
+        reasoning_effort = config.reconciler_reasoning_effort or config.codex_reasoning_effort
+        timeout_seconds = config.codex_timeout_seconds
+    else:
+        model = config.reconciler_model or config.gemini_model
+        reasoning_effort = None
+        timeout_seconds = config.gemini_timeout_seconds
+    return backend, timeout_seconds, model, reasoning_effort
+
+
 def _existing_saved_review_path(
     output_root: Path,
     pr: PRCandidate,
@@ -397,7 +414,22 @@ async def process_candidate(
 
         if len(enabled_reviewers) >= 2:
             reviewer_names = " + ".join(enabled_reviewers)
-            info(f"{pr.key}: reconciling {reviewer_names} outputs")
+            (
+                reconciler_backend,
+                reconciler_timeout_seconds,
+                reconciler_model,
+                reconciler_reasoning_effort,
+            ) = _resolve_reconciler_settings(config)
+            effort_label = (
+                reconciler_reasoning_effort or "default"
+                if reconciler_backend != "gemini"
+                else "n/a"
+            )
+            info(
+                f"{pr.key}: reconciling {reviewer_names} outputs "
+                f"(backend={reconciler_backend}, model={reconciler_model or 'default'}, "
+                f"effort={effort_label})"
+            )
             pr_comments: list[str] = []
             try:
                 pr_comments = client.get_pr_issue_comments(pr)
@@ -407,10 +439,11 @@ async def process_candidate(
                 pr,
                 workdir,
                 list(active_outputs.values()),
-                config.claude_timeout_seconds,
+                reconciler_timeout_seconds,
+                reconciler_backend=reconciler_backend,
                 pr_comments=pr_comments,
-                claude_model=config.claude_model,
-                claude_reasoning_effort=config.claude_reasoning_effort,
+                reconciler_model=reconciler_model,
+                reconciler_reasoning_effort=reconciler_reasoning_effort,
             )
         elif len(enabled_reviewers) == 1:
             sole_reviewer = enabled_reviewers[0]

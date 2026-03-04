@@ -1,5 +1,6 @@
 from pr_reviewer.models import PRCandidate
 from pr_reviewer.reviewers.gemini_cli import (
+    _build_gemini_prompt_command,
     _build_gemini_review_command,
     _extract_gemini_review_text,
 )
@@ -46,6 +47,25 @@ def test_build_gemini_review_command_with_model() -> None:
     assert "-m" in args
     model_idx = args.index("-m")
     assert args[model_idx + 1] == "gemini-3.1-pro-preview"
+
+
+def test_build_gemini_prompt_command_with_model() -> None:
+    args = _build_gemini_prompt_command(
+        "Summarize findings",
+        model="gemini-3.1-pro-preview",
+    )
+
+    assert args[0] == "gemini"
+    assert "-p" in args
+    prompt_idx = args.index("-p")
+    assert args[prompt_idx + 1] == "Summarize findings"
+    assert "--approval-mode" in args
+    approval_idx = args.index("--approval-mode")
+    assert args[approval_idx + 1] == "yolo"
+    assert "--output-format" in args
+    output_format_idx = args.index("--output-format")
+    assert args[output_format_idx + 1] == "json"
+    assert "-m" in args
 
 
 def test_extract_gemini_review_text_from_stdout() -> None:

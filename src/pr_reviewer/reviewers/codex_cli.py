@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 from pathlib import Path
+from uuid import uuid4
 
 from pr_reviewer.models import PRCandidate, ReviewerOutput
 from pr_reviewer.shell import run_command_async
@@ -101,9 +102,69 @@ def _build_codex_review_command(
     return args
 
 
+def _build_codex_exec_command(
+    prompt: str,
+    *,
+    model: str | None,
+    reasoning_effort: str | None,
+    output_last_message_path: Path,
+) -> list[str]:
+    args = [
+        "codex",
+        "exec",
+        "--skip-git-repo-check",
+        "--output-last-message",
+        str(output_last_message_path),
+    ]
+    if model:
+        args.extend(["-m", model])
+    if reasoning_effort:
+        args.extend(["-c", f'model_reasoning_effort="{reasoning_effort}"'])
+    args.append(prompt)
+    return args
+
+
 def _codex_review_json_unsupported(stderr: str) -> bool:
     lowered = stderr.lower()
     return "unexpected argument '--json'" in lowered or "unexpected argument \"--json\"" in lowered
+
+
+async def run_codex_prompt(
+    prompt: str,
+    workspace: Path,
+    timeout_seconds: int,
+    *,
+    model: str | None = None,
+    reasoning_effort: str | None = None,
+) -> str:
+    output_last_message_path = workspace / f".codex-last-message-{uuid4().hex}.md"
+    try:
+        code, raw_stdout, stderr = await run_command_async(
+            _build_codex_exec_command(
+                prompt,
+                model=model,
+                reasoning_effort=reasoning_effort,
+                output_last_message_path=output_last_message_path,
+            ),
+            cwd=workspace,
+            timeout=timeout_seconds,
+        )
+    except TimeoutError as exc:
+        raise RuntimeError(f"codex reconciliation timed out after {timeout_seconds}s") from exc
+
+    output_last_message = ""
+    if output_last_message_path.exists():
+        output_last_message = output_last_message_path.read_text(encoding="utf-8", errors="replace")
+        output_last_message_path.unlink(missing_ok=True)
+
+    markdown = _sanitize_codex_markdown(output_last_message.strip())
+    if not markdown:
+        markdown = _extract_codex_review_text(raw_stdout, stderr)
+    if code != 0:
+        raise RuntimeError(f"codex exited with status {code}: {stderr.strip()}")
+    if not markdown:
+        raise RuntimeError("Codex returned an empty response")
+    return markdown
 
 
 async def run_codex_review(

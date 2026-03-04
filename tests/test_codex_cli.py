@@ -1,5 +1,6 @@
 from pr_reviewer.models import PRCandidate
 from pr_reviewer.reviewers.codex_cli import (
+    _build_codex_exec_command,
     _build_codex_review_command,
     _codex_review_json_unsupported,
     _extract_codex_markdown_from_jsonl,
@@ -56,6 +57,27 @@ def test_build_codex_review_command_includes_model_and_reasoning() -> None:
     assert "-c" in args
     assert 'model="gpt-5.3-codex"' in args
     assert 'model_reasoning_effort="high"' in args
+
+
+def test_build_codex_exec_command_includes_model_and_reasoning(tmp_path) -> None:
+    args = _build_codex_exec_command(
+        "Say hello",
+        model="gpt-5.3-codex",
+        reasoning_effort="medium",
+        output_last_message_path=tmp_path / "last.md",
+    )
+
+    assert args[:5] == [
+        "codex",
+        "exec",
+        "--skip-git-repo-check",
+        "--output-last-message",
+        str(tmp_path / "last.md"),
+    ]
+    assert "Say hello" in args
+    assert "-m" in args
+    assert "gpt-5.3-codex" in args
+    assert 'model_reasoning_effort="medium"' in args
 
 
 def test_codex_review_json_unsupported_detection() -> None:

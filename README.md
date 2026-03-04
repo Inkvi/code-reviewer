@@ -64,9 +64,18 @@ codex_backend = "cli"
 Model and reasoning tuning:
 
 ```toml
-# Claude backend (review + reconciliation)
+# Claude reviewer backend
 # claude_model = "claude-sonnet-4-5"
 # claude_reasoning_effort = "low"    # low|medium|high|max
+
+# Reconciler backend (claude|codex|gemini)
+reconciler_backend = "claude"
+# falls back by backend when unset:
+# - claude -> claude_model / claude_reasoning_effort
+# - codex  -> codex_model / codex_reasoning_effort
+# - gemini -> gemini_model
+# reconciler_model = "claude-opus-4-1"
+# reconciler_reasoning_effort = "high"    # claude: low|medium|high|max, codex: low|medium|high
 
 # Codex backend
 codex_model = "gpt-5.3-codex"
@@ -84,6 +93,9 @@ uv run pr-reviewer run-once --enabled-reviewer codex --codex-backend cli
 uv run pr-reviewer run-once --enabled-reviewer codex --codex-backend agents_sdk
 uv run pr-reviewer run-once --codex-model gpt-5.3-codex --codex-reasoning-effort high
 uv run pr-reviewer run-once --claude-model claude-sonnet-4-5 --claude-reasoning-effort medium
+uv run pr-reviewer run-once --reconciler-backend codex --reconciler-model gpt-5.3-codex
+uv run pr-reviewer run-once --reconciler-backend gemini --reconciler-model gemini-3.1-pro-preview
+uv run pr-reviewer run-once --reconciler-model claude-opus-4-1 --reconciler-reasoning-effort high
 uv run pr-reviewer run-once --pr-url https://github.com/<org>/<repo>/pull/<number> --auto-post-review
 uv run pr-reviewer run-once --pr-url https://github.com/<org>/<repo>/pull/<number> --use-saved-review --auto-post-review
 uv run pr-reviewer run-once --no-auto-post-review
@@ -119,6 +131,7 @@ uv run pr-reviewer run-once --pr-url https://github.com/<org>/<repo>/pull/<numbe
 - Excludes repos listed in `excluded_repos`
 - Runs only reviewers listed in `enabled_reviewers`
 - Uses selected Codex backend from `codex_backend`
+- Uses selected reconciliation backend from `reconciler_backend`
 - Uses trigger state machine from `trigger_mode`
 - Codex CLI backend uses `codex review` and, when supported by CLI version, can parse JSON event output
 - Skips draft PRs and (by default) PRs authored by you
@@ -128,7 +141,7 @@ uv run pr-reviewer run-once --pr-url https://github.com/<org>/<repo>/pull/<numbe
 - After bootstrap, processes PRs when a newer direct re-request to you is observed
 - Runs all enabled reviewers in parallel
 - Injects PR issue-thread comments into reconciliation context (multi-reviewer mode)
-- Reconciles with Claude and writes:
+- Reconciles with selected backend (Claude/Codex/Gemini) and writes:
   `reviews/<org>/<repo>/pr-<number>.md`
 - Also writes versioned historical reviews under:
   `reviews/<org>/<repo>/pr-<number>/<timestamp>-<shortsha>.md`

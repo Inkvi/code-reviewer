@@ -65,6 +65,30 @@ ClaudeReasoningEffortOption = Annotated[
         help="Override claude_reasoning_effort from config. Allowed: low, medium, high, max.",
     ),
 ]
+ReconcilerModelOption = Annotated[
+    str | None,
+    typer.Option(
+        "--reconciler-model",
+        help="Override reconciler_model from config.",
+    ),
+]
+ReconcilerReasoningEffortOption = Annotated[
+    str | None,
+    typer.Option(
+        "--reconciler-reasoning-effort",
+        help=(
+            "Override reconciler_reasoning_effort from config. "
+            "Allowed: low, medium, high, max."
+        ),
+    ),
+]
+ReconcilerBackendOption = Annotated[
+    str | None,
+    typer.Option(
+        "--reconciler-backend",
+        help="Override reconciler_backend from config. Allowed: claude, codex, gemini.",
+    ),
+]
 CodexModelOption = Annotated[
     str | None,
     typer.Option(
@@ -167,12 +191,29 @@ def _apply_bool_override(
         ) from exc
 
 
+def _resolve_reconciler_settings(config: AppConfig) -> tuple[str, str | None, str | None]:
+    backend = config.reconciler_backend
+    if backend == "claude":
+        model = config.reconciler_model or config.claude_model
+        reasoning_effort = config.reconciler_reasoning_effort or config.claude_reasoning_effort
+    elif backend == "codex":
+        model = config.reconciler_model or config.codex_model
+        reasoning_effort = config.reconciler_reasoning_effort or config.codex_reasoning_effort
+    else:
+        model = config.reconciler_model or config.gemini_model
+        reasoning_effort = None
+    return backend, model, reasoning_effort
+
+
 def _load_runtime(
     config_path: Path,
     enabled_reviewer: list[str] | None,
     codex_backend: str | None,
     claude_model: str | None,
     claude_reasoning_effort: str | None,
+    reconciler_backend: str | None,
+    reconciler_model: str | None,
+    reconciler_reasoning_effort: str | None,
     codex_model: str | None,
     codex_reasoning_effort: str | None,
     auto_post_review: bool | None,
@@ -187,6 +228,24 @@ def _load_runtime(
         "claude_reasoning_effort",
         claude_reasoning_effort,
         "--claude-reasoning-effort",
+    )
+    config = _apply_field_override(
+        config,
+        "reconciler_backend",
+        reconciler_backend,
+        "--reconciler-backend",
+    )
+    config = _apply_field_override(
+        config,
+        "reconciler_model",
+        reconciler_model,
+        "--reconciler-model",
+    )
+    config = _apply_field_override(
+        config,
+        "reconciler_reasoning_effort",
+        reconciler_reasoning_effort,
+        "--reconciler-reasoning-effort",
     )
     config = _apply_field_override(config, "codex_model", codex_model, "--codex-model")
     config = _apply_field_override(
@@ -226,6 +285,9 @@ def check_command(
     codex_backend: CodexBackendOption = None,
     claude_model: ClaudeModelOption = None,
     claude_reasoning_effort: ClaudeReasoningEffortOption = None,
+    reconciler_backend: ReconcilerBackendOption = None,
+    reconciler_model: ReconcilerModelOption = None,
+    reconciler_reasoning_effort: ReconcilerReasoningEffortOption = None,
     codex_model: CodexModelOption = None,
     codex_reasoning_effort: CodexReasoningEffortOption = None,
     auto_post_review: AutoPostReviewOption = None,
@@ -241,6 +303,19 @@ def check_command(
         "claude_reasoning_effort",
         claude_reasoning_effort,
         "--claude-reasoning-effort",
+    )
+    cfg = _apply_field_override(
+        cfg,
+        "reconciler_backend",
+        reconciler_backend,
+        "--reconciler-backend",
+    )
+    cfg = _apply_field_override(cfg, "reconciler_model", reconciler_model, "--reconciler-model")
+    cfg = _apply_field_override(
+        cfg,
+        "reconciler_reasoning_effort",
+        reconciler_reasoning_effort,
+        "--reconciler-reasoning-effort",
     )
     cfg = _apply_field_override(cfg, "codex_model", codex_model, "--codex-model")
     cfg = _apply_field_override(
@@ -270,6 +345,17 @@ def check_command(
     table.add_row("Enabled reviewers", ", ".join(cfg.enabled_reviewers))
     table.add_row("Claude model", cfg.claude_model or "default")
     table.add_row("Claude reasoning effort", cfg.claude_reasoning_effort or "default")
+    reconciler_backend_value, reconciler_model_value, reconciler_effort_value = (
+        _resolve_reconciler_settings(cfg)
+    )
+    reconciler_effort_display = (
+        reconciler_effort_value or "default"
+        if reconciler_backend_value != "gemini"
+        else "n/a"
+    )
+    table.add_row("Reconciler backend", reconciler_backend_value)
+    table.add_row("Reconciler model", reconciler_model_value or "default")
+    table.add_row("Reconciler reasoning effort", reconciler_effort_display)
     table.add_row("Codex backend", cfg.codex_backend)
     table.add_row("Codex model", cfg.codex_model)
     table.add_row("Codex reasoning effort", cfg.codex_reasoning_effort or "default")
@@ -287,6 +373,9 @@ def run_once_command(
     codex_backend: CodexBackendOption = None,
     claude_model: ClaudeModelOption = None,
     claude_reasoning_effort: ClaudeReasoningEffortOption = None,
+    reconciler_backend: ReconcilerBackendOption = None,
+    reconciler_model: ReconcilerModelOption = None,
+    reconciler_reasoning_effort: ReconcilerReasoningEffortOption = None,
     codex_model: CodexModelOption = None,
     codex_reasoning_effort: CodexReasoningEffortOption = None,
     auto_post_review: AutoPostReviewOption = None,
@@ -305,6 +394,9 @@ def run_once_command(
         codex_backend,
         claude_model,
         claude_reasoning_effort,
+        reconciler_backend,
+        reconciler_model,
+        reconciler_reasoning_effort,
         codex_model,
         codex_reasoning_effort,
         auto_post_review,
@@ -348,6 +440,9 @@ def start_command(
     codex_backend: CodexBackendOption = None,
     claude_model: ClaudeModelOption = None,
     claude_reasoning_effort: ClaudeReasoningEffortOption = None,
+    reconciler_backend: ReconcilerBackendOption = None,
+    reconciler_model: ReconcilerModelOption = None,
+    reconciler_reasoning_effort: ReconcilerReasoningEffortOption = None,
     codex_model: CodexModelOption = None,
     codex_reasoning_effort: CodexReasoningEffortOption = None,
     auto_post_review: AutoPostReviewOption = None,
@@ -360,6 +455,9 @@ def start_command(
         codex_backend,
         claude_model,
         claude_reasoning_effort,
+        reconciler_backend,
+        reconciler_model,
+        reconciler_reasoning_effort,
         codex_model,
         codex_reasoning_effort,
         auto_post_review,
