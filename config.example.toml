@@ -12,7 +12,8 @@ codex_backend = "cli"
 codex_model = "gpt-5.3-codex"
 # Default Codex tuning for development:
 codex_reasoning_effort = "low"
-# Optional Gemini tuning (requires `gemini` CLI installed and authenticated):
+# Optional Gemini tuning (requires `gemini` CLI installed/authenticated and `code-review` extension):
+# Install extension: gemini extensions install https://github.com/gemini-cli-extensions/code-review
 # To enable: add "gemini" to enabled_reviewers, e.g. ["claude", "codex", "gemini"]
 # gemini_model = "gemini-3.1-pro-preview"
 gemini_timeout_seconds = 900

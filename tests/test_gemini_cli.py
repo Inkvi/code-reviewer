@@ -25,11 +25,18 @@ def test_build_gemini_review_command_without_model() -> None:
 
     assert args[0] == "gemini"
     assert "-p" in args
-    assert "-m" not in args
     prompt_idx = args.index("-p")
-    prompt = args[prompt_idx + 1]
-    assert "origin/main" in prompt
-    assert pr.url in prompt
+    assert args[prompt_idx + 1] == "/code-review"
+    assert "-e" in args
+    extension_idx = args.index("-e")
+    assert args[extension_idx + 1] == "code-review"
+    assert "--approval-mode" in args
+    approval_idx = args.index("--approval-mode")
+    assert args[approval_idx + 1] == "yolo"
+    assert "--output-format" in args
+    output_format_idx = args.index("--output-format")
+    assert args[output_format_idx + 1] == "json"
+    assert "-m" not in args
 
 
 def test_build_gemini_review_command_with_model() -> None:
@@ -50,7 +57,19 @@ def test_extract_gemini_review_text_from_stdout() -> None:
 
 
 def test_extract_gemini_review_text_from_json() -> None:
-    stdout = '{"text": "### Findings\\n- No material findings."}'
+    stdout = '{"response": "### Findings\\n- No material findings."}'
+    stderr = ""
+
+    result = _extract_gemini_review_text(stdout, stderr)
+    assert "No material findings" in result
+
+
+def test_extract_gemini_review_text_from_multiline_json() -> None:
+    stdout = (
+        "Loaded cached credentials.\n"
+        '{\n  "session_id": "abc",\n'
+        '  "response": "### Findings\\n- No material findings."\n}\n'
+    )
     stderr = ""
 
     result = _extract_gemini_review_text(stdout, stderr)
@@ -63,6 +82,14 @@ def test_extract_gemini_review_text_from_json_with_parts() -> None:
 
     result = _extract_gemini_review_text(stdout, stderr)
     assert result == "gemini review content"
+
+
+def test_extract_gemini_review_text_joins_json_parts() -> None:
+    stdout = '{"parts": [{"text": "part one"}, {"text": "part two"}]}'
+    stderr = ""
+
+    result = _extract_gemini_review_text(stdout, stderr)
+    assert result == "part one\npart two"
 
 
 def test_extract_gemini_review_text_empty() -> None:

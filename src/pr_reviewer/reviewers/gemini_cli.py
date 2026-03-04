@@ -7,74 +7,79 @@ from pathlib import Path
 from pr_reviewer.models import PRCandidate, ReviewerOutput
 from pr_reviewer.shell import run_command_async
 
-_REVIEW_PROMPT_TEMPLATE = """\
-Review the code changes in this repository.
-
-Pull request: {url}
-Title: {title}
-Base branch: origin/{base_ref}
-Head SHA: {head_sha}
-
-Instructions:
-1. Run `git diff origin/{base_ref}...HEAD` to see the diff.
-2. Read the full content of each changed file for context.
-3. Focus only on actionable bugs, regressions, and missing tests.
-4. Return concise markdown with exactly these two sections:
-
-### Findings
-- [P1|P2|P3] path[:line] - issue. Impact. Recommended fix.
-
-### Test Gaps
-- missing tests
-
-If no findings, write '- No material findings.' under Findings.
-If no test gaps, write '- None noted.' under Test Gaps.
-
-Keep total output under 220 words. No tables, no long summary, no praise/filler.\
-"""
+_CODE_REVIEW_PROMPT = "/code-review"
+_CODE_REVIEW_EXTENSION = "code-review"
 
 
 def _build_gemini_review_command(
-    pr: PRCandidate,
+    _pr: PRCandidate,
     *,
     model: str | None,
 ) -> list[str]:
-    prompt = _REVIEW_PROMPT_TEMPLATE.format(
-        url=pr.url,
-        title=pr.title,
-        base_ref=pr.base_ref,
-        head_sha=pr.head_sha,
-    )
-    args = ["gemini", "-p", prompt]
+    args = [
+        "gemini",
+        "-p",
+        _CODE_REVIEW_PROMPT,
+        "-e",
+        _CODE_REVIEW_EXTENSION,
+        "--approval-mode",
+        "yolo",
+        "--output-format",
+        "json",
+    ]
     if model:
         args.extend(["-m", model])
     return args
 
 
+def _extract_markdown_from_payload(payload: object) -> str:
+    if not isinstance(payload, dict):
+        return ""
+
+    for key in ("response", "text", "output", "result", "content"):
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+
+    parts = payload.get("parts")
+    if isinstance(parts, list):
+        text_parts: list[str] = []
+        for part in parts:
+            if isinstance(part, dict):
+                text = part.get("text")
+                if isinstance(text, str) and text.strip():
+                    text_parts.append(text.strip())
+        if text_parts:
+            return "\n".join(text_parts)
+
+    return ""
+
+
+def _iter_json_payloads(text: str) -> list[object]:
+    payloads: list[object] = []
+    decoder = json.JSONDecoder()
+    index = 0
+    while index < len(text):
+        start = text.find("{", index)
+        if start == -1:
+            break
+        try:
+            payload, end = decoder.raw_decode(text, start)
+        except json.JSONDecodeError:
+            index = start + 1
+            continue
+        payloads.append(payload)
+        index = end
+    return payloads
+
+
 def _extract_gemini_markdown_from_json(stdout: str) -> str:
     """Try to extract review markdown from JSON output."""
-    for line in reversed(stdout.splitlines()):
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            payload = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-
-        if isinstance(payload, dict):
-            for key in ("text", "output", "result", "content", "response"):
-                value = payload.get(key)
-                if isinstance(value, str) and value.strip():
-                    return value.strip()
-
-            parts = payload.get("parts")
-            if isinstance(parts, list):
-                for part in parts:
-                    if isinstance(part, dict):
-                        text = part.get("text")
-                        if isinstance(text, str) and text.strip():
-                            return text.strip()
+    payloads = _iter_json_payloads(stdout)
+    for payload in reversed(payloads):
+        markdown = _extract_markdown_from_payload(payload)
+        if markdown:
+            return markdown
 
     return ""
 
@@ -102,15 +107,6 @@ def _extract_gemini_review_text(stdout: str, stderr: str) -> str:
                 return candidate
 
     return ""
-
-
-def _gemini_json_unsupported(stderr: str) -> bool:
-    lowered = stderr.lower()
-    return (
-        "unknown option" in lowered
-        or "unexpected argument" in lowered
-        or "unrecognized" in lowered
-    ) and "output-format" in lowered
 
 
 async def run_gemini_review(

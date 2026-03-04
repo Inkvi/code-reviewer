@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from pr_reviewer.config import AppConfig
 from pr_reviewer.shell import CommandError, run_command
 
+_GEMINI_CODE_REVIEW_EXTENSION = "code-review"
+
 
 @dataclass(slots=True)
 class PreflightResult:
@@ -73,5 +75,19 @@ def run_preflight(config: AppConfig) -> PreflightResult:
 
     if "gemini" in enabled:
         run_command(["gemini", "--version"])
+        try:
+            extension_proc = run_command(["gemini", "extensions", "list"])
+        except CommandError as exc:
+            raise RuntimeError(
+                "Failed to list Gemini extensions. "
+                "Install/upgrade Gemini CLI and ensure it is authenticated."
+            ) from exc
+        extension_listing = f"{extension_proc.stdout}\n{extension_proc.stderr}".lower()
+        if _GEMINI_CODE_REVIEW_EXTENSION not in extension_listing:
+            raise RuntimeError(
+                "Gemini reviewer requires the `code-review` extension. "
+                "Install with: gemini extensions install "
+                "https://github.com/gemini-cli-extensions/code-review"
+            )
 
     return PreflightResult(viewer_login=viewer_login)

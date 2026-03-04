@@ -3,6 +3,7 @@
 A Python daemon that monitors GitHub pull requests and generates reconciled reviews using:
 - Claude Agent SDK (`/review <PR_URL>`)
 - Codex (`codex review` by default, or OpenAI Agents SDK experimental backend)
+- Gemini CLI (`/code-review` via `code-review` extension)
 
 ## Requirements
 
@@ -11,6 +12,8 @@ A Python daemon that monitors GitHub pull requests and generates reconciled revi
 - `gh` authenticated (`gh auth login`)
 - `codex` authenticated
 - `claude` authenticated (Agent SDK depends on Claude Code runtime)
+- if using `gemini` reviewer: `gemini` authenticated + `code-review` extension installed
+  (`gemini extensions install https://github.com/gemini-cli-extensions/code-review`)
 - for `codex_backend = "agents_sdk"`: OpenAI Agents SDK package + `OPENAI_API_KEY`
 
 ## Setup
@@ -120,10 +123,10 @@ uv run pr-reviewer run-once --pr-url https://github.com/<org>/<repo>/pull/<numbe
 - Skips draft PRs and (by default) PRs authored by you
 - Skips PRs when you already posted an issue comment
 - Skips PRs when a saved review markdown already exists for that PR
-- Runs Claude and Codex review in parallel
+- Runs all enabled reviewers in parallel
 - Reconciles with Claude and writes:
   `reviews/<org>/<repo>/pr-<number>.md`
-- Saves raw Claude/Codex outputs to:
+- Saves raw reviewer outputs to:
   `reviews/<org>/<repo>/pr-<number>.raw.md`
 - Prints file path when ready
 - Optional comment posting when `auto_post_review = true`
