@@ -20,6 +20,8 @@ def run_preflight(config: AppConfig) -> PreflightResult:
         required.append("claude")
     if "codex" in enabled and config.codex_backend == "cli":
         required.append("codex")
+    if "gemini" in enabled:
+        required.append("gemini")
 
     missing = [cmd for cmd in required if shutil.which(cmd) is None]
     if missing:
@@ -63,5 +65,8 @@ def run_preflight(config: AppConfig) -> PreflightResult:
                 raise RuntimeError(
                     "codex_backend=agents_sdk requires the OpenAI Agents SDK package."
                 ) from exc
+
+    if "gemini" in enabled:
+        run_command(["gemini", "--version"])
 
     return PreflightResult(viewer_login=viewer_login)

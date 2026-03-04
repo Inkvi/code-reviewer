@@ -15,19 +15,25 @@ def _format_source(name: str, output: ReviewerOutput) -> str:
 async def reconcile_reviews(
     pr: PRCandidate,
     workspace: Path,
-    claude_output: ReviewerOutput,
-    codex_output: ReviewerOutput,
+    reviewer_outputs: list[ReviewerOutput],
     timeout_seconds: int,
     *,
     claude_model: str | None = None,
     claude_reasoning_effort: str | None = None,
 ) -> str:
-    source_claude = _format_source("Claude", claude_output)
-    source_codex = _format_source("Codex", codex_output)
+    source_sections: list[str] = []
+    for i, output in enumerate(reviewer_outputs):
+        letter = chr(ord("A") + i)
+        label = output.reviewer.capitalize()
+        formatted = _format_source(label, output)
+        source_sections.append(f"Source {letter} ({label}):\n{formatted}")
+
+    sources_text = "\n\n".join(source_sections)
+    count = len(reviewer_outputs)
 
     prompt = f"""
-You are reconciling two PR reviews into one final markdown review that will be posted directly as
-a GitHub comment.
+You are reconciling {count} PR reviews into one final markdown review that will be posted
+directly as a GitHub comment.
 
 PR:
 - URL: {pr.url}
@@ -35,11 +41,7 @@ PR:
 - Base: {pr.base_ref}
 - Head SHA: {pr.head_sha}
 
-Source A (Claude):
-{source_claude}
-
-Source B (Codex):
-{source_codex}
+{sources_text}
 
 Strict output rules:
 - Keep total output under 220 words.

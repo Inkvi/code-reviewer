@@ -32,63 +32,60 @@ def _error_text(value: str | None) -> str:
     return cleaned if cleaned else "_None_"
 
 
+def _render_reviewer_section(
+    name: str,
+    output: ReviewerOutput,
+    include_stderr: bool,
+) -> str:
+    display_name = name.capitalize()
+    stderr_section = (
+        f"##### {display_name} STDERR\n\n{_section_text(output.stderr)}\n"
+        if include_stderr
+        else f"##### {display_name} STDERR\n\n_omitted by config_\n"
+    )
+
+    return f"""#### {display_name}
+
+- Status: `{output.status}`
+- Duration: `{output.duration_seconds:.1f}s`
+- Error: {_error_text(output.error)}
+
+##### {display_name} Markdown
+
+{_section_text(output.markdown)}
+
+##### {display_name} STDOUT
+
+{_section_text(output.stdout)}
+
+{stderr_section}
+"""
+
+
 def write_reviewer_sidecar_markdown(
     output_root: Path,
     pr: PRCandidate,
-    claude_output: ReviewerOutput,
-    codex_output: ReviewerOutput,
+    reviewer_outputs: dict[str, ReviewerOutput],
     include_stderr: bool = True,
 ) -> Path:
     target_dir = output_root / pr.owner / pr.repo
     target_dir.mkdir(parents=True, exist_ok=True)
     file_path = target_dir / f"pr-{pr.number}.raw.md"
 
-    claude_stderr_section = (
-        f"##### Claude STDERR\n\n{_section_text(claude_output.stderr)}\n"
-        if include_stderr
-        else "##### Claude STDERR\n\n_omitted by config_\n"
-    )
-    codex_stderr_section = (
-        f"##### Codex STDERR\n\n{_section_text(codex_output.stderr)}\n"
-        if include_stderr
-        else "##### Codex STDERR\n\n_omitted by config_\n"
-    )
+    # Render in a stable order: claude, codex, gemini, then any others alphabetically
+    preferred_order = ["claude", "codex", "gemini"]
+    ordered_names = [n for n in preferred_order if n in reviewer_outputs]
+    ordered_names += sorted(n for n in reviewer_outputs if n not in preferred_order)
+
+    sections: list[str] = []
+    for name in ordered_names:
+        sections.append(_render_reviewer_section(name, reviewer_outputs[name], include_stderr))
 
     content = f"""### Reviewer Raw Outputs: {pr.owner}/{pr.repo}#{pr.number}
 
 - URL: {pr.url}
 
-#### Claude
+{"".join(sections)}"""
 
-- Status: `{claude_output.status}`
-- Duration: `{claude_output.duration_seconds:.1f}s`
-- Error: {_error_text(claude_output.error)}
-
-##### Claude Markdown
-
-{_section_text(claude_output.markdown)}
-
-##### Claude STDOUT
-
-{_section_text(claude_output.stdout)}
-
-{claude_stderr_section}
-
-#### Codex
-
-- Status: `{codex_output.status}`
-- Duration: `{codex_output.duration_seconds:.1f}s`
-- Error: {_error_text(codex_output.error)}
-
-##### Codex Markdown
-
-{_section_text(codex_output.markdown)}
-
-##### Codex STDOUT
-
-{_section_text(codex_output.stdout)}
-
-{codex_stderr_section}
-"""
     file_path.write_text(content, encoding="utf-8")
     return file_path
