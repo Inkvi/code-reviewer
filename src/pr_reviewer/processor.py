@@ -209,10 +209,11 @@ async def process_candidate(
         workdir = workspace_mgr.prepare(pr)
         info(f"{pr.key}: workspace ready at {workdir}")
 
-        enabled_reviewers = set(config.enabled_reviewers)
+        enabled_reviewers = list(config.enabled_reviewers)
+        enabled_reviewer_set = set(enabled_reviewers)
         pending_tasks: dict[str, asyncio.Task] = {}
 
-        if "claude" in enabled_reviewers:
+        if "claude" in enabled_reviewer_set:
             info(
                 f"{pr.key}: starting Claude review "
                 f"(model={config.claude_model or 'default'}, "
@@ -230,7 +231,7 @@ async def process_candidate(
         else:
             info(f"{pr.key}: Claude reviewer disabled")
 
-        if "codex" in enabled_reviewers:
+        if "codex" in enabled_reviewer_set:
             info(
                 f"{pr.key}: starting Codex review "
                 f"(backend={config.codex_backend}, model={config.codex_model}, "
@@ -240,7 +241,7 @@ async def process_candidate(
         else:
             info(f"{pr.key}: Codex reviewer disabled")
 
-        if "gemini" in enabled_reviewers:
+        if "gemini" in enabled_reviewer_set:
             info(
                 f"{pr.key}: starting Gemini review "
                 f"(model={config.gemini_model or 'default'})"
@@ -291,7 +292,7 @@ async def process_candidate(
         }
 
         if len(enabled_reviewers) >= 2:
-            reviewer_names = " + ".join(sorted(enabled_reviewers))
+            reviewer_names = " + ".join(enabled_reviewers)
             info(f"{pr.key}: reconciling {reviewer_names} outputs")
             final_review = await reconcile_reviews(
                 pr,
@@ -302,7 +303,7 @@ async def process_candidate(
                 claude_reasoning_effort=config.claude_reasoning_effort,
             )
         elif len(enabled_reviewers) == 1:
-            sole_reviewer = next(iter(enabled_reviewers))
+            sole_reviewer = enabled_reviewers[0]
             info(f"{pr.key}: single reviewer mode ({sole_reviewer})")
             final_review = _single_reviewer_final_review(active_outputs[sole_reviewer])
         else:

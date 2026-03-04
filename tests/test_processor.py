@@ -465,3 +465,104 @@ def test_process_candidate_gemini_only(monkeypatch, tmp_path) -> None:
     )
 
     assert changed is True
+
+
+def test_process_candidate_reconcile_uses_enabled_reviewer_order(monkeypatch, tmp_path) -> None:
+    class DummyStore:
+        def get(self, _key):  # noqa: ANN001
+            from pr_reviewer.models import ProcessedState
+
+            return ProcessedState()
+
+        def set(self, _key, _state):  # noqa: ANN001
+            return None
+
+        def save(self):
+            return None
+
+    class DummyWorkspace:
+        def prepare(self, _pr):  # noqa: ANN001
+            return tmp_path
+
+        def cleanup(self, _workdir):  # noqa: ANN001
+            return None
+
+    client = GitHubClient(viewer_login="Inkvi")
+    monkeypatch.setattr(
+        GitHubClient,
+        "has_issue_comment_by_viewer",
+        lambda _self, _pr: False,
+    )
+
+    now = datetime.now(UTC)
+    codex_output = ReviewerOutput(
+        reviewer="codex",
+        status="ok",
+        markdown="### Findings\n- [P3] a.py:1 - codex note.\n\n### Test Gaps\n- None noted.",
+        stdout="",
+        stderr="",
+        error=None,
+        started_at=now,
+        ended_at=now,
+    )
+    gemini_output = ReviewerOutput(
+        reviewer="gemini",
+        status="ok",
+        markdown="### Findings\n- [P3] b.py:2 - gemini note.\n\n### Test Gaps\n- None noted.",
+        stdout="",
+        stderr="",
+        error=None,
+        started_at=now,
+        ended_at=now,
+    )
+
+    async def fake_codex(  # noqa: ANN001
+        _pr, _workdir, _timeout, *, model=None, reasoning_effort=None
+    ):
+        return codex_output
+
+    async def fake_gemini(_pr, _workdir, _timeout, *, model=None):  # noqa: ANN001
+        return gemini_output
+
+    seen_order: list[str] = []
+
+    async def fake_reconcile(  # noqa: ANN001
+        _pr,
+        _workdir,
+        reviewer_outputs,
+        _timeout,
+        *,
+        claude_model=None,
+        claude_reasoning_effort=None,
+    ):
+        seen_order.extend(output.reviewer for output in reviewer_outputs)
+        return "### Findings\n- No material findings.\n\n### Test Gaps\n- None noted."
+
+    monkeypatch.setattr("pr_reviewer.processor.run_codex_review", fake_codex)
+    monkeypatch.setattr("pr_reviewer.processor.run_gemini_review", fake_gemini)
+    monkeypatch.setattr("pr_reviewer.processor.reconcile_reviews", fake_reconcile)
+    monkeypatch.setattr(
+        "pr_reviewer.processor.write_review_markdown",
+        lambda *_args, **_kwargs: tmp_path / "out.md",
+    )
+    monkeypatch.setattr(
+        "pr_reviewer.processor.write_reviewer_sidecar_markdown",
+        lambda *_args, **_kwargs: tmp_path / "out.raw.md",
+    )
+
+    cfg = AppConfig(github_org="polymerdao", enabled_reviewers=["gemini", "codex"])
+    changed = asyncio.run(
+        process_candidate(
+            cfg,
+            client,
+            DummyStore(),
+            DummyWorkspace(),
+            _sample_pr(),
+            ignore_saved_review=True,
+            ignore_existing_comment=True,
+            ignore_head_sha=True,
+        )
+    )
+
+    assert changed is True
+    assert seen_order == ["gemini", "codex"]
