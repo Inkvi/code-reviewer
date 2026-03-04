@@ -16,6 +16,9 @@ from pr_reviewer.processor import (
 def _sample_pr(
     *,
     latest_direct_rerequest_at: str | None = "2026-03-02T00:00:00+00:00",
+    additions: int = 8,
+    deletions: int = 4,
+    changed_file_paths: list[str] | None = None,
 ) -> PRCandidate:
     return PRCandidate(
         owner="polymerdao",
@@ -28,6 +31,9 @@ def _sample_pr(
         head_sha="deadbeef",
         updated_at="2026-02-27T20:00:00Z",
         latest_direct_rerequest_at=latest_direct_rerequest_at,
+        additions=additions,
+        deletions=deletions,
+        changed_file_paths=changed_file_paths or ["src/app.py"],
     )
 
 
@@ -200,6 +206,66 @@ def test_compute_processing_decision_missing_rerequest_data() -> None:
 
     assert decision.should_process is False
     assert decision.reason == "missing_rerequest_data"
+
+
+def test_process_candidate_skips_small_change_set(monkeypatch, tmp_path) -> None:
+    store = DummyStore()
+    workspace = DummyWorkspace(tmp_path)
+    client = GitHubClient(viewer_login="Inkvi")
+
+    monkeypatch.setattr(
+        "pr_reviewer.processor.run_codex_review",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("reviewer should not run for small change set")
+        ),
+    )
+
+    cfg = AppConfig(github_org="polymerdao", enabled_reviewers=["codex"])
+    changed = asyncio.run(
+        process_candidate(
+            cfg,
+            client,
+            store,
+            workspace,
+            _sample_pr(additions=6, deletions=3, changed_file_paths=["src/app.py"]),
+        )
+    )
+
+    assert changed is False
+    assert store.saved is True
+    assert store.state.last_status == "skipped_small_change_set"
+
+
+def test_process_candidate_skips_config_only_files(monkeypatch, tmp_path) -> None:
+    store = DummyStore()
+    workspace = DummyWorkspace(tmp_path)
+    client = GitHubClient(viewer_login="Inkvi")
+
+    monkeypatch.setattr(
+        "pr_reviewer.processor.run_codex_review",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("reviewer should not run for config-only changes")
+        ),
+    )
+
+    cfg = AppConfig(github_org="polymerdao", enabled_reviewers=["codex"])
+    changed = asyncio.run(
+        process_candidate(
+            cfg,
+            client,
+            store,
+            workspace,
+            _sample_pr(
+                additions=10,
+                deletions=0,
+                changed_file_paths=[".github/workflows/ci.yaml", "config/app.json"],
+            ),
+        )
+    )
+
+    assert changed is False
+    assert store.saved is True
+    assert store.state.last_status == "skipped_config_only_files"
 
 
 def test_processes_on_bootstrap_when_state_missing(monkeypatch, tmp_path) -> None:
@@ -486,6 +552,7 @@ def test_process_candidate_reconcile_uses_enabled_reviewer_order(monkeypatch, tm
         return gemini_output
 
     seen_order: list[str] = []
+    seen_comments: list[str] = []
 
     async def fake_reconcile(  # noqa: ANN001
         _pr,
@@ -493,14 +560,21 @@ def test_process_candidate_reconcile_uses_enabled_reviewer_order(monkeypatch, tm
         reviewer_outputs,
         _timeout,
         *,
+        pr_comments=None,
         claude_model=None,
         claude_reasoning_effort=None,
     ):
         seen_order.extend(output.reviewer for output in reviewer_outputs)
+        seen_comments.extend(pr_comments or [])
         return "### Findings\n- No material findings.\n\n### Test Gaps\n- None noted."
 
     monkeypatch.setattr("pr_reviewer.processor.run_codex_review", fake_codex)
     monkeypatch.setattr("pr_reviewer.processor.run_gemini_review", fake_gemini)
+    monkeypatch.setattr(
+        GitHubClient,
+        "get_pr_issue_comments",
+        lambda _self, _pr: ["@alice (2026-03-03T00:00:00Z): please verify x"],
+    )
     monkeypatch.setattr("pr_reviewer.processor.reconcile_reviews", fake_reconcile)
     monkeypatch.setattr(
         "pr_reviewer.processor.write_review_markdown",
@@ -516,3 +590,4 @@ def test_process_candidate_reconcile_uses_enabled_reviewer_order(monkeypatch, tm
 
     assert changed is True
     assert seen_order == ["gemini", "codex"]
+    assert seen_comments == ["@alice (2026-03-03T00:00:00Z): please verify x"]

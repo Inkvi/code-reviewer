@@ -2,6 +2,7 @@ import subprocess
 
 from pr_reviewer.config import AppConfig
 from pr_reviewer.github import GitHubClient
+from pr_reviewer.models import PRCandidate
 
 
 def test_discover_pr_candidates_skips_excluded_repo_and_sets_latest_rerequest(monkeypatch) -> None:
@@ -31,7 +32,13 @@ def test_discover_pr_candidates_skips_excluded_repo_and_sets_latest_rerequest(mo
                 },
             ]
         if args[:3] == ["gh", "pr", "view"]:
-            return {"baseRefName": "main", "headRefOid": "deadbeef"}
+            return {
+                "baseRefName": "main",
+                "headRefOid": "deadbeef",
+                "additions": 17,
+                "deletions": 3,
+                "files": [{"path": "src/app.py"}, {"path": ".github/workflows/ci.yaml"}],
+            }
         raise AssertionError(f"unexpected args: {args}")
 
     def fake_run_command(args, **_kwargs):  # noqa: ANN001
@@ -64,6 +71,9 @@ def test_discover_pr_candidates_skips_excluded_repo_and_sets_latest_rerequest(mo
     assert candidates[0].number == 64
     assert candidates[0].latest_direct_rerequest_at == "2026-02-27T20:10:00+00:00"
     assert candidates[0].trigger_metadata_version == 1
+    assert candidates[0].additions == 17
+    assert candidates[0].deletions == 3
+    assert candidates[0].changed_file_paths == ["src/app.py", ".github/workflows/ci.yaml"]
 
 
 def test_discover_pr_candidates_warns_and_continues_when_events_fail(monkeypatch) -> None:
@@ -84,7 +94,13 @@ def test_discover_pr_candidates_warns_and_continues_when_events_fail(monkeypatch
                 }
             ]
         if args[:3] == ["gh", "pr", "view"]:
-            return {"baseRefName": "main", "headRefOid": "deadbeef"}
+            return {
+                "baseRefName": "main",
+                "headRefOid": "deadbeef",
+                "additions": 12,
+                "deletions": 2,
+                "files": [{"path": "src/main.py"}],
+            }
         raise AssertionError(f"unexpected args: {args}")
 
     warnings: list[str] = []
@@ -100,6 +116,9 @@ def test_discover_pr_candidates_warns_and_continues_when_events_fail(monkeypatch
 
     assert len(candidates) == 1
     assert candidates[0].latest_direct_rerequest_at is None
+    assert candidates[0].additions == 12
+    assert candidates[0].deletions == 2
+    assert candidates[0].changed_file_paths == ["src/main.py"]
     assert any("failed to fetch review-request events" in message for message in warnings)
 
 
@@ -133,6 +152,9 @@ def test_get_pr_candidate_sets_latest_direct_rerequest(monkeypatch) -> None:
             "baseRefName": "main",
             "headRefOid": "deadbeef",
             "updatedAt": "2026-02-27T20:00:00Z",
+            "additions": 9,
+            "deletions": 1,
+            "files": [{"path": "README.md"}, {"path": "config/settings.toml"}],
         }
 
     def fake_run_command(args, **_kwargs):  # noqa: ANN001
@@ -164,3 +186,49 @@ def test_get_pr_candidate_sets_latest_direct_rerequest(monkeypatch) -> None:
     assert pr.base_ref == "main"
     assert pr.head_sha == "deadbeef"
     assert pr.latest_direct_rerequest_at == "2026-02-27T20:05:00+00:00"
+    assert pr.additions == 9
+    assert pr.deletions == 1
+    assert pr.changed_file_paths == ["README.md", "config/settings.toml"]
+
+
+def test_get_pr_issue_comments_formats_and_limits(monkeypatch) -> None:
+    client = GitHubClient(viewer_login="Inkvi")
+    pr = PRCandidate(
+        owner="polymerdao",
+        repo="obul",
+        number=64,
+        url="https://github.com/polymerdao/obul/pull/64",
+        title="test",
+        author_login="alice",
+        base_ref="main",
+        head_sha="deadbeef",
+        updated_at="2026-02-27T20:00:00Z",
+    )
+
+    def fake_run_command(args, **_kwargs):  # noqa: ANN001
+        expected_prefix = [
+            "gh",
+            "api",
+            "--paginate",
+            "repos/polymerdao/obul/issues/64/comments",
+        ]
+        assert args[:4] == expected_prefix
+        return subprocess.CompletedProcess(
+            args=args,
+            returncode=0,
+            stdout=(
+                '["alice","2026-02-27T20:00:00Z","  first\\ncomment  "]\n'
+                '["bob","2026-02-27T20:01:00Z","second comment"]\n'
+                '["carol","2026-02-27T20:02:00Z","third comment"]\n'
+            ),
+            stderr="",
+        )
+
+    monkeypatch.setattr("pr_reviewer.github.run_command", fake_run_command)
+
+    comments = client.get_pr_issue_comments(pr, max_comments=2, per_comment_chars=50)
+
+    assert comments == [
+        "@bob (2026-02-27T20:01:00Z): second comment",
+        "@carol (2026-02-27T20:02:00Z): third comment",
+    ]

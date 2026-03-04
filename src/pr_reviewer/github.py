@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Literal
@@ -87,6 +88,72 @@ class GitHubClient:
                 latest = parsed
         return latest.isoformat() if latest is not None else None
 
+    @staticmethod
+    def _extract_changed_file_paths(details: object) -> list[str]:
+        if not isinstance(details, dict):
+            return []
+        files = details.get("files")
+        if not isinstance(files, list):
+            return []
+        paths: list[str] = []
+        for entry in files:
+            if not isinstance(entry, dict):
+                continue
+            path = entry.get("path")
+            if isinstance(path, str) and path.strip():
+                paths.append(path.strip())
+        return paths
+
+    @staticmethod
+    def _collapse_whitespace(text: str) -> str:
+        return " ".join(text.split())
+
+    def get_pr_issue_comments(
+        self,
+        pr: PRCandidate,
+        *,
+        max_comments: int = 20,
+        per_comment_chars: int = 400,
+    ) -> list[str]:
+        endpoint = f"repos/{pr.owner}/{pr.repo}/issues/{pr.number}/comments"
+        proc = run_command(
+            [
+                "gh",
+                "api",
+                "--paginate",
+                endpoint,
+                "--jq",
+                ".[] | [.user.login, .created_at, .body] | @json",
+            ]
+        )
+
+        comments: list[str] = []
+        for line in proc.stdout.splitlines():
+            try:
+                payload = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(payload, list) or len(payload) != 3:
+                continue
+            login, created_at, body = payload
+            if (
+                not isinstance(login, str)
+                or not isinstance(created_at, str)
+                or not isinstance(body, str)
+            ):
+                continue
+
+            condensed = self._collapse_whitespace(body).strip()
+            if not condensed:
+                continue
+            if len(condensed) > per_comment_chars:
+                condensed = f"{condensed[: per_comment_chars - 1]}…"
+            comments.append(f"@{login} ({created_at}): {condensed}")
+
+        if max_comments <= 0:
+            return []
+        return comments[-max_comments:]
+
     def discover_pr_candidates(self, config: AppConfig) -> list[PRCandidate]:
         data = run_json(
             [
@@ -132,7 +199,7 @@ class GitHubClient:
                     "view",
                     item["url"],
                     "--json",
-                    "baseRefName,headRefOid",
+                    "baseRefName,headRefOid,additions,deletions,files",
                 ]
             )
             latest_direct_rerequest_at = None
@@ -157,6 +224,9 @@ class GitHubClient:
                     head_sha=details.get("headRefOid", ""),
                     updated_at=item.get("updatedAt", ""),
                     latest_direct_rerequest_at=latest_direct_rerequest_at,
+                    additions=int(details.get("additions", 0) or 0),
+                    deletions=int(details.get("deletions", 0) or 0),
+                    changed_file_paths=self._extract_changed_file_paths(details),
                 )
             )
 
@@ -172,7 +242,7 @@ class GitHubClient:
                 "view",
                 pr_url,
                 "--json",
-                "number,url,title,author,baseRefName,headRefOid,updatedAt",
+                "number,url,title,author,baseRefName,headRefOid,updatedAt,additions,deletions,files",
             ]
         )
         author = details.get("author") or {}
@@ -198,6 +268,9 @@ class GitHubClient:
             head_sha=details.get("headRefOid", ""),
             updated_at=details.get("updatedAt", ""),
             latest_direct_rerequest_at=latest_direct_rerequest_at,
+            additions=int(details.get("additions", 0) or 0),
+            deletions=int(details.get("deletions", 0) or 0),
+            changed_file_paths=self._extract_changed_file_paths(details),
         )
 
     def has_issue_comment_by_viewer(self, pr: PRCandidate) -> bool:

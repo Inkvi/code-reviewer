@@ -122,9 +122,12 @@ uv run pr-reviewer run-once --pr-url https://github.com/<org>/<repo>/pull/<numbe
 - Uses trigger state machine from `trigger_mode`
 - Codex CLI backend uses `codex review` and, when supported by CLI version, can parse JSON event output
 - Skips draft PRs and (by default) PRs authored by you
+- Skips PRs with fewer than 10 total changed lines (`additions + deletions`)
+- Skips PRs that only touch config-like files (`.yaml`, `.yml`, `.json`, `.toml`, etc.)
 - Bootstraps all discovered candidate PRs when no prior state exists
 - After bootstrap, processes PRs when a newer direct re-request to you is observed
 - Runs all enabled reviewers in parallel
+- Injects PR issue-thread comments into reconciliation context (multi-reviewer mode)
 - Reconciles with Claude and writes:
   `reviews/<org>/<repo>/pr-<number>.md`
 - Also writes versioned historical reviews under:

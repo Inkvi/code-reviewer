@@ -37,6 +37,19 @@ class ProcessingDecision:
     next_expected_rerequest_at: str | None = None
 
 
+_CONFIG_LIKE_SUFFIXES = {
+    ".cfg",
+    ".conf",
+    ".env",
+    ".ini",
+    ".json",
+    ".properties",
+    ".toml",
+    ".yaml",
+    ".yml",
+}
+
+
 def _disabled_output(reviewer: str) -> ReviewerOutput:
     now = datetime.now(UTC)
     return ReviewerOutput(
@@ -102,6 +115,27 @@ def _existing_saved_review_path(
         seen.add(key)
         if candidate.exists():
             return candidate
+    return None
+
+
+def _is_config_like_path(path: str) -> bool:
+    normalized = path.strip().lower()
+    if not normalized:
+        return False
+    file_name = Path(normalized).name
+    if file_name in {"docker-compose", "docker-compose.yaml", "docker-compose.yml"}:
+        return True
+    return Path(normalized).suffix in _CONFIG_LIKE_SUFFIXES
+
+
+def _skip_reason_for_change_scope(pr: PRCandidate) -> str | None:
+    total_lines_changed = pr.additions + pr.deletions
+    if total_lines_changed < 10:
+        return "small_change_set"
+
+    if pr.changed_file_paths and all(_is_config_like_path(path) for path in pr.changed_file_paths):
+        return "config_only_files"
+
     return None
 
 
@@ -229,6 +263,14 @@ async def process_candidate(
 
     detail(f"Processing {pr.key}: {pr.title}")
     previous = store.get(pr.key)
+    skip_reason = _skip_reason_for_change_scope(pr)
+    if skip_reason is not None:
+        detail(f"Skipping {pr.key}: {skip_reason}")
+        previous.last_status = f"skipped_{skip_reason}"
+        previous.trigger_mode = config.trigger_mode
+        store.set(pr.key, previous)
+        store.save()
+        return False
 
     if use_saved_review:
         saved_review_path = _existing_saved_review_path(Path(config.output_dir), pr, previous)
@@ -356,11 +398,17 @@ async def process_candidate(
         if len(enabled_reviewers) >= 2:
             reviewer_names = " + ".join(enabled_reviewers)
             info(f"{pr.key}: reconciling {reviewer_names} outputs")
+            pr_comments: list[str] = []
+            try:
+                pr_comments = client.get_pr_issue_comments(pr)
+            except Exception as exc:  # noqa: BLE001
+                warn(f"{pr.key}: failed to fetch PR issue comments for reconciliation: {exc}")
             final_review = await reconcile_reviews(
                 pr,
                 workdir,
                 list(active_outputs.values()),
                 config.claude_timeout_seconds,
+                pr_comments=pr_comments,
                 claude_model=config.claude_model,
                 claude_reasoning_effort=config.claude_reasoning_effort,
             )

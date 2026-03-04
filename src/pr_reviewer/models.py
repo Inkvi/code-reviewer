@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 
@@ -17,6 +17,9 @@ class PRCandidate:
     updated_at: str
     latest_direct_rerequest_at: str | None = None
     trigger_metadata_version: int = 1
+    additions: int = 0
+    deletions: int = 0
+    changed_file_paths: list[str] = field(default_factory=list)
 
     @property
     def key(self) -> str:
