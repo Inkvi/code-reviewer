@@ -1,23 +1,38 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 
 from pr_reviewer.models import PRCandidate, ReviewerOutput
+
+
+def _versioned_stem(pr: PRCandidate, now: datetime | None = None) -> str:
+    created_at = (now or datetime.now(UTC)).astimezone(UTC)
+    timestamp = created_at.strftime("%Y%m%dT%H%M%SZ")
+    short_sha = pr.head_sha[:12] if pr.head_sha else "nohead"
+    return f"{timestamp}-{short_sha}"
 
 
 def write_review_markdown(
     output_root: Path,
     pr: PRCandidate,
     final_review: str,
+    *,
+    version_label: str | None = None,
 ) -> Path:
     target_dir = output_root / pr.owner / pr.repo
+    history_dir = target_dir / f"pr-{pr.number}"
     target_dir.mkdir(parents=True, exist_ok=True)
-    file_path = target_dir / f"pr-{pr.number}.md"
+    history_dir.mkdir(parents=True, exist_ok=True)
+    stable_path = target_dir / f"pr-{pr.number}.md"
+    stem = version_label or _versioned_stem(pr)
+    versioned_path = history_dir / f"{stem}.md"
 
     content = f"{final_review.strip()}\n"
 
-    file_path.write_text(content, encoding="utf-8")
-    return file_path
+    versioned_path.write_text(content, encoding="utf-8")
+    stable_path.write_text(content, encoding="utf-8")
+    return stable_path
 
 
 def _section_text(value: str) -> str:
@@ -67,10 +82,16 @@ def write_reviewer_sidecar_markdown(
     pr: PRCandidate,
     reviewer_outputs: dict[str, ReviewerOutput],
     include_stderr: bool = True,
+    *,
+    version_label: str | None = None,
 ) -> Path:
     target_dir = output_root / pr.owner / pr.repo
+    history_dir = target_dir / f"pr-{pr.number}"
     target_dir.mkdir(parents=True, exist_ok=True)
-    file_path = target_dir / f"pr-{pr.number}.raw.md"
+    history_dir.mkdir(parents=True, exist_ok=True)
+    stable_path = target_dir / f"pr-{pr.number}.raw.md"
+    stem = version_label or _versioned_stem(pr)
+    versioned_path = history_dir / f"{stem}.raw.md"
 
     # Render in a stable order: claude, codex, gemini, then any others alphabetically
     preferred_order = ["claude", "codex", "gemini"]
@@ -87,5 +108,6 @@ def write_reviewer_sidecar_markdown(
 
 {"".join(sections)}"""
 
-    file_path.write_text(content, encoding="utf-8")
-    return file_path
+    versioned_path.write_text(content, encoding="utf-8")
+    stable_path.write_text(content, encoding="utf-8")
+    return stable_path

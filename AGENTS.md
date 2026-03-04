@@ -5,7 +5,7 @@ This repository uses a `src/` layout.
 - `src/pr_reviewer/`: core application logic (CLI, daemon loop, GitHub integration, config/state, output).
 - `src/pr_reviewer/reviewers/`: reviewer backends and reconciliation helpers (`claude_sdk`, `codex_cli`, `codex_agents_sdk`).
 - `tests/`: pytest suite, generally mirrored by module name (for example, `test_processor.py` for `processor.py`).
-- `reviews/<org>/<repo>/`: generated review artifacts (`.md` and `.raw.md`), not source code.
+- `reviews/<org>/<repo>/`: latest review artifacts (`pr-<number>.md` and `pr-<number>.raw.md`) plus versioned history under `pr-<number>/`.
 - `config.example.toml`: baseline config template for local setup.
 
 ## Build, Test, and Development Commands
@@ -13,8 +13,6 @@ This repository uses a `src/` layout.
 - `uv run pr-reviewer check`: run preflight checks and print runtime config summary.
 - `uv run pr-reviewer run-once`: execute one polling/review cycle.
 - `uv run pr-reviewer run-once --pr-url <PR_URL>`: review specific PR URL(s) directly.
-- `uv run pr-reviewer run-once --pr-url <PR_URL> --force`: bypass normal skip checks for specific PR URL(s).
-- `uv run pr-reviewer run-once --pr-url <PR_URL> --ignore-saved-review|--ignore-existing-comment|--ignore-head-sha`: bypass individual checks.
 - `uv run pr-reviewer run-once --pr-url <PR_URL> --use-saved-review`: reuse existing saved review markdown and continue to posting/submission.
 - `uv run pr-reviewer start`: run the daemon continuously.
 - `uv run ruff check .`: lint.
@@ -30,7 +28,7 @@ This repository uses a `src/` layout.
 ## Testing Guidelines
 - Framework: `pytest` with `pytest-asyncio`.
 - Test files use `tests/test_*.py`; test names should describe behavior (`test_<action>_<expected_result>`).
-- Add or update tests for every behavior change, especially CLI flags, skip logic, state handling, and reviewer reconciliation.
+- Add or update tests for every behavior change, especially trigger-state decisions, state handling/migration, CLI behavior, and reviewer reconciliation.
 - Run targeted tests during iteration, for example: `uv run pytest tests/test_processor.py`.
 
 ## Commit & Pull Request Guidelines
@@ -43,3 +41,4 @@ This repository uses a `src/` layout.
 - Never commit secrets or local credentials in `config.toml`.
 - Document new config keys in `config.example.toml` and `README.md`.
 - Review generated `reviews/` content before sharing; it may contain repository-sensitive context.
+- `trigger_mode` controls trigger-state behavior (`rerequest_only` by default; `rerequest_or_commit` reserved for future commit-trigger support).

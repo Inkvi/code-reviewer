@@ -29,6 +29,7 @@ class AppConfig(BaseModel):
     claude_timeout_seconds: int = Field(default=900, ge=30)
     codex_timeout_seconds: int = Field(default=900, ge=30)
     max_parallel_prs: int = Field(default=1, ge=1)
+    trigger_mode: str = "rerequest_only"
 
     @field_validator("post_mode")
     @classmethod
@@ -115,6 +116,14 @@ class AppConfig(BaseModel):
         if not cleaned:
             raise ValueError("gemini_model cannot be empty")
         return cleaned
+
+    @field_validator("trigger_mode")
+    @classmethod
+    def validate_trigger_mode(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in {"rerequest_only", "rerequest_or_commit"}:
+            raise ValueError("trigger_mode must be one of: rerequest_only, rerequest_or_commit")
+        return normalized
 
 
 def load_config(path: Path) -> AppConfig:

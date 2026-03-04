@@ -27,7 +27,11 @@ def test_write_review_markdown(tmp_path: Path) -> None:
     assert "URL:" not in text
     assert "Base:" not in text
     assert "Head:" not in text
-    assert "pr-42.md" in str(path)
+    assert path == tmp_path / "org" / "repo" / "pr-42.md"
+    versioned_dir = tmp_path / "org" / "repo" / "pr-42"
+    versioned_paths = list(versioned_dir.glob("*.md"))
+    assert len(versioned_paths) == 1
+    assert versioned_paths[0].read_text(encoding="utf-8") == text
 
 
 def test_write_reviewer_sidecar_markdown(tmp_path: Path) -> None:
@@ -74,7 +78,11 @@ def test_write_reviewer_sidecar_markdown(tmp_path: Path) -> None:
     assert "claude markdown" in text
     assert "codex stderr" in text
     assert "codex failed" in text
-    assert "pr-42.raw.md" in str(path)
+    assert path == tmp_path / "org" / "repo" / "pr-42.raw.md"
+    versioned_dir = tmp_path / "org" / "repo" / "pr-42"
+    versioned_paths = list(versioned_dir.glob("*.raw.md"))
+    assert len(versioned_paths) == 1
+    assert versioned_paths[0].read_text(encoding="utf-8") == text
 
 
 def test_write_reviewer_sidecar_markdown_without_stderr(tmp_path: Path) -> None:

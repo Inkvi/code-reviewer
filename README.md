@@ -72,6 +72,9 @@ Model and reasoning tuning:
 codex_model = "gpt-5.3-codex"
 codex_reasoning_effort = "low"   # default for local dev/test
 # # low|medium|high
+
+# Trigger mode
+trigger_mode = "rerequest_only"  # rerequest_only|rerequest_or_commit
 ```
 
 Or override backend from CLI:
@@ -82,9 +85,6 @@ uv run pr-reviewer run-once --enabled-reviewer codex --codex-backend agents_sdk
 uv run pr-reviewer run-once --codex-model gpt-5.3-codex --codex-reasoning-effort high
 uv run pr-reviewer run-once --claude-model claude-sonnet-4-5 --claude-reasoning-effort medium
 uv run pr-reviewer run-once --pr-url https://github.com/<org>/<repo>/pull/<number> --auto-post-review
-uv run pr-reviewer run-once --pr-url https://github.com/<org>/<repo>/pull/<number> --force
-uv run pr-reviewer run-once --pr-url https://github.com/<org>/<repo>/pull/<number> --ignore-existing-comment
-uv run pr-reviewer run-once --pr-url https://github.com/<org>/<repo>/pull/<number> --ignore-head-sha
 uv run pr-reviewer run-once --pr-url https://github.com/<org>/<repo>/pull/<number> --use-saved-review --auto-post-review
 uv run pr-reviewer run-once --no-auto-post-review
 ```
@@ -119,21 +119,24 @@ uv run pr-reviewer run-once --pr-url https://github.com/<org>/<repo>/pull/<numbe
 - Excludes repos listed in `excluded_repos`
 - Runs only reviewers listed in `enabled_reviewers`
 - Uses selected Codex backend from `codex_backend`
+- Uses trigger state machine from `trigger_mode`
 - Codex CLI backend uses `codex review` and, when supported by CLI version, can parse JSON event output
 - Skips draft PRs and (by default) PRs authored by you
-- Skips PRs when you already posted an issue comment
-- Skips PRs when a saved review markdown already exists for that PR
+- Bootstraps all discovered candidate PRs when no prior state exists
+- After bootstrap, processes PRs when a newer direct re-request to you is observed
 - Runs all enabled reviewers in parallel
 - Reconciles with Claude and writes:
   `reviews/<org>/<repo>/pr-<number>.md`
+- Also writes versioned historical reviews under:
+  `reviews/<org>/<repo>/pr-<number>/<timestamp>-<shortsha>.md`
 - Saves raw reviewer outputs to:
   `reviews/<org>/<repo>/pr-<number>.raw.md`
+- Also writes versioned raw outputs under:
+  `reviews/<org>/<repo>/pr-<number>/<timestamp>-<shortsha>.raw.md`
 - Prints file path when ready
 - Optional comment posting when `auto_post_review = true`
 - Optional formal review submission when `auto_submit_review_decision = true`
 - `run-once --pr-url ...` reviews only specific PR URL(s)
-- `run-once --pr-url ... --force` bypasses skip checks (saved review + existing comment + head SHA)
-- `run-once --pr-url ... --ignore-saved-review|--ignore-existing-comment|--ignore-head-sha` bypasses individual checks
 - `run-once --pr-url ... --use-saved-review` reuses existing `pr-<number>.md` and continues to posting/submission without regenerating
 
 ## Lint and test

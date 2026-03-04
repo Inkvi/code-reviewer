@@ -28,3 +28,7 @@ clone_root = "./.tmp/workspaces"
 claude_timeout_seconds = 900
 codex_timeout_seconds = 900
 max_parallel_prs = 1
+# Trigger state machine mode:
+# - "rerequest_only": process on first bootstrap + new direct re-requests to viewer
+# - "rerequest_or_commit": reserved for future commit-trigger support
+trigger_mode = "rerequest_only"

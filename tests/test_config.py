@@ -25,6 +25,7 @@ def test_load_config_success(tmp_path: Path) -> None:
     assert cfg.codex_reasoning_effort == "low"
     assert cfg.gemini_model is None
     assert cfg.gemini_timeout_seconds == 900
+    assert cfg.trigger_mode == "rerequest_only"
 
 
 def test_load_config_invalid_interval(tmp_path: Path) -> None:
@@ -148,6 +149,30 @@ def test_load_config_rejects_empty_gemini_model(tmp_path: Path) -> None:
     path.write_text(
         'github_org = "polymerdao"\n'
         'gemini_model = ""\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError):
+        load_config(path)
+
+
+def test_load_config_accepts_rerequest_or_commit_trigger_mode(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text(
+        'github_org = "polymerdao"\n'
+        'trigger_mode = "rerequest_or_commit"\n',
+        encoding="utf-8",
+    )
+
+    cfg = load_config(path)
+    assert cfg.trigger_mode == "rerequest_or_commit"
+
+
+def test_load_config_rejects_invalid_trigger_mode(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text(
+        'github_org = "polymerdao"\n'
+        'trigger_mode = "invalid"\n',
         encoding="utf-8",
     )
 

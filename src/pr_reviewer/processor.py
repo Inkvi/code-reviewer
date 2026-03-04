@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Literal
 
 from pr_reviewer.config import AppConfig
 from pr_reviewer.github import GitHubClient
@@ -19,6 +21,20 @@ from pr_reviewer.reviewers import (
 )
 from pr_reviewer.state import StateStore
 from pr_reviewer.workspace import PRWorkspace
+
+DecisionReason = Literal[
+    "bootstrap_missing_state",
+    "new_rerequest",
+    "no_new_trigger",
+    "missing_rerequest_data",
+]
+
+
+@dataclass(slots=True)
+class ProcessingDecision:
+    should_process: bool
+    reason: DecisionReason
+    next_expected_rerequest_at: str | None = None
 
 
 def _disabled_output(reviewer: str) -> ReviewerOutput:
@@ -89,6 +105,64 @@ def _existing_saved_review_path(
     return None
 
 
+def _parse_iso_timestamp(value: str | None) -> datetime | None:
+    if value is None:
+        return None
+    cleaned = value.strip()
+    if not cleaned:
+        return None
+    try:
+        return datetime.fromisoformat(cleaned.replace("Z", "+00:00")).astimezone(UTC)
+    except ValueError:
+        return None
+
+
+def _output_version_label(pr: PRCandidate, *, now: datetime | None = None) -> str:
+    created_at = (now or datetime.now(UTC)).astimezone(UTC)
+    timestamp = created_at.strftime("%Y%m%dT%H%M%SZ")
+    short_sha = pr.head_sha[:12] if pr.head_sha else "nohead"
+    return f"{timestamp}-{short_sha}"
+
+
+def _compute_processing_decision(
+    previous: ProcessedState,
+    pr: PRCandidate,
+    trigger_mode: str,
+) -> ProcessingDecision:
+    if previous.last_processed_at is None:
+        return ProcessingDecision(
+            should_process=True,
+            reason="bootstrap_missing_state",
+            next_expected_rerequest_at=pr.latest_direct_rerequest_at,
+        )
+
+    latest_direct_rerequest_at = _parse_iso_timestamp(pr.latest_direct_rerequest_at)
+    if latest_direct_rerequest_at is None:
+        return ProcessingDecision(
+            should_process=False,
+            reason="missing_rerequest_data",
+            next_expected_rerequest_at=previous.last_seen_rerequest_at,
+        )
+
+    last_seen_rerequest_at = _parse_iso_timestamp(previous.last_seen_rerequest_at)
+    if last_seen_rerequest_at is None or latest_direct_rerequest_at > last_seen_rerequest_at:
+        return ProcessingDecision(
+            should_process=True,
+            reason="new_rerequest",
+            next_expected_rerequest_at=pr.latest_direct_rerequest_at,
+        )
+
+    if trigger_mode == "rerequest_or_commit":
+        # Commit-trigger processing is reserved for future implementation.
+        pass
+
+    return ProcessingDecision(
+        should_process=False,
+        reason="no_new_trigger",
+        next_expected_rerequest_at=previous.last_seen_rerequest_at,
+    )
+
+
 def _publish_and_persist(
     config: AppConfig,
     client: GitHubClient,
@@ -97,6 +171,7 @@ def _publish_and_persist(
     output_path: Path,
     review_text_for_decision: str,
     status_when_not_posted: str,
+    previous: ProcessedState,
 ) -> None:
     posted_at = None
     status = status_when_not_posted
@@ -119,10 +194,17 @@ def _publish_and_persist(
             "not posting to GitHub"
         )
 
+    last_seen_rerequest_at = previous.last_seen_rerequest_at
+    if pr.latest_direct_rerequest_at is not None:
+        last_seen_rerequest_at = pr.latest_direct_rerequest_at
+
     store.set(
         pr.key,
         ProcessedState(
             last_reviewed_head_sha=pr.head_sha,
+            last_processed_at=ProcessedState.now_iso(),
+            last_seen_rerequest_at=last_seen_rerequest_at,
+            trigger_mode=config.trigger_mode,
             last_output_file=str(output_path.resolve()),
             last_status=status,
             last_posted_at=posted_at,
@@ -139,9 +221,6 @@ async def process_candidate(
     pr: PRCandidate,
     *,
     use_saved_review: bool = False,
-    ignore_saved_review: bool = False,
-    ignore_existing_comment: bool = False,
-    ignore_head_sha: bool = False,
     verbose: bool = True,
 ) -> bool:
     def detail(message: str) -> None:
@@ -150,51 +229,17 @@ async def process_candidate(
 
     detail(f"Processing {pr.key}: {pr.title}")
     previous = store.get(pr.key)
-    saved_review_path = _existing_saved_review_path(Path(config.output_dir), pr, previous)
-
-    if use_saved_review and ignore_saved_review:
-        raise ValueError("use_saved_review and ignore_saved_review cannot be enabled together")
 
     if use_saved_review:
+        saved_review_path = _existing_saved_review_path(Path(config.output_dir), pr, previous)
         if saved_review_path is None:
             detail(f"Skipping {pr.key}: use_saved_review requested but no saved review exists")
             previous.last_status = "skipped_missing_saved_review"
+            previous.trigger_mode = config.trigger_mode
             store.set(pr.key, previous)
             store.save()
             return False
         detail(f"{pr.key}: using saved review file ({saved_review_path})")
-
-    if not use_saved_review:
-        if ignore_saved_review:
-            detail(f"{pr.key}: force mode enabled, bypassing saved review dedupe")
-        elif saved_review_path is not None:
-            detail(f"Skipping {pr.key}: saved review already exists ({saved_review_path})")
-            previous.last_status = "skipped_existing_saved_review"
-            store.set(pr.key, previous)
-            store.save()
-            return False
-
-    if ignore_existing_comment:
-        detail(f"{pr.key}: force mode enabled, bypassing existing issue comment check")
-    else:
-        detail(f"{pr.key}: checking existing issue comments")
-        if client.has_issue_comment_by_viewer(pr):
-            detail(f"Skipping {pr.key}: viewer already commented on PR thread")
-            previous.last_status = "skipped_existing_comment"
-            store.set(pr.key, previous)
-            store.save()
-            return False
-
-    detail(f"{pr.key}: checking previous processed head SHA")
-    if use_saved_review:
-        detail(f"{pr.key}: use_saved_review enabled, bypassing head SHA dedupe")
-    elif ignore_head_sha:
-        detail(f"{pr.key}: force mode enabled, bypassing head SHA dedupe")
-    elif previous.last_reviewed_head_sha and previous.last_reviewed_head_sha == pr.head_sha:
-        detail(f"Skipping {pr.key}: head SHA unchanged ({pr.head_sha[:12]})")
-        return False
-
-    if use_saved_review and saved_review_path is not None:
         review_text_for_decision = saved_review_path.read_text(encoding="utf-8")
         _publish_and_persist(
             config,
@@ -204,9 +249,21 @@ async def process_candidate(
             saved_review_path,
             review_text_for_decision,
             status_when_not_posted="reused_saved_review",
+            previous=previous,
         )
         info(f"{pr.key}: processing complete (reused saved review)")
         return True
+
+    decision = _compute_processing_decision(previous, pr, config.trigger_mode)
+    if decision.should_process:
+        detail(f"{pr.key}: trigger check passed ({decision.reason})")
+    else:
+        detail(f"Skipping {pr.key}: trigger check skipped ({decision.reason})")
+        previous.last_status = f"skipped_{decision.reason}"
+        previous.trigger_mode = config.trigger_mode
+        store.set(pr.key, previous)
+        store.save()
+        return False
 
     workdir: Path | None = None
     try:
@@ -314,16 +371,19 @@ async def process_candidate(
         else:
             raise RuntimeError("No enabled reviewers configured")
         info(f"{pr.key}: writing final markdown output")
+        version_label = _output_version_label(pr)
         output_path = write_review_markdown(
             Path(config.output_dir),
             pr,
             final_review,
+            version_label=version_label,
         )
         raw_output_path = write_reviewer_sidecar_markdown(
             Path(config.output_dir),
             pr,
             active_outputs,
             include_stderr=config.include_reviewer_stderr,
+            version_label=version_label,
         )
         info(f"Final review ready: {output_path.resolve()}")
         info(f"Raw reviewer outputs: {raw_output_path.resolve()}")
@@ -336,6 +396,7 @@ async def process_candidate(
             output_path,
             final_review,
             status_when_not_posted="generated",
+            previous=previous,
         )
         info(f"{pr.key}: processing complete")
         return True
@@ -343,6 +404,7 @@ async def process_candidate(
         warn(f"Failed processing {pr.key}: {exc}")
         state = store.get(pr.key)
         state.last_status = f"error: {exc}"
+        state.trigger_mode = config.trigger_mode
         store.set(pr.key, state)
         store.save()
         return False

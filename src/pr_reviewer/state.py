@@ -89,6 +89,9 @@ class StateStore:
         item = self._data.get(key, {})
         return ProcessedState(
             last_reviewed_head_sha=item.get("last_reviewed_head_sha"),
+            last_processed_at=item.get("last_processed_at"),
+            last_seen_rerequest_at=item.get("last_seen_rerequest_at"),
+            trigger_mode=item.get("trigger_mode") or "rerequest_only",
             last_output_file=item.get("last_output_file"),
             last_status=item.get("last_status"),
             last_posted_at=item.get("last_posted_at"),
@@ -97,6 +100,9 @@ class StateStore:
     def set(self, key: str, state: ProcessedState) -> None:
         self._data[key] = {
             "last_reviewed_head_sha": state.last_reviewed_head_sha,
+            "last_processed_at": state.last_processed_at,
+            "last_seen_rerequest_at": state.last_seen_rerequest_at,
+            "trigger_mode": state.trigger_mode,
             "last_output_file": state.last_output_file,
             "last_status": state.last_status,
             "last_posted_at": state.last_posted_at,

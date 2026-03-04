@@ -1,13 +1,14 @@
 import pytest
 import typer
+from typer.testing import CliRunner
 
 from pr_reviewer.cli import (
     _apply_bool_override,
     _apply_codex_backend_override,
     _apply_enabled_reviewer_override,
     _apply_field_override,
-    _resolve_skip_overrides,
     _target_pr_urls_for_run_once,
+    app,
 )
 from pr_reviewer.config import AppConfig
 
@@ -104,63 +105,11 @@ def test_apply_bool_override_true() -> None:
     assert out.auto_post_review is True
 
 
-def test_target_pr_urls_for_run_once_force_requires_url() -> None:
-    with pytest.raises(typer.BadParameter):
-        _target_pr_urls_for_run_once(
-            None,
-            force=True,
-            use_saved_review=False,
-            ignore_saved_review=False,
-            ignore_existing_comment=False,
-            ignore_head_sha=False,
-        )
-
-
 def test_target_pr_urls_for_run_once_use_saved_review_requires_url() -> None:
     with pytest.raises(typer.BadParameter):
         _target_pr_urls_for_run_once(
             None,
-            force=False,
             use_saved_review=True,
-            ignore_saved_review=False,
-            ignore_existing_comment=False,
-            ignore_head_sha=False,
-        )
-
-
-def test_target_pr_urls_for_run_once_ignore_head_sha_requires_url() -> None:
-    with pytest.raises(typer.BadParameter):
-        _target_pr_urls_for_run_once(
-            None,
-            force=False,
-            use_saved_review=False,
-            ignore_saved_review=False,
-            ignore_existing_comment=False,
-            ignore_head_sha=True,
-        )
-
-
-def test_target_pr_urls_for_run_once_use_saved_review_conflicts_with_force() -> None:
-    with pytest.raises(typer.BadParameter):
-        _target_pr_urls_for_run_once(
-            ["https://github.com/polymerdao/obul/pull/1"],
-            force=True,
-            use_saved_review=True,
-            ignore_saved_review=False,
-            ignore_existing_comment=False,
-            ignore_head_sha=False,
-        )
-
-
-def test_target_pr_urls_for_run_once_use_saved_review_conflicts_with_ignore_saved_review() -> None:
-    with pytest.raises(typer.BadParameter):
-        _target_pr_urls_for_run_once(
-            ["https://github.com/polymerdao/obul/pull/1"],
-            force=False,
-            use_saved_review=True,
-            ignore_saved_review=True,
-            ignore_existing_comment=False,
-            ignore_head_sha=False,
         )
 
 
@@ -173,41 +122,13 @@ def test_target_pr_urls_for_run_once_dedupes_values() -> None:
 
     out = _target_pr_urls_for_run_once(
         urls,
-        force=False,
         use_saved_review=False,
-        ignore_saved_review=False,
-        ignore_existing_comment=False,
-        ignore_head_sha=False,
     )
 
     assert out == [
         "https://github.com/polymerdao/obul/pull/1",
         "https://github.com/polymerdao/obul/pull/2",
     ]
-
-
-def test_resolve_skip_overrides_individual_flags() -> None:
-    out = _resolve_skip_overrides(
-        force=False,
-        ignore_saved_review=True,
-        ignore_existing_comment=False,
-        ignore_head_sha=True,
-    )
-
-    assert out == (True, False, True)
-
-
-def test_resolve_skip_overrides_force_enables_all() -> None:
-    out = _resolve_skip_overrides(
-        force=True,
-        ignore_saved_review=False,
-        ignore_existing_comment=False,
-        ignore_head_sha=False,
-    )
-
-    assert out == (True, True, True)
-
-
 def test_apply_enabled_reviewer_override_gemini_only() -> None:
     cfg = AppConfig(github_org="polymerdao")
 
@@ -224,3 +145,20 @@ def test_apply_field_override_gemini_model() -> None:
     )
 
     assert out.gemini_model == "gemini-3.1-pro-preview"
+
+
+@pytest.mark.parametrize(
+    "flag",
+    [
+        "--force",
+        "--ignore-saved-review",
+        "--ignore-existing-comment",
+        "--ignore-head-sha",
+    ],
+)
+def test_removed_skip_flags_are_rejected(flag: str) -> None:
+    runner = CliRunner()
+    result = runner.invoke(app, ["run-once", flag])
+
+    assert result.exit_code != 0
+    assert "No such option" in result.output

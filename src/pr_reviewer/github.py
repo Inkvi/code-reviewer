@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Literal
 from urllib.parse import urlparse
 
 from pr_reviewer.config import AppConfig
+from pr_reviewer.logger import warn
 from pr_reviewer.models import PRCandidate
 from pr_reviewer.shell import run_command, run_json
 
@@ -12,6 +14,10 @@ from pr_reviewer.shell import run_command, run_json
 @dataclass(slots=True)
 class GitHubClient:
     viewer_login: str
+    _REREQUEST_EVENTS_JQ = (
+        '.[] | select(.event == "review_requested" and .requested_reviewer.login != null) '
+        '| [.requested_reviewer.login, .created_at] | @tsv'
+    )
 
     @staticmethod
     def _parse_owner_repo_from_pr_url(pr_url: str) -> tuple[str, str]:
@@ -38,6 +44,48 @@ class GitHubClient:
             if "/" not in excluded and excluded == repo_name:
                 return True
         return False
+
+    @staticmethod
+    def _normalize_iso_timestamp(value: str | None) -> str | None:
+        if not isinstance(value, str):
+            return None
+        cleaned = value.strip()
+        if not cleaned:
+            return None
+        try:
+            parsed = datetime.fromisoformat(cleaned.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        return parsed.astimezone(UTC).replace(microsecond=0).isoformat()
+
+    def _latest_direct_rerequest_at(self, owner: str, repo: str, number: int) -> str | None:
+        endpoint = f"repos/{owner}/{repo}/issues/{number}/events"
+        proc = run_command(
+            [
+                "gh",
+                "api",
+                "--paginate",
+                endpoint,
+                "--jq",
+                self._REREQUEST_EVENTS_JQ,
+            ]
+        )
+
+        viewer_login = self.viewer_login.lower()
+        latest: datetime | None = None
+        for line in proc.stdout.splitlines():
+            login, sep, created_at = line.partition("\t")
+            if not sep:
+                continue
+            if login.strip().lower() != viewer_login:
+                continue
+            normalized = self._normalize_iso_timestamp(created_at)
+            if normalized is None:
+                continue
+            parsed = datetime.fromisoformat(normalized)
+            if latest is None or parsed > latest:
+                latest = parsed
+        return latest.isoformat() if latest is not None else None
 
     def discover_pr_candidates(self, config: AppConfig) -> list[PRCandidate]:
         data = run_json(
@@ -87,6 +135,15 @@ class GitHubClient:
                     "baseRefName,headRefOid",
                 ]
             )
+            latest_direct_rerequest_at = None
+            try:
+                latest_direct_rerequest_at = self._latest_direct_rerequest_at(
+                    owner, repo, int(item["number"])
+                )
+            except Exception as exc:  # noqa: BLE001
+                warn(
+                    f"{owner}/{repo}#{item['number']}: failed to fetch review-request events: {exc}"
+                )
 
             candidates.append(
                 PRCandidate(
@@ -99,6 +156,7 @@ class GitHubClient:
                     base_ref=details.get("baseRefName", "main"),
                     head_sha=details.get("headRefOid", ""),
                     updated_at=item.get("updatedAt", ""),
+                    latest_direct_rerequest_at=latest_direct_rerequest_at,
                 )
             )
 
@@ -118,6 +176,17 @@ class GitHubClient:
             ]
         )
         author = details.get("author") or {}
+        latest_direct_rerequest_at = None
+        try:
+            latest_direct_rerequest_at = self._latest_direct_rerequest_at(
+                owner, repo, int(details["number"])
+            )
+        except Exception as exc:  # noqa: BLE001
+            warn(
+                f"{owner}/{repo}#{details['number']}: "
+                f"failed to fetch review-request events: {exc}"
+            )
+
         return PRCandidate(
             owner=owner,
             repo=repo,
@@ -128,6 +197,7 @@ class GitHubClient:
             base_ref=details.get("baseRefName", "main"),
             head_sha=details.get("headRefOid", ""),
             updated_at=details.get("updatedAt", ""),
+            latest_direct_rerequest_at=latest_direct_rerequest_at,
         )
 
     def has_issue_comment_by_viewer(self, pr: PRCandidate) -> bool:

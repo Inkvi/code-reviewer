@@ -15,6 +15,8 @@ class PRCandidate:
     base_ref: str
     head_sha: str
     updated_at: str
+    latest_direct_rerequest_at: str | None = None
+    trigger_metadata_version: int = 1
 
     @property
     def key(self) -> str:
@@ -39,7 +41,11 @@ class ReviewerOutput:
 
 @dataclass(slots=True)
 class ProcessedState:
+    # Legacy field kept for backward-compatibility with existing state files.
     last_reviewed_head_sha: str | None = None
+    last_processed_at: str | None = None
+    last_seen_rerequest_at: str | None = None
+    trigger_mode: str = "rerequest_only"
     last_output_file: str | None = None
     last_status: str | None = None
     last_posted_at: str | None = None
