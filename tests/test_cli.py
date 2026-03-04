@@ -14,7 +14,7 @@ from pr_reviewer.config import AppConfig
 
 
 def test_apply_enabled_reviewer_override_none_keeps_config() -> None:
-    cfg = AppConfig(github_org="polymerdao")
+    cfg = AppConfig(github_orgs=["polymerdao"])
 
     out = _apply_enabled_reviewer_override(cfg, None)
 
@@ -22,7 +22,7 @@ def test_apply_enabled_reviewer_override_none_keeps_config() -> None:
 
 
 def test_apply_enabled_reviewer_override_codex_only() -> None:
-    cfg = AppConfig(github_org="polymerdao")
+    cfg = AppConfig(github_orgs=["polymerdao"])
 
     out = _apply_enabled_reviewer_override(cfg, ["codex"])
 
@@ -30,14 +30,14 @@ def test_apply_enabled_reviewer_override_codex_only() -> None:
 
 
 def test_apply_enabled_reviewer_override_invalid_raises_bad_parameter() -> None:
-    cfg = AppConfig(github_org="polymerdao")
+    cfg = AppConfig(github_orgs=["polymerdao"])
 
     with pytest.raises(typer.BadParameter):
         _apply_enabled_reviewer_override(cfg, ["invalid"])
 
 
 def test_apply_codex_backend_override_none_keeps_config() -> None:
-    cfg = AppConfig(github_org="polymerdao")
+    cfg = AppConfig(github_orgs=["polymerdao"])
 
     out = _apply_codex_backend_override(cfg, None)
 
@@ -45,7 +45,7 @@ def test_apply_codex_backend_override_none_keeps_config() -> None:
 
 
 def test_apply_codex_backend_override_agents_sdk() -> None:
-    cfg = AppConfig(github_org="polymerdao")
+    cfg = AppConfig(github_orgs=["polymerdao"])
 
     out = _apply_codex_backend_override(cfg, "agents_sdk")
 
@@ -53,14 +53,14 @@ def test_apply_codex_backend_override_agents_sdk() -> None:
 
 
 def test_apply_codex_backend_override_invalid_raises_bad_parameter() -> None:
-    cfg = AppConfig(github_org="polymerdao")
+    cfg = AppConfig(github_orgs=["polymerdao"])
 
     with pytest.raises(typer.BadParameter):
         _apply_codex_backend_override(cfg, "invalid")
 
 
 def test_apply_field_override_codex_model() -> None:
-    cfg = AppConfig(github_org="polymerdao")
+    cfg = AppConfig(github_orgs=["polymerdao"])
 
     out = _apply_field_override(cfg, "codex_model", "gpt-5.3-codex-mini", "--codex-model")
 
@@ -68,7 +68,7 @@ def test_apply_field_override_codex_model() -> None:
 
 
 def test_apply_field_override_invalid_reasoning_raises_bad_parameter() -> None:
-    cfg = AppConfig(github_org="polymerdao")
+    cfg = AppConfig(github_orgs=["polymerdao"])
 
     with pytest.raises(typer.BadParameter):
         _apply_field_override(
@@ -80,7 +80,7 @@ def test_apply_field_override_invalid_reasoning_raises_bad_parameter() -> None:
 
 
 def test_apply_field_override_reconciler_model() -> None:
-    cfg = AppConfig(github_org="polymerdao")
+    cfg = AppConfig(github_orgs=["polymerdao"])
 
     out = _apply_field_override(
         cfg,
@@ -93,7 +93,7 @@ def test_apply_field_override_reconciler_model() -> None:
 
 
 def test_apply_field_override_reconciler_backend() -> None:
-    cfg = AppConfig(github_org="polymerdao")
+    cfg = AppConfig(github_orgs=["polymerdao"])
 
     out = _apply_field_override(
         cfg,
@@ -106,7 +106,7 @@ def test_apply_field_override_reconciler_backend() -> None:
 
 
 def test_apply_field_override_invalid_reconciler_backend_raises_bad_parameter() -> None:
-    cfg = AppConfig(github_org="polymerdao")
+    cfg = AppConfig(github_orgs=["polymerdao"])
 
     with pytest.raises(typer.BadParameter):
         _apply_field_override(
@@ -118,7 +118,7 @@ def test_apply_field_override_invalid_reconciler_backend_raises_bad_parameter() 
 
 
 def test_apply_field_override_invalid_reconciler_reasoning_raises_bad_parameter() -> None:
-    cfg = AppConfig(github_org="polymerdao")
+    cfg = AppConfig(github_orgs=["polymerdao"])
 
     with pytest.raises(typer.BadParameter):
         _apply_field_override(
@@ -130,7 +130,7 @@ def test_apply_field_override_invalid_reconciler_reasoning_raises_bad_parameter(
 
 
 def test_apply_bool_override_none_keeps_config() -> None:
-    cfg = AppConfig(github_org="polymerdao", auto_post_review=False)
+    cfg = AppConfig(github_orgs=["polymerdao"], auto_post_review=False)
 
     out = _apply_bool_override(
         cfg,
@@ -143,7 +143,7 @@ def test_apply_bool_override_none_keeps_config() -> None:
 
 
 def test_apply_bool_override_true() -> None:
-    cfg = AppConfig(github_org="polymerdao", auto_post_review=False)
+    cfg = AppConfig(github_orgs=["polymerdao"], auto_post_review=False)
 
     out = _apply_bool_override(
         cfg,
@@ -182,7 +182,7 @@ def test_target_pr_urls_for_run_once_dedupes_values() -> None:
 
 
 def test_apply_enabled_reviewer_override_gemini_only() -> None:
-    cfg = AppConfig(github_org="polymerdao")
+    cfg = AppConfig(github_orgs=["polymerdao"])
 
     out = _apply_enabled_reviewer_override(cfg, ["gemini"])
 
@@ -190,7 +190,7 @@ def test_apply_enabled_reviewer_override_gemini_only() -> None:
 
 
 def test_apply_field_override_gemini_model() -> None:
-    cfg = AppConfig(github_org="polymerdao")
+    cfg = AppConfig(github_orgs=["polymerdao"])
 
     out = _apply_field_override(
         cfg, "gemini_model", "gemini-3.1-pro-preview", "--gemini-model"

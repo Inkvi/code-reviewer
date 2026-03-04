@@ -11,7 +11,7 @@ from pr_reviewer.preflight import run_preflight
 def test_run_preflight_requires_claude_for_multi_reviewer_without_claude_enabled(
     monkeypatch,
 ) -> None:
-    cfg = AppConfig(github_org="polymerdao", enabled_reviewers=["codex", "gemini"])
+    cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["codex", "gemini"])
 
     def fake_which(cmd: str) -> str | None:
         if cmd == "claude":
@@ -25,7 +25,7 @@ def test_run_preflight_requires_claude_for_multi_reviewer_without_claude_enabled
 
 
 def test_run_preflight_does_not_require_claude_for_single_gemini_reviewer(monkeypatch) -> None:
-    cfg = AppConfig(github_org="polymerdao", enabled_reviewers=["gemini"])
+    cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["gemini"])
 
     def fake_which(cmd: str) -> str | None:
         if cmd in {"gh", "gemini"}:
@@ -55,7 +55,7 @@ def test_run_preflight_does_not_require_claude_for_single_gemini_reviewer(monkey
 
 
 def test_run_preflight_rejects_missing_gemini_code_review_extension(monkeypatch) -> None:
-    cfg = AppConfig(github_org="polymerdao", enabled_reviewers=["gemini"])
+    cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["gemini"])
 
     def fake_which(cmd: str) -> str | None:
         if cmd in {"gh", "gemini"}:
@@ -80,7 +80,7 @@ def test_run_preflight_rejects_missing_gemini_code_review_extension(monkeypatch)
 
 def test_run_preflight_does_not_require_claude_for_codex_reconciler(monkeypatch) -> None:
     cfg = AppConfig(
-        github_org="polymerdao",
+        github_orgs=["polymerdao"],
         enabled_reviewers=["codex", "gemini"],
         reconciler_backend="codex",
     )
@@ -115,7 +115,7 @@ def test_run_preflight_gemini_reconciler_does_not_require_extension_when_not_rev
     monkeypatch,
 ) -> None:
     cfg = AppConfig(
-        github_org="polymerdao",
+        github_orgs=["polymerdao"],
         enabled_reviewers=["codex", "claude"],
         reconciler_backend="gemini",
     )

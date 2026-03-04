@@ -336,7 +336,7 @@ def check_command(
     table = Table(title="pr-reviewer check")
     table.add_column("Item")
     table.add_column("Value")
-    table.add_row("GitHub org", cfg.github_org)
+    table.add_row("GitHub owners", ", ".join(cfg.github_owners))
     table.add_row("Viewer", preflight.viewer_login)
     table.add_row("Poll interval", str(cfg.poll_interval_seconds))
     table.add_row("Auto post", str(cfg.auto_post_review))

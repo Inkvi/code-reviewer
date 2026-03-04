@@ -79,7 +79,10 @@ async def run_cycle(
 
 
 async def start_daemon(config: AppConfig, preflight: PreflightResult, store: StateStore) -> None:
-    info(f"Starting daemon with interval={config.poll_interval_seconds}s org={config.github_org}")
+    info(
+        "Starting daemon with "
+        f"interval={config.poll_interval_seconds}s owners={','.join(config.github_owners)}"
+    )
     while True:
         try:
             processed = await run_cycle(config, preflight, store, verbose=False)

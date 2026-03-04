@@ -1,4 +1,6 @@
-github_org = "Inkvi"
+github_orgs = ["Inkvi"]
+# Add additional owner scopes (orgs and/or user accounts):
+# github_orgs = ["polymerdao", "another-org", "Inkvi"]
 poll_interval_seconds = 60
 excluded_repos = []
 enabled_reviewers = ["claude", "codex"]

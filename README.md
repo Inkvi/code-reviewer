@@ -26,6 +26,12 @@ cp config.example.toml config.toml
 Optional excludes (in `config.toml`):
 
 ```toml
+# Owner scopes to monitor (orgs and/or usernames for personal repos)
+github_orgs = ["Inkvi"]
+
+# Add additional owners as needed
+# github_orgs = ["polymerdao", "another-org", "Inkvi"]
+
 # Exclude by full repo name and/or bare repo name
 excluded_repos = ["polymerdao/infra", "sandbox-repo"]
 ```
@@ -127,7 +133,7 @@ uv run pr-reviewer run-once --pr-url https://github.com/<org>/<repo>/pull/<numbe
 
 ## Behavior
 
-- Polls open PRs in `github_org` where `review-requested:@me`
+- Polls open PRs in all configured owners (`github_orgs`) where `review-requested:@me`
 - Excludes repos listed in `excluded_repos`
 - Runs only reviewers listed in `enabled_reviewers`
 - Uses selected Codex backend from `codex_backend`

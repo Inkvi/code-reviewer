@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field, ValidationError, field_validator, model_v
 
 
 class AppConfig(BaseModel):
-    github_org: str = Field(min_length=1)
+    github_orgs: list[str] = Field(default_factory=list)
     poll_interval_seconds: int = Field(default=60, ge=15)
     excluded_repos: list[str] = Field(default_factory=list)
     enabled_reviewers: list[str] = Field(default_factory=lambda: ["claude", "codex"])
@@ -33,6 +33,26 @@ class AppConfig(BaseModel):
     codex_timeout_seconds: int = Field(default=900, ge=30)
     max_parallel_prs: int = Field(default=1, ge=1)
     trigger_mode: str = "rerequest_only"
+
+    @property
+    def github_owners(self) -> list[str]:
+        return list(self.github_orgs)
+
+    @field_validator("github_orgs")
+    @classmethod
+    def normalize_github_orgs(cls, value: list[str]) -> list[str]:
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for entry in value:
+            cleaned = entry.strip()
+            if not cleaned:
+                continue
+            key = cleaned.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            normalized.append(cleaned)
+        return normalized
 
     @field_validator("post_mode")
     @classmethod
@@ -157,6 +177,23 @@ class AppConfig(BaseModel):
         return normalized
 
     @model_validator(mode="after")
+    def validate_github_owner_settings(self) -> AppConfig:
+        owners: list[str] = []
+        seen: set[str] = set()
+        for owner in self.github_orgs:
+            key = owner.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            owners.append(owner)
+
+        if not owners:
+            raise ValueError("must set github_orgs with at least one owner")
+
+        self.github_orgs = owners
+        return self
+
+    @model_validator(mode="after")
     def validate_reconciler_backend_settings(self) -> AppConfig:
         if self.reconciler_backend == "codex" and self.reconciler_reasoning_effort == "max":
             raise ValueError(
@@ -172,6 +209,9 @@ def load_config(path: Path) -> AppConfig:
 
     with path.open("rb") as handle:
         data = tomllib.load(handle)
+
+    if "github_org" in data:
+        raise ValueError("Invalid config: github_org is no longer supported; use github_orgs")
 
     try:
         return AppConfig.model_validate(data)

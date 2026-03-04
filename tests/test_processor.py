@@ -132,7 +132,7 @@ def test_start_codex_review_task_uses_cli_backend(monkeypatch) -> None:
     monkeypatch.setattr("pr_reviewer.processor.run_codex_review_via_agents_sdk", fake_codex_agents)
 
     cfg = AppConfig(
-        github_org="polymerdao",
+        github_orgs=["polymerdao"],
         enabled_reviewers=["codex"],
         codex_backend="cli",
         codex_reasoning_effort="high",
@@ -167,7 +167,7 @@ def test_start_codex_review_task_uses_agents_backend(monkeypatch) -> None:
     monkeypatch.setattr("pr_reviewer.processor.run_codex_review_via_agents_sdk", fake_codex_agents)
 
     cfg = AppConfig(
-        github_org="polymerdao",
+        github_orgs=["polymerdao"],
         enabled_reviewers=["codex"],
         codex_backend="agents_sdk",
         codex_reasoning_effort="medium",
@@ -186,7 +186,7 @@ def test_start_codex_review_task_uses_agents_backend(monkeypatch) -> None:
 
 def test_resolve_reconciler_settings_defaults_to_claude_backend() -> None:
     cfg = AppConfig(
-        github_org="polymerdao",
+        github_orgs=["polymerdao"],
         reconciler_backend="claude",
         claude_model="claude-sonnet-4-5",
         claude_reasoning_effort="high",
@@ -203,7 +203,7 @@ def test_resolve_reconciler_settings_defaults_to_claude_backend() -> None:
 
 def test_resolve_reconciler_settings_can_use_codex_backend() -> None:
     cfg = AppConfig(
-        github_org="polymerdao",
+        github_orgs=["polymerdao"],
         reconciler_backend="codex",
         codex_model="gpt-5.3-codex",
         codex_reasoning_effort="medium",
@@ -220,7 +220,7 @@ def test_resolve_reconciler_settings_can_use_codex_backend() -> None:
 
 def test_resolve_reconciler_settings_can_use_gemini_backend() -> None:
     cfg = AppConfig(
-        github_org="polymerdao",
+        github_orgs=["polymerdao"],
         reconciler_backend="gemini",
         gemini_model="gemini-3.1-pro-preview",
         gemini_timeout_seconds=123,
@@ -271,7 +271,7 @@ def test_process_candidate_skips_small_change_set(monkeypatch, tmp_path) -> None
         ),
     )
 
-    cfg = AppConfig(github_org="polymerdao", enabled_reviewers=["codex"])
+    cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["codex"])
     changed = asyncio.run(
         process_candidate(
             cfg,
@@ -299,7 +299,7 @@ def test_process_candidate_skips_config_only_files(monkeypatch, tmp_path) -> Non
         ),
     )
 
-    cfg = AppConfig(github_org="polymerdao", enabled_reviewers=["codex"])
+    cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["codex"])
     changed = asyncio.run(
         process_candidate(
             cfg,
@@ -349,7 +349,7 @@ def test_processes_on_bootstrap_when_state_missing(monkeypatch, tmp_path) -> Non
         lambda *_args, **_kwargs: tmp_path / "out.raw.md",
     )
 
-    cfg = AppConfig(github_org="polymerdao", enabled_reviewers=["codex"])
+    cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["codex"])
     changed = asyncio.run(process_candidate(cfg, client, store, workspace, _sample_pr()))
 
     assert changed is True
@@ -376,7 +376,7 @@ def test_skips_without_new_rerequest_after_processed(monkeypatch, tmp_path) -> N
         ),
     )
 
-    cfg = AppConfig(github_org="polymerdao", enabled_reviewers=["codex"])
+    cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["codex"])
     changed = asyncio.run(
         process_candidate(
             cfg,
@@ -427,7 +427,7 @@ def test_processes_on_newer_direct_rerequest(monkeypatch, tmp_path) -> None:
         lambda *_args, **_kwargs: tmp_path / "out.raw.md",
     )
 
-    cfg = AppConfig(github_org="polymerdao", enabled_reviewers=["codex"])
+    cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["codex"])
     changed = asyncio.run(
         process_candidate(
             cfg,
@@ -458,7 +458,7 @@ def test_does_not_advance_trigger_checkpoint_on_failure(monkeypatch, tmp_path) -
 
     monkeypatch.setattr("pr_reviewer.processor.run_codex_review", fake_codex)
 
-    cfg = AppConfig(github_org="polymerdao", enabled_reviewers=["codex"])
+    cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["codex"])
     changed = asyncio.run(
         process_candidate(
             cfg,
@@ -505,7 +505,7 @@ def test_use_saved_review_still_bypasses_generation(monkeypatch, tmp_path) -> No
     )
 
     cfg = AppConfig(
-        github_org="polymerdao",
+        github_orgs=["polymerdao"],
         enabled_reviewers=["codex"],
         output_dir=str(tmp_path),
         auto_post_review=True,
@@ -562,7 +562,11 @@ def test_saved_review_existing_does_not_skip_normal_flow(monkeypatch, tmp_path) 
         lambda *_args, **_kwargs: tmp_path / "out.raw.md",
     )
 
-    cfg = AppConfig(github_org="polymerdao", enabled_reviewers=["codex"], output_dir=str(tmp_path))
+    cfg = AppConfig(
+        github_orgs=["polymerdao"],
+        enabled_reviewers=["codex"],
+        output_dir=str(tmp_path),
+    )
     changed = asyncio.run(process_candidate(cfg, client, store, workspace, pr))
 
     assert changed is True
@@ -645,7 +649,7 @@ def test_process_candidate_reconcile_uses_enabled_reviewer_order(monkeypatch, tm
     )
 
     cfg = AppConfig(
-        github_org="polymerdao",
+        github_orgs=["polymerdao"],
         enabled_reviewers=["gemini", "codex"],
         reconciler_backend="codex",
         codex_model="gpt-5.3-codex",
@@ -733,7 +737,7 @@ def test_process_candidate_reconcile_falls_back_to_claude_settings(monkeypatch, 
     )
 
     cfg = AppConfig(
-        github_org="polymerdao",
+        github_orgs=["polymerdao"],
         enabled_reviewers=["gemini", "codex"],
         claude_model="claude-sonnet-4-5",
         claude_reasoning_effort="medium",

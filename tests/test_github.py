@@ -7,7 +7,7 @@ from pr_reviewer.models import PRCandidate
 
 def test_discover_pr_candidates_skips_excluded_repo_and_sets_latest_rerequest(monkeypatch) -> None:
     client = GitHubClient(viewer_login="Inkvi")
-    config = AppConfig(github_org="polymerdao", excluded_repos=["polymerdao/infra"])
+    config = AppConfig(github_orgs=["polymerdao"], excluded_repos=["polymerdao/infra"])
 
     def fake_run_json(args):  # noqa: ANN001
         if args[:3] == ["gh", "search", "prs"]:
@@ -78,7 +78,7 @@ def test_discover_pr_candidates_skips_excluded_repo_and_sets_latest_rerequest(mo
 
 def test_discover_pr_candidates_warns_and_continues_when_events_fail(monkeypatch) -> None:
     client = GitHubClient(viewer_login="Inkvi")
-    config = AppConfig(github_org="polymerdao")
+    config = AppConfig(github_orgs=["polymerdao"])
 
     def fake_run_json(args):  # noqa: ANN001
         if args[:3] == ["gh", "search", "prs"]:
@@ -120,6 +120,71 @@ def test_discover_pr_candidates_warns_and_continues_when_events_fail(monkeypatch
     assert candidates[0].deletions == 2
     assert candidates[0].changed_file_paths == ["src/main.py"]
     assert any("failed to fetch review-request events" in message for message in warnings)
+
+
+def test_discover_pr_candidates_queries_all_configured_owners(monkeypatch) -> None:
+    client = GitHubClient(viewer_login="Inkvi")
+    config = AppConfig(github_orgs=["polymerdao", "Inkvi"])
+    search_owners: list[str] = []
+
+    def fake_run_json(args):  # noqa: ANN001
+        if args[:3] == ["gh", "search", "prs"]:
+            owner_scope = args[4]
+            search_owners.append(owner_scope)
+            if owner_scope == "polymerdao":
+                return [
+                    {
+                        "number": 64,
+                        "repository": {"nameWithOwner": "polymerdao/obul"},
+                        "url": "https://github.com/polymerdao/obul/pull/64",
+                        "title": "obul pr",
+                        "author": {"login": "alice"},
+                        "isDraft": False,
+                        "updatedAt": "2026-02-27T20:00:00Z",
+                    }
+                ]
+            if owner_scope == "Inkvi":
+                return [
+                    {
+                        "number": 11,
+                        "repository": {"nameWithOwner": "Inkvi/personal-repo"},
+                        "url": "https://github.com/Inkvi/personal-repo/pull/11",
+                        "title": "personal pr",
+                        "author": {"login": "bob"},
+                        "isDraft": False,
+                        "updatedAt": "2026-02-27T20:10:00Z",
+                    }
+                ]
+            raise AssertionError(f"unexpected owner scope: {owner_scope}")
+
+        if args[:3] == ["gh", "pr", "view"]:
+            return {
+                "baseRefName": "main",
+                "headRefOid": "deadbeef",
+                "additions": 5,
+                "deletions": 1,
+                "files": [{"path": "src/app.py"}],
+            }
+        raise AssertionError(f"unexpected args: {args}")
+
+    def fake_run_command(_args, **_kwargs):  # noqa: ANN001
+        return subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout="Inkvi\t2026-02-27T20:05:00Z\n",
+            stderr="",
+        )
+
+    monkeypatch.setattr("pr_reviewer.github.run_json", fake_run_json)
+    monkeypatch.setattr("pr_reviewer.github.run_command", fake_run_command)
+
+    candidates = client.discover_pr_candidates(config)
+
+    assert search_owners == ["polymerdao", "Inkvi"]
+    assert [candidate.key for candidate in candidates] == [
+        "polymerdao/obul#64",
+        "Inkvi/personal-repo#11",
+    ]
 
 
 def test_parse_owner_repo_from_pr_url() -> None:

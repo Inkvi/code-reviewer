@@ -155,65 +155,70 @@ class GitHubClient:
         return comments[-max_comments:]
 
     def discover_pr_candidates(self, config: AppConfig) -> list[PRCandidate]:
-        data = run_json(
-            [
-                "gh",
-                "search",
-                "prs",
-                "--owner",
-                config.github_org,
-                "--state",
-                "open",
-                "--review-requested",
-                "@me",
-                "--json",
-                "number,repository,url,title,author,isDraft,updatedAt",
-                "-L",
-                "200",
-            ]
-        )
-
-        if not isinstance(data, list):
-            return []
-
-        candidates: list[PRCandidate] = []
-        for item in data:
-            if item.get("isDraft"):
-                continue
-
-            author_login = (item.get("author") or {}).get("login", "")
-            if config.skip_own_prs and author_login == self.viewer_login:
-                continue
-
-            repo_full = item.get("repository", {}).get("nameWithOwner", "")
-            if "/" not in repo_full:
-                continue
-            owner, repo = repo_full.split("/", maxsplit=1)
-            if self._is_repo_excluded(config, owner, repo):
-                continue
-
-            details = run_json(
-                [
-                    "gh",
-                    "pr",
-                    "view",
-                    item["url"],
-                    "--json",
-                    "baseRefName,headRefOid,additions,deletions,files",
-                ]
-            )
-            latest_direct_rerequest_at = None
+        candidates_by_key: dict[str, PRCandidate] = {}
+        for owner_scope in config.github_owners:
             try:
-                latest_direct_rerequest_at = self._latest_direct_rerequest_at(
-                    owner, repo, int(item["number"])
+                data = run_json(
+                    [
+                        "gh",
+                        "search",
+                        "prs",
+                        "--owner",
+                        owner_scope,
+                        "--state",
+                        "open",
+                        "--review-requested",
+                        "@me",
+                        "--json",
+                        "number,repository,url,title,author,isDraft,updatedAt",
+                        "-L",
+                        "200",
+                    ]
                 )
             except Exception as exc:  # noqa: BLE001
-                warn(
-                    f"{owner}/{repo}#{item['number']}: failed to fetch review-request events: {exc}"
-                )
+                warn(f"Failed to discover PRs for {owner_scope}: {exc}")
+                continue
 
-            candidates.append(
-                PRCandidate(
+            if not isinstance(data, list):
+                continue
+
+            for item in data:
+                if item.get("isDraft"):
+                    continue
+
+                author_login = (item.get("author") or {}).get("login", "")
+                if config.skip_own_prs and author_login == self.viewer_login:
+                    continue
+
+                repo_full = item.get("repository", {}).get("nameWithOwner", "")
+                if "/" not in repo_full:
+                    continue
+                owner, repo = repo_full.split("/", maxsplit=1)
+                if self._is_repo_excluded(config, owner, repo):
+                    continue
+
+                details = run_json(
+                    [
+                        "gh",
+                        "pr",
+                        "view",
+                        item["url"],
+                        "--json",
+                        "baseRefName,headRefOid,additions,deletions,files",
+                    ]
+                )
+                latest_direct_rerequest_at = None
+                try:
+                    latest_direct_rerequest_at = self._latest_direct_rerequest_at(
+                        owner, repo, int(item["number"])
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    warn(
+                        f"{owner}/{repo}#{item['number']}: "
+                        f"failed to fetch review-request events: {exc}"
+                    )
+
+                candidate = PRCandidate(
                     owner=owner,
                     repo=repo,
                     number=int(item["number"]),
@@ -228,8 +233,13 @@ class GitHubClient:
                     deletions=int(details.get("deletions", 0) or 0),
                     changed_file_paths=self._extract_changed_file_paths(details),
                 )
-            )
 
+                key = candidate.key.lower()
+                existing = candidates_by_key.get(key)
+                if existing is None or candidate.updated_at > existing.updated_at:
+                    candidates_by_key[key] = candidate
+
+        candidates = list(candidates_by_key.values())
         candidates.sort(key=lambda pr: pr.updated_at)
         return candidates
 

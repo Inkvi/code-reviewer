@@ -23,7 +23,7 @@ def _sample_pr(number: int) -> PRCandidate:
 
 
 def test_run_cycle_quiet_mode_suppresses_per_pr_logs(monkeypatch) -> None:
-    config = AppConfig(github_org="polymerdao", enabled_reviewers=["codex"])
+    config = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["codex"])
     preflight = PreflightResult(viewer_login="inkvi")
     pr = _sample_pr(13)
 
@@ -59,7 +59,7 @@ def test_run_cycle_quiet_mode_suppresses_per_pr_logs(monkeypatch) -> None:
 
 
 def test_start_daemon_uses_quiet_run_cycle(monkeypatch) -> None:
-    config = AppConfig(github_org="polymerdao", enabled_reviewers=["codex"])
+    config = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["codex"])
     preflight = PreflightResult(viewer_login="inkvi")
     run_cycle_verbose_args: list[bool] = []
 
