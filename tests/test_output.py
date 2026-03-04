@@ -64,7 +64,9 @@ def test_write_reviewer_sidecar_markdown(tmp_path: Path) -> None:
         ended_at=now,
     )
 
-    path = write_reviewer_sidecar_markdown(tmp_path, pr, claude, codex)
+    path = write_reviewer_sidecar_markdown(
+        tmp_path, pr, {"claude": claude, "codex": codex}
+    )
 
     assert path.exists()
     text = path.read_text(encoding="utf-8")
@@ -110,9 +112,66 @@ def test_write_reviewer_sidecar_markdown_without_stderr(tmp_path: Path) -> None:
     )
 
     path = write_reviewer_sidecar_markdown(
-        tmp_path, pr, claude, codex, include_stderr=False
+        tmp_path, pr, {"claude": claude, "codex": codex}, include_stderr=False
     )
 
     text = path.read_text(encoding="utf-8")
     assert "_omitted by config_" in text
     assert "codex stderr" not in text
+
+
+def test_write_reviewer_sidecar_markdown_three_reviewers(tmp_path: Path) -> None:
+    pr = PRCandidate(
+        owner="org",
+        repo="repo",
+        number=42,
+        url="https://example.com/pr/42",
+        title="Fix bug",
+        author_login="alice",
+        base_ref="main",
+        head_sha="deadbeef",
+        updated_at="2026-01-01T00:00:00Z",
+    )
+    now = datetime.now(UTC)
+    claude = ReviewerOutput(
+        reviewer="claude",
+        status="ok",
+        markdown="claude review",
+        stdout="claude stdout",
+        stderr="",
+        error=None,
+        started_at=now,
+        ended_at=now,
+    )
+    codex = ReviewerOutput(
+        reviewer="codex",
+        status="ok",
+        markdown="codex review",
+        stdout="codex stdout",
+        stderr="",
+        error=None,
+        started_at=now,
+        ended_at=now,
+    )
+    gemini = ReviewerOutput(
+        reviewer="gemini",
+        status="ok",
+        markdown="gemini review",
+        stdout="gemini stdout",
+        stderr="",
+        error=None,
+        started_at=now,
+        ended_at=now,
+    )
+
+    path = write_reviewer_sidecar_markdown(
+        tmp_path, pr, {"claude": claude, "codex": codex, "gemini": gemini}
+    )
+
+    text = path.read_text(encoding="utf-8")
+    assert "Claude" in text
+    assert "Codex" in text
+    assert "Gemini" in text
+    assert "gemini review" in text
+    # Verify ordering: Claude before Codex before Gemini
+    assert text.index("Claude") < text.index("Codex") < text.index("Gemini")

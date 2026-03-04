@@ -16,6 +16,8 @@ class AppConfig(BaseModel):
     codex_backend: str = "cli"
     codex_model: str = Field(default="gpt-5.3-codex", min_length=1)
     codex_reasoning_effort: str | None = "low"
+    gemini_model: str | None = None
+    gemini_timeout_seconds: int = Field(default=900, ge=30)
     skip_own_prs: bool = True
     auto_post_review: bool = False
     auto_submit_review_decision: bool = False
@@ -53,13 +55,13 @@ class AppConfig(BaseModel):
     def validate_enabled_reviewers(cls, value: list[str]) -> list[str]:
         normalized: list[str] = []
         seen: set[str] = set()
-        allowed = {"claude", "codex"}
+        allowed = {"claude", "codex", "gemini"}
         for entry in value:
             reviewer = entry.strip().lower()
             if not reviewer or reviewer in seen:
                 continue
             if reviewer not in allowed:
-                raise ValueError("enabled_reviewers entries must be one of: claude, codex")
+                raise ValueError("enabled_reviewers entries must be one of: claude, codex, gemini")
             seen.add(reviewer)
             normalized.append(reviewer)
         if not normalized:
@@ -102,6 +104,16 @@ class AppConfig(BaseModel):
         cleaned = value.strip()
         if not cleaned:
             raise ValueError("claude_model cannot be empty")
+        return cleaned
+
+    @field_validator("gemini_model")
+    @classmethod
+    def validate_gemini_model(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("gemini_model cannot be empty")
         return cleaned
 
 

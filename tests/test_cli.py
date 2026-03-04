@@ -206,3 +206,21 @@ def test_resolve_skip_overrides_force_enables_all() -> None:
     )
 
     assert out == (True, True, True)
+
+
+def test_apply_enabled_reviewer_override_gemini_only() -> None:
+    cfg = AppConfig(github_org="polymerdao")
+
+    out = _apply_enabled_reviewer_override(cfg, ["gemini"])
+
+    assert out.enabled_reviewers == ["gemini"]
+
+
+def test_apply_field_override_gemini_model() -> None:
+    cfg = AppConfig(github_org="polymerdao")
+
+    out = _apply_field_override(
+        cfg, "gemini_model", "gemini-3.1-pro-preview", "--gemini-model"
+    )
+
+    assert out.gemini_model == "gemini-3.1-pro-preview"

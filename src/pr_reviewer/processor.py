@@ -15,6 +15,7 @@ from pr_reviewer.reviewers import (
     run_claude_review,
     run_codex_review,
     run_codex_review_via_agents_sdk,
+    run_gemini_review,
 )
 from pr_reviewer.state import StateStore
 from pr_reviewer.workspace import PRWorkspace
@@ -213,10 +214,11 @@ async def process_candidate(
         workdir = workspace_mgr.prepare(pr)
         info(f"{pr.key}: workspace ready at {workdir}")
 
-        enabled_reviewers = set(config.enabled_reviewers)
+        enabled_reviewers = list(config.enabled_reviewers)
+        enabled_reviewer_set = set(enabled_reviewers)
         pending_tasks: dict[str, asyncio.Task] = {}
 
-        if "claude" in enabled_reviewers:
+        if "claude" in enabled_reviewer_set:
             info(
                 f"{pr.key}: starting Claude review "
                 f"(model={config.claude_model or 'default'}, "
@@ -234,7 +236,7 @@ async def process_candidate(
         else:
             info(f"{pr.key}: Claude reviewer disabled")
 
-        if "codex" in enabled_reviewers:
+        if "codex" in enabled_reviewer_set:
             info(
                 f"{pr.key}: starting Codex review "
                 f"(backend={config.codex_backend}, model={config.codex_model}, "
@@ -243,6 +245,22 @@ async def process_candidate(
             pending_tasks["codex"] = _start_codex_review_task(config, pr, workdir)
         else:
             info(f"{pr.key}: Codex reviewer disabled")
+
+        if "gemini" in enabled_reviewer_set:
+            info(
+                f"{pr.key}: starting Gemini review "
+                f"(model={config.gemini_model or 'default'})"
+            )
+            pending_tasks["gemini"] = asyncio.create_task(
+                run_gemini_review(
+                    pr,
+                    workdir,
+                    config.gemini_timeout_seconds,
+                    model=config.gemini_model,
+                )
+            )
+        else:
+            info(f"{pr.key}: Gemini reviewer disabled")
 
         reviewer_outputs: dict[str, ReviewerOutput] = {}
 
@@ -273,29 +291,28 @@ async def process_candidate(
                         warn(f"{pr.key}: {reviewer_name} error: {output.error}")
                     pending_tasks.pop(reviewer_name)
 
-        claude_output = reviewer_outputs.get("claude", _disabled_output("claude"))
-        codex_output = reviewer_outputs.get("codex", _disabled_output("codex"))
+        active_outputs = {
+            name: reviewer_outputs.get(name, _disabled_output(name))
+            for name in enabled_reviewers
+        }
 
-        if enabled_reviewers == {"claude", "codex"}:
-            info(f"{pr.key}: reconciling Claude and Codex outputs")
+        if len(enabled_reviewers) >= 2:
+            reviewer_names = " + ".join(enabled_reviewers)
+            info(f"{pr.key}: reconciling {reviewer_names} outputs")
             final_review = await reconcile_reviews(
                 pr,
                 workdir,
-                claude_output,
-                codex_output,
+                list(active_outputs.values()),
                 config.claude_timeout_seconds,
                 claude_model=config.claude_model,
                 claude_reasoning_effort=config.claude_reasoning_effort,
             )
-        elif enabled_reviewers == {"claude"}:
-            info(f"{pr.key}: single reviewer mode (claude)")
-            final_review = _single_reviewer_final_review(claude_output)
-        elif enabled_reviewers == {"codex"}:
-            info(f"{pr.key}: single reviewer mode (codex)")
-            final_review = _single_reviewer_final_review(codex_output)
+        elif len(enabled_reviewers) == 1:
+            sole_reviewer = enabled_reviewers[0]
+            info(f"{pr.key}: single reviewer mode ({sole_reviewer})")
+            final_review = _single_reviewer_final_review(active_outputs[sole_reviewer])
         else:
-            unsupported = sorted(enabled_reviewers)
-            raise RuntimeError(f"Unsupported enabled_reviewers configuration: {unsupported}")
+            raise RuntimeError("No enabled reviewers configured")
         info(f"{pr.key}: writing final markdown output")
         output_path = write_review_markdown(
             Path(config.output_dir),
@@ -305,8 +322,7 @@ async def process_candidate(
         raw_output_path = write_reviewer_sidecar_markdown(
             Path(config.output_dir),
             pr,
-            claude_output,
-            codex_output,
+            active_outputs,
             include_stderr=config.include_reviewer_stderr,
         )
         info(f"Final review ready: {output_path.resolve()}")

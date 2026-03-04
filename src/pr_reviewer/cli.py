@@ -79,6 +79,13 @@ CodexReasoningEffortOption = Annotated[
         help="Override codex_reasoning_effort from config. Allowed: low, medium, high.",
     ),
 ]
+GeminiModelOption = Annotated[
+    str | None,
+    typer.Option(
+        "--gemini-model",
+        help="Override gemini_model from config.",
+    ),
+]
 AutoPostReviewOption = Annotated[
     bool | None,
     typer.Option(
@@ -197,6 +204,7 @@ def _load_runtime(
     codex_model: str | None,
     codex_reasoning_effort: str | None,
     auto_post_review: bool | None,
+    gemini_model: str | None,
 ) -> tuple[AppConfig, StateStore]:
     config = load_config(config_path)
     config = _apply_enabled_reviewer_override(config, enabled_reviewer)
@@ -221,6 +229,7 @@ def _load_runtime(
         auto_post_review,
         "--auto-post-review/--no-auto-post-review",
     )
+    config = _apply_field_override(config, "gemini_model", gemini_model, "--gemini-model")
     store = StateStore(Path(config.state_file))
     store.acquire_lock()
     store.load()
@@ -280,6 +289,7 @@ def check_command(
     codex_model: CodexModelOption = None,
     codex_reasoning_effort: CodexReasoningEffortOption = None,
     auto_post_review: AutoPostReviewOption = None,
+    gemini_model: GeminiModelOption = None,
 ) -> None:
     """Run preflight checks and print runtime summary."""
     cfg = load_config(config)
@@ -305,6 +315,7 @@ def check_command(
         auto_post_review,
         "--auto-post-review/--no-auto-post-review",
     )
+    cfg = _apply_field_override(cfg, "gemini_model", gemini_model, "--gemini-model")
     preflight = run_preflight(cfg)
 
     table = Table(title="pr-reviewer check")
@@ -322,6 +333,7 @@ def check_command(
     table.add_row("Codex backend", cfg.codex_backend)
     table.add_row("Codex model", cfg.codex_model)
     table.add_row("Codex reasoning effort", cfg.codex_reasoning_effort or "default")
+    table.add_row("Gemini model", cfg.gemini_model or "default")
     table.add_row("Output dir", str(Path(cfg.output_dir).resolve()))
     table.add_row("State file", str(Path(cfg.state_file).resolve()))
     console.print(table)
@@ -337,6 +349,7 @@ def run_once_command(
     codex_model: CodexModelOption = None,
     codex_reasoning_effort: CodexReasoningEffortOption = None,
     auto_post_review: AutoPostReviewOption = None,
+    gemini_model: GeminiModelOption = None,
     force: ForceOption = False,
     pr_url: PrUrlOption = None,
     use_saved_review: UseSavedReviewOption = False,
@@ -372,6 +385,7 @@ def run_once_command(
         codex_model,
         codex_reasoning_effort,
         auto_post_review,
+        gemini_model,
     )
     try:
         preflight = run_preflight(cfg)
@@ -417,6 +431,7 @@ def start_command(
     codex_model: CodexModelOption = None,
     codex_reasoning_effort: CodexReasoningEffortOption = None,
     auto_post_review: AutoPostReviewOption = None,
+    gemini_model: GeminiModelOption = None,
 ) -> None:
     """Run daemon forever."""
     cfg, store = _load_runtime(
@@ -428,6 +443,7 @@ def start_command(
         codex_model,
         codex_reasoning_effort,
         auto_post_review,
+        gemini_model,
     )
     try:
         preflight = run_preflight(cfg)

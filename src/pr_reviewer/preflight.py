@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from pr_reviewer.config import AppConfig
 from pr_reviewer.shell import CommandError, run_command
 
+_GEMINI_CODE_REVIEW_EXTENSION = "code-review"
+
 
 @dataclass(slots=True)
 class PreflightResult:
@@ -16,10 +18,13 @@ class PreflightResult:
 def run_preflight(config: AppConfig) -> PreflightResult:
     required = ["gh"]
     enabled = set(config.enabled_reviewers)
-    if "claude" in enabled:
+    uses_claude_reconciler = "claude" in enabled or len(enabled) >= 2
+    if uses_claude_reconciler:
         required.append("claude")
     if "codex" in enabled and config.codex_backend == "cli":
         required.append("codex")
+    if "gemini" in enabled:
+        required.append("gemini")
 
     missing = [cmd for cmd in required if shutil.which(cmd) is None]
     if missing:
@@ -42,14 +47,18 @@ def run_preflight(config: AppConfig) -> PreflightResult:
     if "codex" in enabled and config.codex_backend == "cli":
         run_command(["codex", "--version"])
 
-    if "claude" in enabled:
+    if uses_claude_reconciler:
         run_command(["claude", "-v"])
 
-    if "claude" in enabled:
+    if uses_claude_reconciler:
         try:
             from claude_agent_sdk import query  # noqa: F401
         except Exception as exc:  # noqa: BLE001
-            raise RuntimeError("Python package claude-agent-sdk is unavailable.") from exc
+            if "claude" in enabled:
+                raise RuntimeError("Python package claude-agent-sdk is unavailable.") from exc
+            raise RuntimeError(
+                "Python package claude-agent-sdk is required for multi-reviewer reconciliation."
+            ) from exc
 
     if "codex" in enabled and config.codex_backend == "agents_sdk":
         if not os.environ.get("OPENAI_API_KEY"):
@@ -63,5 +72,22 @@ def run_preflight(config: AppConfig) -> PreflightResult:
                 raise RuntimeError(
                     "codex_backend=agents_sdk requires the OpenAI Agents SDK package."
                 ) from exc
+
+    if "gemini" in enabled:
+        run_command(["gemini", "--version"])
+        try:
+            extension_proc = run_command(["gemini", "extensions", "list"])
+        except CommandError as exc:
+            raise RuntimeError(
+                "Failed to list Gemini extensions. "
+                "Install/upgrade Gemini CLI and ensure it is authenticated."
+            ) from exc
+        extension_listing = f"{extension_proc.stdout}\n{extension_proc.stderr}".lower()
+        if _GEMINI_CODE_REVIEW_EXTENSION not in extension_listing:
+            raise RuntimeError(
+                "Gemini reviewer requires the `code-review` extension. "
+                "Install with: gemini extensions install "
+                "https://github.com/gemini-cli-extensions/code-review"
+            )
 
     return PreflightResult(viewer_login=viewer_login)

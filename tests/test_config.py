@@ -23,6 +23,8 @@ def test_load_config_success(tmp_path: Path) -> None:
     assert cfg.codex_backend == "cli"
     assert cfg.codex_model == "gpt-5.3-codex"
     assert cfg.codex_reasoning_effort == "low"
+    assert cfg.gemini_model is None
+    assert cfg.gemini_timeout_seconds == 900
 
 
 def test_load_config_invalid_interval(tmp_path: Path) -> None:
@@ -110,6 +112,42 @@ def test_load_config_rejects_invalid_codex_reasoning_effort(tmp_path: Path) -> N
     path.write_text(
         'github_org = "polymerdao"\n'
         'codex_reasoning_effort = "max"\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError):
+        load_config(path)
+
+
+def test_load_config_accepts_gemini_reviewer(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text(
+        'github_org = "polymerdao"\n'
+        'enabled_reviewers = ["gemini"]\n',
+        encoding="utf-8",
+    )
+
+    cfg = load_config(path)
+    assert cfg.enabled_reviewers == ["gemini"]
+
+
+def test_load_config_accepts_all_three_reviewers(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text(
+        'github_org = "polymerdao"\n'
+        'enabled_reviewers = ["claude", "codex", "gemini"]\n',
+        encoding="utf-8",
+    )
+
+    cfg = load_config(path)
+    assert cfg.enabled_reviewers == ["claude", "codex", "gemini"]
+
+
+def test_load_config_rejects_empty_gemini_model(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text(
+        'github_org = "polymerdao"\n'
+        'gemini_model = ""\n',
         encoding="utf-8",
     )
 
