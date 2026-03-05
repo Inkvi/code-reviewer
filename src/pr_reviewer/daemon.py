@@ -41,7 +41,7 @@ async def run_cycle(
     if config.max_parallel_prs == 1:
         for index, pr in enumerate(candidates, start=1):
             if verbose:
-                info(f"PR {index}/{len(candidates)}: {pr.url}")
+                info(f"PR {index}/{len(candidates)} {pr.url}")
             changed = await process_candidate(
                 config,
                 client,

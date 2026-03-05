@@ -228,21 +228,21 @@ def _publish_and_persist(
     status = status_when_not_posted
     if config.auto_submit_review_decision:
         decision = infer_review_decision(review_text_for_decision)
-        info(f"{pr.url}: submitting PR review decision={decision}")
+        info(f"submitting PR review decision={decision} {pr.url}")
         client.submit_pr_review(pr, str(output_path), decision)
         posted_at = ProcessedState.now_iso()
         status = "approved" if decision == "approve" else "changes_requested"
-        info(f"{pr.url}: submitted PR review ({status})")
+        info(f"submitted PR review ({status}) {pr.url}")
     elif config.auto_post_review:
-        info(f"{pr.url}: posting review comment to GitHub")
+        info(f"posting review comment to GitHub {pr.url}")
         client.post_pr_comment(pr, str(output_path))
         posted_at = ProcessedState.now_iso()
         status = "posted"
-        info(f"Posted review comment for {pr.url}")
+        info(f"posted review comment {pr.url}")
     else:
         info(
-            f"{pr.url}: auto_post_review and auto_submit_review_decision are disabled; "
-            "not posting to GitHub"
+            f"auto_post_review and auto_submit_review_decision are disabled; "
+            f"not posting to GitHub {pr.url}"
         )
 
     last_seen_rerequest_at = previous.last_seen_rerequest_at
@@ -278,11 +278,11 @@ async def process_candidate(
         if verbose:
             info(message)
 
-    detail(f"Processing {pr.url}: {pr.title}")
+    detail(f"processing {pr.title} {pr.url}")
     previous = store.get(pr.key)
     skip_reason = _skip_reason_for_change_scope(pr)
     if skip_reason is not None:
-        detail(f"Skipping {pr.url}: {skip_reason}")
+        detail(f"skipping ({skip_reason}) {pr.url}")
         previous.last_status = f"skipped_{skip_reason}"
         previous.trigger_mode = config.trigger_mode
         store.set(pr.key, previous)
@@ -292,13 +292,13 @@ async def process_candidate(
     if use_saved_review:
         saved_review_path = _existing_saved_review_path(Path(config.output_dir), pr, previous)
         if saved_review_path is None:
-            detail(f"Skipping {pr.url}: use_saved_review requested but no saved review exists")
+            detail(f"skipping, use_saved_review requested but no saved review exists {pr.url}")
             previous.last_status = "skipped_missing_saved_review"
             previous.trigger_mode = config.trigger_mode
             store.set(pr.key, previous)
             store.save()
             return False
-        detail(f"{pr.url}: using saved review file ({saved_review_path})")
+        detail(f"using saved review file ({saved_review_path}) {pr.url}")
         review_text_for_decision = saved_review_path.read_text(encoding="utf-8")
         _publish_and_persist(
             config,
@@ -310,14 +310,14 @@ async def process_candidate(
             status_when_not_posted="reused_saved_review",
             previous=previous,
         )
-        info(f"{pr.url}: processing complete (reused saved review)")
+        info(f"processing complete (reused saved review) {pr.url}")
         return True
 
     decision = _compute_processing_decision(previous, pr, config.trigger_mode)
     if decision.should_process:
-        detail(f"{pr.url}: trigger check passed ({decision.reason})")
+        detail(f"trigger check passed ({decision.reason}) {pr.url}")
     else:
-        detail(f"Skipping {pr.url}: trigger check skipped ({decision.reason})")
+        detail(f"skipping, trigger check skipped ({decision.reason}) {pr.url}")
         previous.last_status = f"skipped_{decision.reason}"
         previous.trigger_mode = config.trigger_mode
         store.set(pr.key, previous)
@@ -326,9 +326,9 @@ async def process_candidate(
 
     workdir: Path | None = None
     try:
-        info(f"{pr.url}: preparing workspace")
+        info(f"preparing workspace {pr.url}")
         workdir = workspace_mgr.prepare(pr)
-        info(f"{pr.url}: workspace ready at {workdir}")
+        info(f"workspace ready at {workdir} {pr.url}")
 
         enabled_reviewers = list(config.enabled_reviewers)
         enabled_reviewer_set = set(enabled_reviewers)
@@ -336,9 +336,9 @@ async def process_candidate(
 
         if "claude" in enabled_reviewer_set:
             info(
-                f"{pr.url}: starting Claude review "
+                f"starting Claude review "
                 f"(model={config.claude_model or 'default'}, "
-                f"effort={config.claude_reasoning_effort or 'default'})"
+                f"effort={config.claude_reasoning_effort or 'default'}) {pr.url}"
             )
             pending_tasks["claude"] = asyncio.create_task(
                 run_claude_review(
@@ -350,22 +350,22 @@ async def process_candidate(
                 )
             )
         else:
-            info(f"{pr.url}: Claude reviewer disabled")
+            info(f"Claude reviewer disabled {pr.url}")
 
         if "codex" in enabled_reviewer_set:
             info(
-                f"{pr.url}: starting Codex review "
+                f"starting Codex review "
                 f"(backend={config.codex_backend}, model={config.codex_model}, "
-                f"effort={config.codex_reasoning_effort or 'default'})"
+                f"effort={config.codex_reasoning_effort or 'default'}) {pr.url}"
             )
             pending_tasks["codex"] = _start_codex_review_task(config, pr, workdir)
         else:
-            info(f"{pr.url}: Codex reviewer disabled")
+            info(f"Codex reviewer disabled {pr.url}")
 
         if "gemini" in enabled_reviewer_set:
             info(
-                f"{pr.url}: starting Gemini review "
-                f"(model={config.gemini_model or 'default'})"
+                f"starting Gemini review "
+                f"(model={config.gemini_model or 'default'}) {pr.url}"
             )
             pending_tasks["gemini"] = asyncio.create_task(
                 run_gemini_review(
@@ -376,7 +376,7 @@ async def process_candidate(
                 )
             )
         else:
-            info(f"{pr.url}: Gemini reviewer disabled")
+            info(f"Gemini reviewer disabled {pr.url}")
 
         reviewer_outputs: dict[str, ReviewerOutput] = {}
 
@@ -388,7 +388,7 @@ async def process_candidate(
             )
             if not done:
                 running = ", ".join(pending_tasks.keys())
-                info(f"{pr.url}: reviewers still running ({running})")
+                info(f"reviewers still running ({running}) {pr.url}")
                 continue
 
             for reviewer_name, task in list(pending_tasks.items()):
@@ -396,15 +396,15 @@ async def process_candidate(
                     output = await task
                     reviewer_outputs[reviewer_name] = output
                     info(
-                        f"{pr.url}: {reviewer_name} finished "
-                        f"status={output.status} duration={output.duration_seconds:.1f}s"
+                        f"{reviewer_name} finished "
+                        f"status={output.status} duration={output.duration_seconds:.1f}s {pr.url}"
                     )
                     if reviewer_name == "codex" and output.stdout.startswith(
                         "codex JSON events captured:"
                     ):
-                        info(f"{pr.url}: {output.stdout}")
+                        info(f"{output.stdout} {pr.url}")
                     if output.status != "ok" and output.error:
-                        warn(f"{pr.url}: {reviewer_name} error: {output.error}")
+                        warn(f"{reviewer_name} error: {output.error} {pr.url}")
                     pending_tasks.pop(reviewer_name)
 
         active_outputs = {
@@ -426,15 +426,15 @@ async def process_candidate(
                 else "n/a"
             )
             info(
-                f"{pr.url}: reconciling {reviewer_names} outputs "
+                f"reconciling {reviewer_names} outputs "
                 f"(backend={reconciler_backend}, model={reconciler_model or 'default'}, "
-                f"effort={effort_label})"
+                f"effort={effort_label}) {pr.url}"
             )
             pr_comments: list[str] = []
             try:
                 pr_comments = client.get_pr_issue_comments(pr)
             except Exception as exc:  # noqa: BLE001
-                warn(f"{pr.url}: failed to fetch PR issue comments for reconciliation: {exc}")
+                warn(f"failed to fetch PR issue comments for reconciliation: {exc} {pr.url}")
             final_review = await reconcile_reviews(
                 pr,
                 workdir,
@@ -447,11 +447,11 @@ async def process_candidate(
             )
         elif len(enabled_reviewers) == 1:
             sole_reviewer = enabled_reviewers[0]
-            info(f"{pr.url}: single reviewer mode ({sole_reviewer})")
+            info(f"single reviewer mode ({sole_reviewer}) {pr.url}")
             final_review = _single_reviewer_final_review(active_outputs[sole_reviewer])
         else:
             raise RuntimeError("No enabled reviewers configured")
-        info(f"{pr.url}: writing final markdown output")
+        info(f"writing final markdown output {pr.url}")
         version_label = _output_version_label(pr)
         output_path = write_review_markdown(
             Path(config.output_dir),
@@ -479,10 +479,10 @@ async def process_candidate(
             status_when_not_posted="generated",
             previous=previous,
         )
-        info(f"{pr.url}: processing complete")
+        info(f"processing complete {pr.url}")
         return True
     except Exception as exc:  # noqa: BLE001
-        warn(f"Failed processing {pr.url}: {exc}")
+        warn(f"failed processing: {exc} {pr.url}")
         state = store.get(pr.key)
         state.last_status = f"error: {exc}"
         state.trigger_mode = config.trigger_mode
