@@ -324,6 +324,11 @@ async def process_candidate(
         store.save()
         return False
 
+    try:
+        client.add_eyes_reaction(pr)
+    except Exception as exc:  # noqa: BLE001
+        warn(f"{pr.key}: failed to add eyes reaction: {exc}")
+
     workdir: Path | None = None
     try:
         info(f"{pr.key}: preparing workspace")

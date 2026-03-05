@@ -297,3 +297,38 @@ def test_get_pr_issue_comments_formats_and_limits(monkeypatch) -> None:
         "@bob (2026-02-27T20:01:00Z): second comment",
         "@carol (2026-02-27T20:02:00Z): third comment",
     ]
+
+
+def test_add_eyes_reaction_calls_gh_api(monkeypatch) -> None:
+    client = GitHubClient(viewer_login="Inkvi")
+    pr = PRCandidate(
+        owner="polymerdao",
+        repo="obul",
+        number=64,
+        url="https://github.com/polymerdao/obul/pull/64",
+        title="test",
+        author_login="alice",
+        base_ref="main",
+        head_sha="deadbeef",
+        updated_at="2026-02-27T20:00:00Z",
+    )
+
+    captured_args: list[list[str]] = []
+
+    def fake_run_command(args, **_kwargs):  # noqa: ANN001
+        captured_args.append(args)
+        return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr("pr_reviewer.github.run_command", fake_run_command)
+
+    client.add_eyes_reaction(pr)
+
+    assert len(captured_args) == 1
+    assert captured_args[0] == [
+        "gh",
+        "api",
+        "repos/polymerdao/obul/issues/64/reactions",
+        "-f",
+        "content=eyes",
+        "--silent",
+    ]
