@@ -39,6 +39,17 @@ class AppConfig(BaseModel):
     post_rerequest_comment: bool = True
     slash_command_enabled: bool = True
 
+    # Triage
+    triage_backend: str = "gemini"
+    triage_model: str | None = None
+    triage_timeout_seconds: int = Field(default=60, ge=10)
+
+    # Lightweight review
+    lightweight_review_backend: str = "claude"
+    lightweight_review_model: str | None = None
+    lightweight_review_reasoning_effort: str | None = None
+    lightweight_review_timeout_seconds: int = Field(default=300, ge=30)
+
     @property
     def github_owners(self) -> list[str]:
         return list(self.github_orgs)
@@ -141,6 +152,54 @@ class AppConfig(BaseModel):
         normalized = value.strip().lower()
         if normalized not in {"low", "medium", "high"}:
             raise ValueError("codex_reasoning_effort must be one of: low, medium, high")
+        return normalized
+
+    @field_validator("triage_backend")
+    @classmethod
+    def validate_triage_backend(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in {"claude", "codex", "gemini"}:
+            raise ValueError("triage_backend must be one of: claude, codex, gemini")
+        return normalized
+
+    @field_validator("triage_model")
+    @classmethod
+    def validate_triage_model(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("triage_model cannot be empty")
+        return cleaned
+
+    @field_validator("lightweight_review_backend")
+    @classmethod
+    def validate_lightweight_review_backend(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in {"claude", "codex", "gemini"}:
+            raise ValueError("lightweight_review_backend must be one of: claude, codex, gemini")
+        return normalized
+
+    @field_validator("lightweight_review_model")
+    @classmethod
+    def validate_lightweight_review_model(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("lightweight_review_model cannot be empty")
+        return cleaned
+
+    @field_validator("lightweight_review_reasoning_effort")
+    @classmethod
+    def validate_lightweight_review_reasoning_effort(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip().lower()
+        if normalized not in {"low", "medium", "high", "max"}:
+            raise ValueError(
+                "lightweight_review_reasoning_effort must be one of: low, medium, high, max"
+            )
         return normalized
 
     @field_validator("claude_model")

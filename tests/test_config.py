@@ -274,6 +274,75 @@ def test_load_config_slash_command_enabled_set_false(tmp_path: Path) -> None:
     assert cfg.slash_command_enabled is False
 
 
+def test_load_config_triage_defaults(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text('github_orgs=["Inkvi"]\n', encoding="utf-8")
+    cfg = load_config(path)
+    assert cfg.triage_backend == "gemini"
+    assert cfg.triage_model is None
+    assert cfg.triage_timeout_seconds == 60
+
+
+def test_load_config_lightweight_review_defaults(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text('github_orgs=["Inkvi"]\n', encoding="utf-8")
+    cfg = load_config(path)
+    assert cfg.lightweight_review_backend == "claude"
+    assert cfg.lightweight_review_model is None
+    assert cfg.lightweight_review_reasoning_effort is None
+    assert cfg.lightweight_review_timeout_seconds == 300
+
+
+def test_load_config_rejects_invalid_triage_backend(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text(
+        'github_orgs=["polymerdao"]\ntriage_backend = "invalid"\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError):
+        load_config(path)
+
+
+def test_load_config_rejects_invalid_lightweight_review_backend(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text(
+        'github_orgs=["polymerdao"]\nlightweight_review_backend = "invalid"\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError):
+        load_config(path)
+
+
+def test_load_config_rejects_invalid_lightweight_review_reasoning_effort(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text(
+        'github_orgs=["polymerdao"]\nlightweight_review_reasoning_effort = "invalid"\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError):
+        load_config(path)
+
+
+def test_load_config_rejects_empty_triage_model(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text(
+        'github_orgs=["polymerdao"]\ntriage_model = ""\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError):
+        load_config(path)
+
+
+def test_load_config_rejects_empty_lightweight_review_model(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text(
+        'github_orgs=["polymerdao"]\nlightweight_review_model = ""\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError):
+        load_config(path)
+
+
 def test_load_config_rejects_invalid_trigger_mode(tmp_path: Path) -> None:
     path = tmp_path / "config.toml"
     path.write_text(
