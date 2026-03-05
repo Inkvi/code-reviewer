@@ -39,3 +39,8 @@ testpaths = ["tests"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/pr_reviewer"]
+
+[dependency-groups]
+dev = [
+    "pytest-cov>=7.0.0",
+]
