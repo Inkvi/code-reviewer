@@ -473,6 +473,14 @@ async def process_candidate(
             info(message)
 
     detail(f"processing {pr.title} {pr.url}")
+
+    if config.skip_own_prs and pr.author_login == client.viewer_login:
+        detail(f"skipping own PR (author={pr.author_login}) {pr.url}")
+        return ProcessingResult(
+            processed=False, pr_url=pr.url, pr_key=pr.key,
+            status="skipped_own_pr",
+        )
+
     previous = store.get(pr.key)
 
     if use_saved_review:
