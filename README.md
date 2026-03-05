@@ -161,6 +161,35 @@ uv run pr-reviewer run-once --pr-url https://github.com/<org>/<repo>/pull/<numbe
 - `run-once --pr-url ...` reviews only specific PR URL(s)
 - `run-once --pr-url ... --use-saved-review` reuses existing `pr-<number>.md` and continues to posting/submission without regenerating
 
+## Slash Command Trigger
+
+In addition to the standard review-request flow, the daemon monitors PR comments for `/review` commands:
+
+- `/review` — request a review on the current PR
+- `/review force` — force a re-review even if the current HEAD was already reviewed
+
+**Who can trigger:** PR author and org members in monitored orgs.
+
+**Behavior:**
+- Reacts with 👀 to the triggering comment
+- Replies "Starting review of the latest changes…"
+- If already reviewed at the current commit: replies with a skip message (unless `force` is used)
+- Runs the full review pipeline and posts results
+
+**Config:**
+
+```toml
+# Enable/disable slash command scanning (default: true)
+slash_command_enabled = true
+```
+
+**CLI override:**
+
+```bash
+uv run pr-reviewer start --slash-command-enabled
+uv run pr-reviewer start --no-slash-command-enabled
+```
+
 ## Lint and test
 
 ```bash
