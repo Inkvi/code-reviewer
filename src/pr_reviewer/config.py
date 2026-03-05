@@ -41,12 +41,12 @@ class AppConfig(BaseModel):
 
     # Triage
     triage_backend: str = "gemini"
-    triage_model: str | None = "gemini-3.0-flash"
+    triage_model: str | None = "gemini-3-flash-preview"
     triage_timeout_seconds: int = Field(default=60, ge=10)
 
     # Lightweight review
     lightweight_review_backend: str = "gemini"
-    lightweight_review_model: str | None = "gemini-3.0-flash"
+    lightweight_review_model: str | None = "gemini-3-flash-preview"
     lightweight_review_reasoning_effort: str | None = None
     lightweight_review_timeout_seconds: int = Field(default=300, ge=30)
 
