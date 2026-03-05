@@ -12,6 +12,7 @@
 - All model interactions go through CLI/SDK runners (`_run_claude_prompt`, `run_codex_prompt`, `run_gemini_prompt`) — no direct API calls
 
 ## Code Patterns
+- All `gh` CLI calls go through `shell.py` (`run_command`, `run_json`, `run_command_async`) with a global throttle (`_GH_MIN_INTERVAL`) to avoid GitHub rate limits
 - `process_candidate()` returns `ProcessingResult` dataclass (not bool); use `.processed` for the boolean
 - Prompt template files (`triage.py`, `lightweight.py`, `reconcile.py`) have E501 ignored via pyproject.toml per-file-ignores
 - Config fields use Pydantic field validators; cross-field validation uses model validators
