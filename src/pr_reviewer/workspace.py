@@ -48,6 +48,23 @@ class PRWorkspace:
             raise
         return workdir
 
+    @staticmethod
+    def update_to_latest(workdir: Path, pr: PRCandidate) -> None:
+        """Re-fetch and checkout the latest PR head in an existing workspace."""
+        run_command(
+            [
+                "git",
+                "-C",
+                str(workdir),
+                "fetch",
+                "--quiet",
+                "origin",
+                f"pull/{pr.number}/head:pr-{pr.number}",
+                "--force",
+            ]
+        )
+        run_command(["git", "-C", str(workdir), "checkout", "--quiet", f"pr-{pr.number}"])
+
     def cleanup(self, workdir: Path) -> None:
         if self.keep:
             return

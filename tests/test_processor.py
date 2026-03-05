@@ -6,8 +6,11 @@ from pr_reviewer.config import AppConfig
 from pr_reviewer.github import GitHubClient
 from pr_reviewer.models import PRCandidate, ProcessedState, ReviewerOutput
 from pr_reviewer.processor import (
+    _NewCommitDetected,
+    _check_pr_head_changed,
     _compute_processing_decision,
     _resolve_reconciler_settings,
+    _run_reviewers_with_monitoring,
     _single_reviewer_final_review,
     _start_codex_review_task,
     process_candidate,
@@ -56,9 +59,13 @@ class DummyStore:
 class DummyWorkspace:
     def __init__(self, workdir: Path) -> None:
         self.workdir = workdir
+        self.update_to_latest_calls: list[str] = []
 
     def prepare(self, _pr):  # noqa: ANN001
         return self.workdir
+
+    def update_to_latest(self, _workdir, pr):  # noqa: ANN001
+        self.update_to_latest_calls.append(pr.head_sha)
 
     def cleanup(self, _workdir):  # noqa: ANN001
         return None
@@ -748,3 +755,194 @@ def test_process_candidate_reconcile_falls_back_to_claude_settings(monkeypatch, 
     assert seen_reconciler_backend == "claude"
     assert seen_reconciler_model == "claude-sonnet-4-5"
     assert seen_reconciler_reasoning_effort == "medium"
+
+
+def test_check_pr_head_changed_returns_none_when_same() -> None:
+    pr = _sample_pr()
+
+    class FakeClient:
+        @staticmethod
+        def get_pr_head_sha(_pr):  # noqa: ANN001
+            return pr.head_sha
+
+    result = _check_pr_head_changed(FakeClient(), pr)
+    assert result is None
+
+
+def test_check_pr_head_changed_returns_new_sha() -> None:
+    pr = _sample_pr()
+
+    class FakeClient:
+        @staticmethod
+        def get_pr_head_sha(_pr):  # noqa: ANN001
+            return "newsha123456"
+
+    result = _check_pr_head_changed(FakeClient(), pr)
+    assert result == "newsha123456"
+
+
+def test_check_pr_head_changed_returns_none_on_error() -> None:
+    pr = _sample_pr()
+
+    class FakeClient:
+        @staticmethod
+        def get_pr_head_sha(_pr):  # noqa: ANN001
+            raise RuntimeError("network error")
+
+    result = _check_pr_head_changed(FakeClient(), pr)
+    assert result is None
+
+
+def test_process_candidate_restarts_on_new_commit(monkeypatch, tmp_path) -> None:
+    """When a new commit is detected mid-review, reviewers restart with updated code."""
+    store = DummyStore()
+    workspace = DummyWorkspace(tmp_path)
+    client = GitHubClient(viewer_login="Inkvi")
+
+    call_count = 0
+
+    now = datetime.now(UTC)
+    ok_output = ReviewerOutput(
+        reviewer="codex",
+        status="ok",
+        markdown="### Findings\n- No material findings.\n\n### Test Gaps\n- None noted.",
+        stdout="",
+        stderr="",
+        error=None,
+        started_at=now,
+        ended_at=now,
+    )
+
+    async def fake_codex(_pr, _workdir, _timeout, *, model=None, reasoning_effort=None):  # noqa: ANN001
+        nonlocal call_count
+        call_count += 1
+        return ok_output
+
+    sha_call_count = 0
+
+    def fake_get_head_sha(_pr):  # noqa: ANN001
+        nonlocal sha_call_count
+        sha_call_count += 1
+        # First check returns new SHA (triggers restart), second returns same (no restart).
+        if sha_call_count == 1:
+            return "newcommitsha1"
+        return "newcommitsha1"
+
+    monkeypatch.setattr("pr_reviewer.processor.run_codex_review", fake_codex)
+    monkeypatch.setattr(
+        "pr_reviewer.processor.write_review_markdown",
+        lambda *_args, **_kwargs: tmp_path / "out.md",
+    )
+    monkeypatch.setattr(
+        "pr_reviewer.processor.write_reviewer_sidecar_markdown",
+        lambda *_args, **_kwargs: tmp_path / "out.raw.md",
+    )
+
+    # Make _run_reviewers_with_monitoring detect a new commit on the first attempt.
+    # We do this by making the reviewer take >0 time and injecting a SHA check.
+    original_run_reviewers = _run_reviewers_with_monitoring
+    attempt = 0
+
+    async def patched_run_reviewers(config, client, pr, workdir):  # noqa: ANN001
+        nonlocal attempt
+        attempt += 1
+        if attempt == 1:
+            raise _NewCommitDetected("newcommitsha1")
+        return await original_run_reviewers(config, client, pr, workdir)
+
+    monkeypatch.setattr("pr_reviewer.processor._run_reviewers_with_monitoring", patched_run_reviewers)
+    cfg = AppConfig(
+        github_orgs=["polymerdao"],
+        enabled_reviewers=["codex"],
+        max_mid_review_restarts=2,
+    )
+    pr = _sample_pr()
+    changed = asyncio.run(process_candidate(cfg, client, store, workspace, pr))
+
+    assert changed is True
+    assert store.state.last_status == "generated"
+    # PR head_sha should have been updated.
+    assert pr.head_sha == "newcommitsha1"
+
+
+def test_process_candidate_exhausts_restarts(monkeypatch, tmp_path) -> None:
+    """When max restarts are exhausted, the review proceeds with whatever outputs exist."""
+    store = DummyStore()
+    workspace = DummyWorkspace(tmp_path)
+    client = GitHubClient(viewer_login="Inkvi")
+
+    async def patched_run_reviewers(_config, _client, _pr, _workdir):  # noqa: ANN001
+        raise _NewCommitDetected("newersha")
+
+    monkeypatch.setattr("pr_reviewer.processor._run_reviewers_with_monitoring", patched_run_reviewers)
+    monkeypatch.setattr(
+        "pr_reviewer.processor.write_review_markdown",
+        lambda *_args, **_kwargs: tmp_path / "out.md",
+    )
+    monkeypatch.setattr(
+        "pr_reviewer.processor.write_reviewer_sidecar_markdown",
+        lambda *_args, **_kwargs: tmp_path / "out.raw.md",
+    )
+
+    cfg = AppConfig(
+        github_orgs=["polymerdao"],
+        enabled_reviewers=["codex"],
+        max_mid_review_restarts=1,
+    )
+    pr = _sample_pr()
+    changed = asyncio.run(process_candidate(cfg, client, store, workspace, pr))
+
+    # Should still succeed (with disabled/empty outputs) since it exhausts restarts gracefully.
+    assert changed is True
+    assert store.state.last_status == "generated"
+
+
+def test_process_candidate_no_restart_when_disabled(monkeypatch, tmp_path) -> None:
+    """When max_mid_review_restarts=0, no head-SHA checks happen."""
+    store = DummyStore()
+    workspace = DummyWorkspace(tmp_path)
+    client = GitHubClient(viewer_login="Inkvi")
+
+    now = datetime.now(UTC)
+    ok_output = ReviewerOutput(
+        reviewer="codex",
+        status="ok",
+        markdown="### Findings\n- No material findings.\n\n### Test Gaps\n- None noted.",
+        stdout="",
+        stderr="",
+        error=None,
+        started_at=now,
+        ended_at=now,
+    )
+
+    async def fake_codex(_pr, _workdir, _timeout, *, model=None, reasoning_effort=None):  # noqa: ANN001
+        return ok_output
+
+    sha_checked = False
+
+    def fake_get_head_sha(_pr):  # noqa: ANN001
+        nonlocal sha_checked
+        sha_checked = True
+        return "newsha"
+
+    monkeypatch.setattr("pr_reviewer.processor.run_codex_review", fake_codex)
+    monkeypatch.setattr(GitHubClient, "get_pr_head_sha", fake_get_head_sha)
+    monkeypatch.setattr(
+        "pr_reviewer.processor.write_review_markdown",
+        lambda *_args, **_kwargs: tmp_path / "out.md",
+    )
+    monkeypatch.setattr(
+        "pr_reviewer.processor.write_reviewer_sidecar_markdown",
+        lambda *_args, **_kwargs: tmp_path / "out.raw.md",
+    )
+
+    cfg = AppConfig(
+        github_orgs=["polymerdao"],
+        enabled_reviewers=["codex"],
+        max_mid_review_restarts=0,
+    )
+    changed = asyncio.run(process_candidate(cfg, client, store, workspace, _sample_pr()))
+
+    assert changed is True
+    # SHA check should never be called since monitoring is disabled.
+    assert sha_checked is False

@@ -283,6 +283,21 @@ class GitHubClient:
             changed_file_paths=self._extract_changed_file_paths(details),
         )
 
+    @staticmethod
+    def get_pr_head_sha(pr: PRCandidate) -> str:
+        """Fetch the current head SHA of a PR via a lightweight API call."""
+        details = run_json(
+            [
+                "gh",
+                "pr",
+                "view",
+                pr.url,
+                "--json",
+                "headRefOid",
+            ]
+        )
+        return details.get("headRefOid", "")
+
     def has_issue_comment_by_viewer(self, pr: PRCandidate) -> bool:
         endpoint = f"repos/{pr.owner}/{pr.repo}/issues/{pr.number}/comments"
         proc = run_command(

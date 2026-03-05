@@ -33,6 +33,7 @@ class AppConfig(BaseModel):
     codex_timeout_seconds: int = Field(default=900, ge=30)
     max_parallel_prs: int = Field(default=1, ge=1)
     trigger_mode: str = "rerequest_only"
+    max_mid_review_restarts: int = Field(default=2, ge=0, le=5)
 
     @property
     def github_owners(self) -> list[str]:

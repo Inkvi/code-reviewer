@@ -264,6 +264,143 @@ def _publish_and_persist(
     store.save()
 
 
+class _NewCommitDetected(Exception):
+    """Raised when a new commit is pushed to the PR during review."""
+
+    def __init__(self, new_sha: str) -> None:
+        self.new_sha = new_sha
+        super().__init__(f"new commit detected: {new_sha[:12]}")
+
+
+def _check_pr_head_changed(client: GitHubClient, pr: PRCandidate) -> str | None:
+    """Return the new head SHA if it differs from pr.head_sha, else None."""
+    try:
+        current_sha = client.get_pr_head_sha(pr)
+    except Exception as exc:  # noqa: BLE001
+        warn(f"failed to poll head SHA (will continue review): {exc} {pr.url}")
+        return None
+    if current_sha and current_sha != pr.head_sha:
+        return current_sha
+    return None
+
+
+async def _run_reviewers_with_monitoring(
+    config: AppConfig,
+    client: GitHubClient,
+    pr: PRCandidate,
+    workdir: Path,
+) -> dict[str, ReviewerOutput]:
+    """Launch reviewers and poll for completion, checking for new commits periodically.
+
+    Raises _NewCommitDetected if the PR head SHA changes while reviewers are running.
+    """
+    enabled_reviewers = list(config.enabled_reviewers)
+    enabled_reviewer_set = set(enabled_reviewers)
+    pending_tasks: dict[str, asyncio.Task] = {}
+
+    if "claude" in enabled_reviewer_set:
+        info(
+            f"starting Claude review "
+            f"(model={config.claude_model or 'default'}, "
+            f"effort={config.claude_reasoning_effort or 'default'}) {pr.url}"
+        )
+        pending_tasks["claude"] = asyncio.create_task(
+            run_claude_review(
+                pr,
+                workdir,
+                config.claude_timeout_seconds,
+                model=config.claude_model,
+                reasoning_effort=config.claude_reasoning_effort,
+            )
+        )
+    else:
+        info(f"Claude reviewer disabled {pr.url}")
+
+    if "codex" in enabled_reviewer_set:
+        info(
+            f"starting Codex review "
+            f"(backend={config.codex_backend}, model={config.codex_model}, "
+            f"effort={config.codex_reasoning_effort or 'default'}) {pr.url}"
+        )
+        pending_tasks["codex"] = _start_codex_review_task(config, pr, workdir)
+    else:
+        info(f"Codex reviewer disabled {pr.url}")
+
+    if "gemini" in enabled_reviewer_set:
+        info(
+            f"starting Gemini review "
+            f"(model={config.gemini_model or 'default'}) {pr.url}"
+        )
+        pending_tasks["gemini"] = asyncio.create_task(
+            run_gemini_review(
+                pr,
+                workdir,
+                config.gemini_timeout_seconds,
+                model=config.gemini_model,
+            )
+        )
+    else:
+        info(f"Gemini reviewer disabled {pr.url}")
+
+    reviewer_outputs: dict[str, ReviewerOutput] = {}
+    polls_since_last_sha_check = 0
+    # Check for new commits roughly every 60s (every 3 poll cycles of 20s).
+    sha_check_interval = 3
+
+    try:
+        while pending_tasks:
+            done, _ = await asyncio.wait(
+                pending_tasks.values(),
+                timeout=20,
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+
+            if not done:
+                running = ", ".join(pending_tasks.keys())
+                info(f"reviewers still running ({running}) {pr.url}")
+
+                # Periodically check for new commits.
+                polls_since_last_sha_check += 1
+                if (
+                    config.max_mid_review_restarts > 0
+                    and polls_since_last_sha_check >= sha_check_interval
+                ):
+                    polls_since_last_sha_check = 0
+                    new_sha = _check_pr_head_changed(client, pr)
+                    if new_sha is not None:
+                        info(
+                            f"new commit detected mid-review "
+                            f"({pr.head_sha[:12]} -> {new_sha[:12]}) {pr.url}"
+                        )
+                        raise _NewCommitDetected(new_sha)
+                continue
+
+            for reviewer_name, task in list(pending_tasks.items()):
+                if task in done:
+                    output = await task
+                    reviewer_outputs[reviewer_name] = output
+                    info(
+                        f"{reviewer_name} finished "
+                        f"status={output.status} duration={output.duration_seconds:.1f}s {pr.url}"
+                    )
+                    if reviewer_name == "codex" and output.stdout.startswith(
+                        "codex JSON events captured:"
+                    ):
+                        info(f"{output.stdout} {pr.url}")
+                    if output.status != "ok" and output.error:
+                        warn(f"{reviewer_name} error: {output.error} {pr.url}")
+                    pending_tasks.pop(reviewer_name)
+    except _NewCommitDetected:
+        # Cancel all running reviewer tasks before re-raising.
+        for task in pending_tasks.values():
+            task.cancel()
+        # Wait briefly for cancellation to propagate.
+        await asyncio.gather(*pending_tasks.values(), return_exceptions=True)
+        raise
+
+    return reviewer_outputs
+
+
 async def process_candidate(
     config: AppConfig,
     client: GitHubClient,
@@ -325,87 +462,38 @@ async def process_candidate(
         return False
 
     workdir: Path | None = None
+    restarts_remaining = config.max_mid_review_restarts
     try:
         info(f"preparing workspace {pr.url}")
         workdir = workspace_mgr.prepare(pr)
         info(f"workspace ready at {workdir} {pr.url}")
 
-        enabled_reviewers = list(config.enabled_reviewers)
-        enabled_reviewer_set = set(enabled_reviewers)
-        pending_tasks: dict[str, asyncio.Task] = {}
-
-        if "claude" in enabled_reviewer_set:
-            info(
-                f"starting Claude review "
-                f"(model={config.claude_model or 'default'}, "
-                f"effort={config.claude_reasoning_effort or 'default'}) {pr.url}"
-            )
-            pending_tasks["claude"] = asyncio.create_task(
-                run_claude_review(
-                    pr,
-                    workdir,
-                    config.claude_timeout_seconds,
-                    model=config.claude_model,
-                    reasoning_effort=config.claude_reasoning_effort,
+        # Retry loop: restart reviewers when new commits are pushed mid-review.
+        while True:
+            try:
+                reviewer_outputs = await _run_reviewers_with_monitoring(
+                    config, client, pr, workdir
                 )
-            )
-        else:
-            info(f"Claude reviewer disabled {pr.url}")
-
-        if "codex" in enabled_reviewer_set:
-            info(
-                f"starting Codex review "
-                f"(backend={config.codex_backend}, model={config.codex_model}, "
-                f"effort={config.codex_reasoning_effort or 'default'}) {pr.url}"
-            )
-            pending_tasks["codex"] = _start_codex_review_task(config, pr, workdir)
-        else:
-            info(f"Codex reviewer disabled {pr.url}")
-
-        if "gemini" in enabled_reviewer_set:
-            info(
-                f"starting Gemini review "
-                f"(model={config.gemini_model or 'default'}) {pr.url}"
-            )
-            pending_tasks["gemini"] = asyncio.create_task(
-                run_gemini_review(
-                    pr,
-                    workdir,
-                    config.gemini_timeout_seconds,
-                    model=config.gemini_model,
-                )
-            )
-        else:
-            info(f"Gemini reviewer disabled {pr.url}")
-
-        reviewer_outputs: dict[str, ReviewerOutput] = {}
-
-        while pending_tasks:
-            done, _ = await asyncio.wait(
-                pending_tasks.values(),
-                timeout=20,
-                return_when=asyncio.FIRST_COMPLETED,
-            )
-            if not done:
-                running = ", ".join(pending_tasks.keys())
-                info(f"reviewers still running ({running}) {pr.url}")
-                continue
-
-            for reviewer_name, task in list(pending_tasks.items()):
-                if task in done:
-                    output = await task
-                    reviewer_outputs[reviewer_name] = output
-                    info(
-                        f"{reviewer_name} finished "
-                        f"status={output.status} duration={output.duration_seconds:.1f}s {pr.url}"
+                break  # Reviews completed without mid-review commits.
+            except _NewCommitDetected as ncd:
+                if restarts_remaining <= 0:
+                    warn(
+                        f"max mid-review restarts ({config.max_mid_review_restarts}) "
+                        f"exhausted; proceeding with stale review results {pr.url}"
                     )
-                    if reviewer_name == "codex" and output.stdout.startswith(
-                        "codex JSON events captured:"
-                    ):
-                        info(f"{output.stdout} {pr.url}")
-                    if output.status != "ok" and output.error:
-                        warn(f"{reviewer_name} error: {output.error} {pr.url}")
-                    pending_tasks.pop(reviewer_name)
+                    # Fall through with whatever outputs we have (empty dict).
+                    reviewer_outputs = {}
+                    break
+                restarts_remaining -= 1
+                info(
+                    f"restarting review on new head {ncd.new_sha[:12]} "
+                    f"({restarts_remaining} restart(s) remaining) {pr.url}"
+                )
+                pr.head_sha = ncd.new_sha
+                workspace_mgr.update_to_latest(workdir, pr)
+                info(f"workspace updated to {ncd.new_sha[:12]} {pr.url}")
+
+        enabled_reviewers = list(config.enabled_reviewers)
 
         active_outputs = {
             name: reviewer_outputs.get(name, _disabled_output(name))
