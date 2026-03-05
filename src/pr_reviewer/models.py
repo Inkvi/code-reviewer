@@ -5,6 +5,14 @@ from datetime import UTC, datetime
 
 
 @dataclass(slots=True)
+class SlashCommandTrigger:
+    comment_id: int
+    comment_author: str
+    comment_created_at: str
+    force: bool = False
+
+
+@dataclass(slots=True)
 class PRCandidate:
     owner: str
     repo: str
@@ -20,6 +28,7 @@ class PRCandidate:
     additions: int = 0
     deletions: int = 0
     changed_file_paths: list[str] = field(default_factory=list)
+    slash_command_trigger: SlashCommandTrigger | None = None
 
     @property
     def key(self) -> str:
@@ -70,6 +79,7 @@ class ProcessedState:
     last_output_file: str | None = None
     last_status: str | None = None
     last_posted_at: str | None = None
+    last_slash_command_id: int | None = None
 
     @staticmethod
     def now_iso() -> str:
