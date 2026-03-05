@@ -260,6 +260,20 @@ def test_load_config_accepts_rerequest_or_commit_trigger_mode(tmp_path: Path) ->
     assert cfg.trigger_mode == "rerequest_or_commit"
 
 
+def test_load_config_slash_command_enabled_defaults_true(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text('github_orgs=["Inkvi"]\n', encoding="utf-8")
+    cfg = load_config(path)
+    assert cfg.slash_command_enabled is True
+
+
+def test_load_config_slash_command_enabled_set_false(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text('github_orgs=["Inkvi"]\nslash_command_enabled = false\n', encoding="utf-8")
+    cfg = load_config(path)
+    assert cfg.slash_command_enabled is False
+
+
 def test_load_config_rejects_invalid_trigger_mode(tmp_path: Path) -> None:
     path = tmp_path / "config.toml"
     path.write_text(
