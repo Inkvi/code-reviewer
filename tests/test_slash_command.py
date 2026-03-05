@@ -252,3 +252,90 @@ def test_slash_command_force_reviews_even_when_already_reviewed(monkeypatch, tmp
     assert changed is True
     assert store.state.last_status == "generated"
     assert store.state.last_slash_command_id == 123456
+
+
+def test_slash_command_full_flow_react_reply_review_post(monkeypatch, tmp_path) -> None:
+    """Integration test: /review comment → react → reply → run review → post → persist state."""
+    store = DummyStore()
+    workspace = DummyWorkspace(tmp_path)
+    client = GitHubClient(viewer_login="Inkvi")
+
+    # Track all GitHub API interactions in order.
+    api_calls: list[str] = []
+
+    monkeypatch.setattr(
+        GitHubClient,
+        "add_reaction_to_comment",
+        lambda _self, owner, repo, cid, reaction: api_calls.append(
+            f"react:{owner}/{repo}#{cid}:{reaction}"
+        ),
+    )
+
+    posted_comments: list[str] = []
+    monkeypatch.setattr(
+        GitHubClient,
+        "post_pr_comment_inline",
+        lambda _self, pr, body: (
+            api_calls.append(f"comment:{pr.key}"),
+            posted_comments.append(body),
+        ),
+    )
+
+    posted_reviews: list[str] = []
+    monkeypatch.setattr(
+        GitHubClient,
+        "post_pr_comment",
+        lambda _self, pr, body_file: (
+            api_calls.append(f"post_review:{pr.key}"),
+            posted_reviews.append(body_file),
+        ),
+    )
+
+    now = datetime.now(UTC)
+    ok_output = ReviewerOutput(
+        reviewer="codex",
+        status="ok",
+        markdown="### Findings\n- [P3] app.py:10 - Minor style.\n\n### Test Gaps\n- None.",
+        stdout="",
+        stderr="",
+        error=None,
+        started_at=now,
+        ended_at=now,
+    )
+
+    async def fake_codex(_pr, _workdir, _timeout, *, model=None, reasoning_effort=None):
+        api_calls.append("run_reviewer:codex")
+        return ok_output
+
+    monkeypatch.setattr("pr_reviewer.processor.run_codex_review", fake_codex)
+    monkeypatch.setattr(
+        "pr_reviewer.processor.write_review_markdown",
+        lambda *_args, **_kwargs: tmp_path / "out.md",
+    )
+    monkeypatch.setattr(
+        "pr_reviewer.processor.write_reviewer_sidecar_markdown",
+        lambda *_args, **_kwargs: tmp_path / "out.raw.md",
+    )
+
+    cfg = AppConfig(
+        github_orgs=["polymerdao"],
+        enabled_reviewers=["codex"],
+        auto_post_review=True,
+    )
+    pr = _sample_pr_with_slash_command()
+
+    changed = asyncio.run(process_candidate(cfg, client, store, workspace, pr))
+
+    # Verify the full flow happened in order.
+    assert changed is True
+    assert api_calls[0] == "react:polymerdao/obul#123456:eyes"
+    assert api_calls[1] == "comment:polymerdao/obul#64"
+    assert "starting review" in posted_comments[0].lower()
+    assert "run_reviewer:codex" in api_calls
+    assert any(call.startswith("post_review:") for call in api_calls)
+
+    # Verify state was persisted correctly.
+    assert store.state.last_slash_command_id == 123456
+    assert store.state.last_reviewed_head_sha == "deadbeef"
+    assert store.state.last_status == "posted"
+    assert store.state.last_processed_at is not None
