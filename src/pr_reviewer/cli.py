@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from pathlib import Path
 from typing import Annotated
 
@@ -13,7 +12,6 @@ from pr_reviewer.config import AppConfig, load_config
 from pr_reviewer.daemon import run_cycle, start_daemon
 from pr_reviewer.github import GitHubClient
 from pr_reviewer.logger import console, error, info
-from pr_reviewer.models import ProcessingResult
 from pr_reviewer.preflight import run_preflight
 from pr_reviewer.processor import process_candidate
 from pr_reviewer.state import StateStore
@@ -176,6 +174,13 @@ PrUrlOption = Annotated[
     typer.Option(
         "--pr-url",
         help="GitHub pull request URL to review directly. Repeat for multiple PRs.",
+    ),
+]
+OutputFormatOption = Annotated[
+    str,
+    typer.Option(
+        "--output-format",
+        help="Output format: text (default) or json.",
     ),
 ]
 
