@@ -30,6 +30,22 @@ async def run_cycle(
         warn(f"Failed to discover PRs: {exc}")
         return 0
 
+    if config.slash_command_enabled:
+        try:
+            slash_candidates = client.discover_slash_command_candidates(config, store)
+        except Exception as exc:  # noqa: BLE001
+            warn(f"Failed to discover slash command PRs: {exc}")
+            slash_candidates = []
+
+        existing_keys = {pr.key.lower() for pr in candidates}
+        for sc in slash_candidates:
+            if sc.key.lower() not in existing_keys:
+                candidates.append(sc)
+            else:
+                candidates = [
+                    sc if c.key.lower() == sc.key.lower() else c for c in candidates
+                ]
+
     if not candidates:
         if verbose:
             info("No candidate PRs found")
