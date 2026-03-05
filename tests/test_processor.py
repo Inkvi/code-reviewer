@@ -15,6 +15,7 @@ from pr_reviewer.processor import (
     _start_codex_review_task,
     process_candidate,
 )
+from pr_reviewer.reviewers.triage import TriageResult
 
 
 def _sample_pr(
@@ -266,223 +267,11 @@ def test_compute_processing_decision_missing_rerequest_data() -> None:
     assert decision.reason == "missing_rerequest_data"
 
 
-def test_process_candidate_skips_small_change_set(monkeypatch, tmp_path) -> None:
-    store = DummyStore()
-    workspace = DummyWorkspace(tmp_path)
-    client = GitHubClient(viewer_login="Inkvi")
-
-    monkeypatch.setattr(
-        "pr_reviewer.processor.run_codex_review",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(
-            AssertionError("reviewer should not run for small change set")
-        ),
-    )
-
-    cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["codex"])
-    changed = asyncio.run(
-        process_candidate(
-            cfg,
-            client,
-            store,
-            workspace,
-            _sample_pr(additions=6, deletions=3, changed_file_paths=["src/app.py"]),
-        )
-    )
-
-    assert changed is False
-    assert store.saved is True
-    assert store.state.last_status == "skipped_small_change_set"
-
-
-def test_process_candidate_skips_config_only_files(monkeypatch, tmp_path) -> None:
-    store = DummyStore()
-    workspace = DummyWorkspace(tmp_path)
-    client = GitHubClient(viewer_login="Inkvi")
-
-    monkeypatch.setattr(
-        "pr_reviewer.processor.run_codex_review",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(
-            AssertionError("reviewer should not run for config-only changes")
-        ),
-    )
-
-    cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["codex"])
-    changed = asyncio.run(
-        process_candidate(
-            cfg,
-            client,
-            store,
-            workspace,
-            _sample_pr(
-                additions=10,
-                deletions=0,
-                changed_file_paths=[".github/workflows/ci.yaml", "config/app.json"],
-            ),
-        )
-    )
-
-    assert changed is False
-    assert store.saved is True
-    assert store.state.last_status == "skipped_config_only_files"
-
-
-def test_skip_publishes_reason_when_slash_command_triggered(monkeypatch, tmp_path) -> None:
-    from pr_reviewer.models import SlashCommandTrigger
-
-    store = DummyStore()
-    workspace = DummyWorkspace(tmp_path)
-    client = GitHubClient(viewer_login="Inkvi")
-
-    posted_comments: list[str] = []
-    monkeypatch.setattr(
-        GitHubClient,
-        "post_pr_comment_inline",
-        lambda _self, _pr, body: posted_comments.append(body),
-    )
-
-    trigger = SlashCommandTrigger(
-        comment_id=999, comment_author="alice", comment_created_at="2026-03-02T00:00:00Z"
-    )
-    cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["codex"])
-    pr = _sample_pr(additions=3, deletions=1, changed_file_paths=["src/app.py"])
-    pr.slash_command_trigger = trigger
-
-    changed = asyncio.run(process_candidate(cfg, client, store, workspace, pr))
-
-    assert changed is False
-    assert store.state.last_status == "skipped_small_change_set"
-    assert store.state.last_slash_command_id == 999
-    assert len(posted_comments) == 1
-    assert "fewer than 10 lines" in posted_comments[0]
-
-
-def test_skip_publishes_reason_when_rerequest_triggered(monkeypatch, tmp_path) -> None:
-    store = DummyStore(
-        ProcessedState(
-            last_processed_at="2026-03-01T00:00:00+00:00",
-            last_seen_rerequest_at="2026-03-01T00:00:00+00:00",
-        )
-    )
-    workspace = DummyWorkspace(tmp_path)
-    client = GitHubClient(viewer_login="Inkvi")
-
-    posted_comments: list[str] = []
-    monkeypatch.setattr(
-        GitHubClient,
-        "post_pr_comment_inline",
-        lambda _self, _pr, body: posted_comments.append(body),
-    )
-
-    cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["codex"])
-    pr = _sample_pr(
-        additions=10,
-        deletions=0,
-        changed_file_paths=["config.yaml"],
-        latest_direct_rerequest_at="2026-03-02T00:00:00+00:00",
-    )
-
-    changed = asyncio.run(process_candidate(cfg, client, store, workspace, pr))
-
-    assert changed is False
-    assert store.state.last_status == "skipped_config_only_files"
-    assert len(posted_comments) == 1
-    assert "configuration file" in posted_comments[0]
-
-
-def test_skip_no_comment_when_no_user_trigger(monkeypatch, tmp_path) -> None:
-    """When processing decision says no_new_trigger, skip reason shouldn't post a comment."""
-    store = DummyStore(
-        ProcessedState(
-            last_processed_at="2026-03-01T00:00:00+00:00",
-            last_seen_rerequest_at="2026-03-02T00:00:00+00:00",
-        )
-    )
-    workspace = DummyWorkspace(tmp_path)
-    client = GitHubClient(viewer_login="Inkvi")
-
-    posted_comments: list[str] = []
-    monkeypatch.setattr(
-        GitHubClient,
-        "post_pr_comment_inline",
-        lambda _self, _pr, body: posted_comments.append(body),
-    )
-
-    cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["codex"])
-    pr = _sample_pr(
-        additions=3,
-        deletions=1,
-        latest_direct_rerequest_at="2026-03-02T00:00:00+00:00",
-    )
-
-    changed = asyncio.run(process_candidate(cfg, client, store, workspace, pr))
-
-    assert changed is False
-    assert store.state.last_status == "skipped_small_change_set"
-    assert len(posted_comments) == 0
-
-
-def test_skip_no_comment_on_bootstrap_state(monkeypatch, tmp_path) -> None:
-    """First-seen small PR should not get a skip comment (bootstrap is not user-triggered)."""
-    store = DummyStore()  # last_processed_at=None → bootstrap_missing_state
-    workspace = DummyWorkspace(tmp_path)
-    client = GitHubClient(viewer_login="Inkvi")
-
-    posted_comments: list[str] = []
-    monkeypatch.setattr(
-        GitHubClient,
-        "post_pr_comment_inline",
-        lambda _self, _pr, body: posted_comments.append(body),
-    )
-
-    cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["codex"])
-    pr = _sample_pr(additions=3, deletions=1)
-
-    changed = asyncio.run(process_candidate(cfg, client, store, workspace, pr))
-
-    assert changed is False
-    assert store.state.last_status == "skipped_small_change_set"
-    assert len(posted_comments) == 0
-
-
-def test_skip_rerequest_advances_last_seen_rerequest_at(monkeypatch, tmp_path) -> None:
-    """After posting a skip comment for a rerequest, last_seen_rerequest_at must advance."""
-    store = DummyStore(
-        ProcessedState(
-            last_processed_at="2026-03-01T00:00:00+00:00",
-            last_seen_rerequest_at="2026-03-01T00:00:00+00:00",
-        )
-    )
-    workspace = DummyWorkspace(tmp_path)
-    client = GitHubClient(viewer_login="Inkvi")
-
-    monkeypatch.setattr(
-        GitHubClient,
-        "post_pr_comment_inline",
-        lambda _self, _pr, _body: None,
-    )
-
-    cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["codex"])
-    pr = _sample_pr(
-        additions=3,
-        deletions=1,
-        latest_direct_rerequest_at="2026-03-02T00:00:00+00:00",
-    )
-
-    asyncio.run(process_candidate(cfg, client, store, workspace, pr))
-
-    assert store.state.last_seen_rerequest_at == "2026-03-02T00:00:00+00:00"
-
-    # Second run should NOT post a comment (rerequest is now consumed).
-    posted_comments: list[str] = []
-    monkeypatch.setattr(
-        GitHubClient,
-        "post_pr_comment_inline",
-        lambda _self, _pr, body: posted_comments.append(body),
-    )
-
-    asyncio.run(process_candidate(cfg, client, store, workspace, pr))
-
-    assert len(posted_comments) == 0
+def _mock_triage_full_review(monkeypatch) -> None:
+    """Add run_triage mock that returns FULL_REVIEW to a test."""
+    async def fake_triage(*args, **kwargs):
+        return TriageResult.FULL_REVIEW
+    monkeypatch.setattr("pr_reviewer.processor.run_triage", fake_triage)
 
 
 def test_processes_on_bootstrap_when_state_missing(monkeypatch, tmp_path) -> None:
@@ -490,6 +279,7 @@ def test_processes_on_bootstrap_when_state_missing(monkeypatch, tmp_path) -> Non
     workspace = DummyWorkspace(tmp_path)
     client = GitHubClient(viewer_login="Inkvi")
     monkeypatch.setattr(GitHubClient, "add_eyes_reaction", lambda _self, _pr: None)
+    _mock_triage_full_review(monkeypatch)
 
     now = datetime.now(UTC)
     ok_output = ReviewerOutput(
@@ -530,6 +320,7 @@ def test_process_candidate_adds_eyes_reaction(monkeypatch, tmp_path) -> None:
     store = DummyStore()
     workspace = DummyWorkspace(tmp_path)
     client = GitHubClient(viewer_login="Inkvi")
+    _mock_triage_full_review(monkeypatch)
 
     reacted_prs: list[str] = []
     monkeypatch.setattr(
@@ -614,6 +405,7 @@ def test_processes_on_newer_direct_rerequest(monkeypatch, tmp_path) -> None:
     client = GitHubClient(viewer_login="Inkvi")
     monkeypatch.setattr(GitHubClient, "add_eyes_reaction", lambda _self, _pr: None)
     monkeypatch.setattr(GitHubClient, "post_pr_comment_inline", lambda _self, _pr, _body: None)
+    _mock_triage_full_review(monkeypatch)
 
     now = datetime.now(UTC)
     ok_output = ReviewerOutput(
@@ -666,6 +458,7 @@ def test_rerequest_posts_starting_review_comment(monkeypatch, tmp_path) -> None:
     workspace = DummyWorkspace(tmp_path)
     client = GitHubClient(viewer_login="Inkvi")
     monkeypatch.setattr(GitHubClient, "add_eyes_reaction", lambda _self, _pr: None)
+    _mock_triage_full_review(monkeypatch)
 
     posted_comments: list[tuple[str, str]] = []
     monkeypatch.setattr(
@@ -721,6 +514,7 @@ def test_bootstrap_does_not_post_rerequest_comment(monkeypatch, tmp_path) -> Non
     workspace = DummyWorkspace(tmp_path)
     client = GitHubClient(viewer_login="Inkvi")
     monkeypatch.setattr(GitHubClient, "add_eyes_reaction", lambda _self, _pr: None)
+    _mock_triage_full_review(monkeypatch)
 
     posted_comments: list[str] = []
     monkeypatch.setattr(
@@ -770,6 +564,7 @@ def test_rerequest_comment_disabled_by_config(monkeypatch, tmp_path) -> None:
     workspace = DummyWorkspace(tmp_path)
     client = GitHubClient(viewer_login="Inkvi")
     monkeypatch.setattr(GitHubClient, "add_eyes_reaction", lambda _self, _pr: None)
+    _mock_triage_full_review(monkeypatch)
 
     posted_comments: list[str] = []
     monkeypatch.setattr(
@@ -832,6 +627,7 @@ def test_does_not_advance_trigger_checkpoint_on_failure(monkeypatch, tmp_path) -
     client = GitHubClient(viewer_login="Inkvi")
     monkeypatch.setattr(GitHubClient, "add_eyes_reaction", lambda _self, _pr: None)
     monkeypatch.setattr(GitHubClient, "post_pr_comment_inline", lambda _self, _pr, _body: None)
+    _mock_triage_full_review(monkeypatch)
 
     async def fake_codex(_pr, _workdir, _timeout, *, model=None, reasoning_effort=None):  # noqa: ANN001
         raise RuntimeError("codex boom")
@@ -912,6 +708,7 @@ def test_saved_review_existing_does_not_skip_normal_flow(monkeypatch, tmp_path) 
     workspace = DummyWorkspace(tmp_path)
     client = GitHubClient(viewer_login="Inkvi")
     monkeypatch.setattr(GitHubClient, "add_eyes_reaction", lambda _self, _pr: None)
+    _mock_triage_full_review(monkeypatch)
     pr = _sample_pr()
 
     review_path = tmp_path / pr.owner / pr.repo / f"pr-{pr.number}.md"
@@ -959,6 +756,7 @@ def test_process_candidate_reconcile_uses_enabled_reviewer_order(monkeypatch, tm
     workspace = DummyWorkspace(tmp_path)
     client = GitHubClient(viewer_login="Inkvi")
     monkeypatch.setattr(GitHubClient, "add_eyes_reaction", lambda _self, _pr: None)
+    _mock_triage_full_review(monkeypatch)
 
     now = datetime.now(UTC)
     codex_output = ReviewerOutput(
@@ -1055,6 +853,7 @@ def test_process_candidate_reconcile_falls_back_to_claude_settings(monkeypatch, 
     workspace = DummyWorkspace(tmp_path)
     client = GitHubClient(viewer_login="Inkvi")
     monkeypatch.setattr(GitHubClient, "add_eyes_reaction", lambda _self, _pr: None)
+    _mock_triage_full_review(monkeypatch)
 
     now = datetime.now(UTC)
     codex_output = ReviewerOutput(
@@ -1176,6 +975,7 @@ def test_process_candidate_restarts_on_new_commit(monkeypatch, tmp_path) -> None
     store = DummyStore()
     workspace = DummyWorkspace(tmp_path)
     client = GitHubClient(viewer_login="Inkvi")
+    _mock_triage_full_review(monkeypatch)
 
     call_count = 0
 
@@ -1248,6 +1048,7 @@ def test_process_candidate_exhausts_restarts(monkeypatch, tmp_path) -> None:
     store = DummyStore()
     workspace = DummyWorkspace(tmp_path)
     client = GitHubClient(viewer_login="Inkvi")
+    _mock_triage_full_review(monkeypatch)
 
     async def patched_run_reviewers(_config, _client, _pr, _workdir):  # noqa: ANN001
         raise _NewCommitDetected("newersha")
@@ -1280,6 +1081,7 @@ def test_process_candidate_no_restart_when_disabled(monkeypatch, tmp_path) -> No
     store = DummyStore()
     workspace = DummyWorkspace(tmp_path)
     client = GitHubClient(viewer_login="Inkvi")
+    _mock_triage_full_review(monkeypatch)
 
     now = datetime.now(UTC)
     ok_output = ReviewerOutput(
@@ -1324,3 +1126,136 @@ def test_process_candidate_no_restart_when_disabled(monkeypatch, tmp_path) -> No
     assert changed is True
     # SHA check should never be called since monitoring is disabled.
     assert sha_checked is False
+
+
+def test_process_candidate_triage_simple_runs_lightweight(monkeypatch, tmp_path) -> None:
+    """When triage says simple, should run lightweight review, not full pipeline."""
+    store = DummyStore()
+    workspace = DummyWorkspace(tmp_path)
+    client = GitHubClient(viewer_login="Inkvi")
+    monkeypatch.setattr(GitHubClient, "add_eyes_reaction", lambda _self, _pr: None)
+
+    # Mock triage to return SIMPLE
+    async def fake_triage(*args, **kwargs):
+        return TriageResult.SIMPLE
+
+    monkeypatch.setattr("pr_reviewer.processor.run_triage", fake_triage)
+
+    # Mock lightweight review
+    async def fake_lightweight(*args, **kwargs):
+        return (
+            "### Findings\n- No material findings.\n\n### Test Gaps\n- None noted.",
+            None,
+        )
+
+    monkeypatch.setattr("pr_reviewer.processor.run_lightweight_review", fake_lightweight)
+
+    # Full reviewers should NOT be called
+    async def _boom_claude(*a, **kw):
+        raise AssertionError("should not run")
+
+    async def _boom_codex(*a, **kw):
+        raise AssertionError("should not run")
+
+    monkeypatch.setattr("pr_reviewer.processor.run_claude_review", _boom_claude)
+    monkeypatch.setattr("pr_reviewer.processor.run_codex_review", _boom_codex)
+    monkeypatch.setattr(
+        "pr_reviewer.processor.write_review_markdown",
+        lambda *_args, **_kwargs: tmp_path / "out.md",
+    )
+
+    cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["claude", "codex"])
+    pr = _sample_pr(additions=3, deletions=1, changed_file_paths=["config.yaml"])
+
+    changed = asyncio.run(process_candidate(cfg, client, store, workspace, pr))
+
+    assert changed is True
+    assert "lightweight" in store.state.last_status
+
+
+def test_process_candidate_triage_full_runs_normal_pipeline(monkeypatch, tmp_path) -> None:
+    """When triage says full_review, should run the normal multi-reviewer pipeline."""
+    store = DummyStore()
+    workspace = DummyWorkspace(tmp_path)
+    client = GitHubClient(viewer_login="Inkvi")
+    monkeypatch.setattr(GitHubClient, "add_eyes_reaction", lambda _self, _pr: None)
+
+    async def fake_triage(*args, **kwargs):
+        return TriageResult.FULL_REVIEW
+
+    monkeypatch.setattr("pr_reviewer.processor.run_triage", fake_triage)
+
+    # Mock the normal reviewers
+    async def fake_claude(*args, **kwargs):
+        return await _ok_output("claude")
+
+    async def fake_codex(*args, **kwargs):
+        return await _ok_output("codex")
+
+    monkeypatch.setattr("pr_reviewer.processor.run_claude_review", fake_claude)
+    monkeypatch.setattr("pr_reviewer.processor.run_codex_review", fake_codex)
+
+    async def fake_reconcile(*args, **kwargs):
+        return "### Findings\n- No material findings.\n\n### Test Gaps\n- None noted.", None
+
+    monkeypatch.setattr("pr_reviewer.processor.reconcile_reviews", fake_reconcile)
+    monkeypatch.setattr(GitHubClient, "get_pr_issue_comments", lambda _self, _pr: [])
+    monkeypatch.setattr(
+        "pr_reviewer.processor.write_review_markdown",
+        lambda *_args, **_kwargs: tmp_path / "out.md",
+    )
+    monkeypatch.setattr(
+        "pr_reviewer.processor.write_reviewer_sidecar_markdown",
+        lambda *_args, **_kwargs: tmp_path / "out.raw.md",
+    )
+
+    cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["claude", "codex"])
+    pr = _sample_pr()
+
+    changed = asyncio.run(process_candidate(cfg, client, store, workspace, pr))
+
+    assert changed is True
+    assert "lightweight" not in (store.state.last_status or "")
+
+
+def test_process_candidate_triage_failure_falls_through_to_full(monkeypatch, tmp_path) -> None:
+    """If triage returns FULL_REVIEW (its fallback), should run full pipeline."""
+    store = DummyStore()
+    workspace = DummyWorkspace(tmp_path)
+    client = GitHubClient(viewer_login="Inkvi")
+    monkeypatch.setattr(GitHubClient, "add_eyes_reaction", lambda _self, _pr: None)
+
+    async def fake_triage(*args, **kwargs):
+        return TriageResult.FULL_REVIEW
+
+    monkeypatch.setattr("pr_reviewer.processor.run_triage", fake_triage)
+
+    async def fake_claude(*args, **kwargs):
+        return await _ok_output("claude")
+
+    async def fake_codex(*args, **kwargs):
+        return await _ok_output("codex")
+
+    monkeypatch.setattr("pr_reviewer.processor.run_claude_review", fake_claude)
+    monkeypatch.setattr("pr_reviewer.processor.run_codex_review", fake_codex)
+
+    async def fake_reconcile(*args, **kwargs):
+        return "### Findings\n- No material findings.\n\n### Test Gaps\n- None noted.", None
+
+    monkeypatch.setattr("pr_reviewer.processor.reconcile_reviews", fake_reconcile)
+    monkeypatch.setattr(GitHubClient, "get_pr_issue_comments", lambda _self, _pr: [])
+    monkeypatch.setattr(
+        "pr_reviewer.processor.write_review_markdown",
+        lambda *_args, **_kwargs: tmp_path / "out.md",
+    )
+    monkeypatch.setattr(
+        "pr_reviewer.processor.write_reviewer_sidecar_markdown",
+        lambda *_args, **_kwargs: tmp_path / "out.raw.md",
+    )
+
+    cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["claude", "codex"])
+    pr = _sample_pr(additions=3, deletions=1, changed_file_paths=["config.yaml"])
+
+    changed = asyncio.run(process_candidate(cfg, client, store, workspace, pr))
+
+    assert changed is True

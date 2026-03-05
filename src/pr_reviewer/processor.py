@@ -13,11 +13,14 @@ from pr_reviewer.models import PRCandidate, ProcessedState, ReviewerOutput, Toke
 from pr_reviewer.output import write_review_markdown, write_reviewer_sidecar_markdown
 from pr_reviewer.review_decision import infer_review_decision
 from pr_reviewer.reviewers import (
+    TriageResult,
     reconcile_reviews,
     run_claude_review,
     run_codex_review,
     run_codex_review_via_agents_sdk,
     run_gemini_review,
+    run_lightweight_review,
+    run_triage,
 )
 from pr_reviewer.state import StateStore
 from pr_reviewer.workspace import PRWorkspace
@@ -35,19 +38,6 @@ class ProcessingDecision:
     should_process: bool
     reason: DecisionReason
     next_expected_rerequest_at: str | None = None
-
-
-_CONFIG_LIKE_SUFFIXES = {
-    ".cfg",
-    ".conf",
-    ".env",
-    ".ini",
-    ".json",
-    ".properties",
-    ".toml",
-    ".yaml",
-    ".yml",
-}
 
 
 def _disabled_output(reviewer: str) -> ReviewerOutput:
@@ -143,45 +133,6 @@ def _existing_saved_review_path(
         seen.add(key)
         if candidate.exists():
             return candidate
-    return None
-
-
-def _is_config_like_path(path: str) -> bool:
-    normalized = path.strip().lower()
-    if not normalized:
-        return False
-    file_name = Path(normalized).name
-    if file_name in {"docker-compose", "docker-compose.yaml", "docker-compose.yml"}:
-        return True
-    return Path(normalized).suffix in _CONFIG_LIKE_SUFFIXES
-
-
-_SKIP_REASON_MESSAGES: dict[str, str] = {
-    "small_change_set": (
-        "Skipping review: this PR has fewer than 10 lines changed."
-    ),
-    "config_only_files": (
-        "Skipping review: this PR only contains configuration file changes."
-    ),
-}
-
-
-def _publish_skip_comment(client: GitHubClient, pr: PRCandidate, skip_reason: str) -> None:
-    message = _SKIP_REASON_MESSAGES.get(skip_reason, f"Skipping review: {skip_reason}.")
-    try:
-        client.post_pr_comment_inline(pr, message)
-    except Exception as exc:  # noqa: BLE001
-        warn(f"{pr.key}: failed to post skip reason comment: {exc}")
-
-
-def _skip_reason_for_change_scope(pr: PRCandidate) -> str | None:
-    total_lines_changed = pr.additions + pr.deletions
-    if total_lines_changed < 10:
-        return "small_change_set"
-
-    if pr.changed_file_paths and all(_is_config_like_path(path) for path in pr.changed_file_paths):
-        return "config_only_files"
-
     return None
 
 
@@ -486,27 +437,6 @@ async def process_candidate(
 
     detail(f"processing {pr.title} {pr.url}")
     previous = store.get(pr.key)
-    skip_reason = _skip_reason_for_change_scope(pr)
-    if skip_reason is not None:
-        detail(f"skipping ({skip_reason}) {pr.url}")
-
-        user_triggered = pr.slash_command_trigger is not None
-        if not user_triggered:
-            decision = _compute_processing_decision(previous, pr, config.trigger_mode)
-            user_triggered = decision.reason == "new_rerequest"
-
-        if user_triggered:
-            _publish_skip_comment(client, pr, skip_reason)
-
-        previous.last_status = f"skipped_{skip_reason}"
-        previous.trigger_mode = config.trigger_mode
-        if pr.slash_command_trigger is not None:
-            previous.last_slash_command_id = pr.slash_command_trigger.comment_id
-        if pr.latest_direct_rerequest_at is not None:
-            previous.last_seen_rerequest_at = pr.latest_direct_rerequest_at
-        store.set(pr.key, previous)
-        store.save()
-        return False
 
     if use_saved_review:
         saved_review_path = _existing_saved_review_path(Path(config.output_dir), pr, previous)
@@ -598,6 +528,53 @@ async def process_candidate(
         workdir = workspace_mgr.prepare(pr)
         info(f"workspace ready at {workdir} {pr.url}")
 
+        # Triage: classify PR as simple or full_review
+        triage_result = await run_triage(
+            pr,
+            workdir,
+            config.triage_timeout_seconds,
+            backend=config.triage_backend,
+            model=config.triage_model,
+        )
+
+        if triage_result == TriageResult.SIMPLE:
+            # Lightweight review path
+            lightweight_text, lightweight_usage = await run_lightweight_review(
+                pr,
+                workdir,
+                config.lightweight_review_timeout_seconds,
+                backend=config.lightweight_review_backend,
+                model=config.lightweight_review_model,
+                reasoning_effort=config.lightweight_review_reasoning_effort,
+            )
+            lightweight_text = _validate_review_format(lightweight_text)
+
+            if lightweight_usage is not None:
+                info(
+                    f"token usage [lightweight]: "
+                    f"input={lightweight_usage.input_tokens:,} "
+                    f"output={lightweight_usage.output_tokens:,}"
+                    f"{f' cost=${lightweight_usage.cost_usd:.4f}' if lightweight_usage.cost_usd is not None else ''}"
+                    f" {pr.url}"
+                )
+
+            info(f"writing lightweight review output {pr.url}")
+            version_label = _output_version_label(pr)
+            output_path = write_review_markdown(
+                Path(config.output_dir), pr, lightweight_text, version_label=version_label,
+            )
+            info(f"Lightweight review ready: {output_path.resolve()}")
+
+            _publish_and_persist(
+                config, client, store, pr, output_path,
+                lightweight_text,
+                status_when_not_posted="lightweight_generated",
+                previous=previous,
+            )
+            info(f"processing complete (lightweight) {pr.url}")
+            return True
+
+        # Full review path continues below
         # Retry loop: restart reviewers when new commits are pushed mid-review.
         while True:
             try:
