@@ -332,3 +332,44 @@ def test_add_eyes_reaction_calls_gh_api(monkeypatch) -> None:
         "content=eyes",
         "--silent",
     ]
+
+
+def test_check_org_membership_returns_true_for_member(monkeypatch) -> None:
+    client = GitHubClient(viewer_login="Inkvi")
+
+    def fake_run_command(args, **_kwargs):
+        assert "orgs/polymerdao/members/alice" in args[2]
+        return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr("pr_reviewer.github.run_command", fake_run_command)
+
+    assert client.check_org_membership("polymerdao", "alice") is True
+
+
+def test_check_org_membership_returns_false_on_error(monkeypatch) -> None:
+    client = GitHubClient(viewer_login="Inkvi")
+
+    def fake_run_command(args, **_kwargs):
+        raise RuntimeError("not a member")
+
+    monkeypatch.setattr("pr_reviewer.github.run_command", fake_run_command)
+
+    assert client.check_org_membership("polymerdao", "alice") is False
+
+
+def test_add_reaction_to_comment_calls_gh_api(monkeypatch) -> None:
+    client = GitHubClient(viewer_login="Inkvi")
+
+    captured_args: list[list[str]] = []
+
+    def fake_run_command(args, **_kwargs):
+        captured_args.append(args)
+        return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr("pr_reviewer.github.run_command", fake_run_command)
+
+    client.add_reaction_to_comment("polymerdao", "obul", 123456, "eyes")
+
+    assert len(captured_args) == 1
+    assert "repos/polymerdao/obul/issues/comments/123456/reactions" in captured_args[0]
+    assert "content=eyes" in captured_args[0]

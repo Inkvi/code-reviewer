@@ -324,6 +324,27 @@ class GitHubClient:
             ]
         )
 
+    @staticmethod
+    def check_org_membership(org: str, login: str) -> bool:
+        try:
+            run_command(["gh", "api", f"orgs/{org}/members/{login}", "--silent"])
+            return True
+        except Exception:  # noqa: BLE001
+            return False
+
+    @staticmethod
+    def add_reaction_to_comment(owner: str, repo: str, comment_id: int, reaction: str) -> None:
+        run_command(
+            [
+                "gh",
+                "api",
+                f"repos/{owner}/{repo}/issues/comments/{comment_id}/reactions",
+                "-f",
+                f"content={reaction}",
+                "--silent",
+            ]
+        )
+
     def post_pr_comment(self, pr: PRCandidate, body_file: str) -> None:
         run_command(["gh", "pr", "comment", pr.url, "--body-file", body_file])
 
