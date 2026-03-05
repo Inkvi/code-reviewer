@@ -52,3 +52,13 @@ max_test_gaps = 3
 post_rerequest_comment = true
 # Slash command trigger — respond to /review comments in monitored org PRs
 slash_command_enabled = true
+# Triage — classifies PRs as simple (lightweight review) or complex (full review)
+# Every PR goes through triage; no more hard skips.
+triage_backend = "gemini"   # claude | codex | gemini
+# triage_model = "gemini-3-flash"
+triage_timeout_seconds = 60
+# Lightweight review — single-model checklist review for simple PRs
+lightweight_review_backend = "claude"   # claude | codex | gemini
+# lightweight_review_model = "claude-sonnet-4-6"
+# lightweight_review_reasoning_effort = "low"   # low | medium | high | max
+lightweight_review_timeout_seconds = 300
