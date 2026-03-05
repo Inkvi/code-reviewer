@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 from typing import Annotated
 
@@ -12,6 +13,7 @@ from pr_reviewer.config import AppConfig, load_config
 from pr_reviewer.daemon import run_cycle, start_daemon
 from pr_reviewer.github import GitHubClient
 from pr_reviewer.logger import console, error, info
+from pr_reviewer.models import ProcessingResult
 from pr_reviewer.preflight import run_preflight
 from pr_reviewer.processor import process_candidate
 from pr_reviewer.state import StateStore
@@ -124,6 +126,41 @@ SlashCommandEnabledOption = Annotated[
         help="Override slash_command_enabled from config.",
     ),
 ]
+TriageBackendOption = Annotated[
+    str | None,
+    typer.Option(
+        "--triage-backend",
+        help="Override triage_backend from config. Allowed: claude, codex, gemini.",
+    ),
+]
+TriageModelOption = Annotated[
+    str | None,
+    typer.Option(
+        "--triage-model",
+        help="Override triage_model from config.",
+    ),
+]
+LightweightReviewBackendOption = Annotated[
+    str | None,
+    typer.Option(
+        "--lightweight-review-backend",
+        help="Override lightweight_review_backend from config. Allowed: claude, codex, gemini.",
+    ),
+]
+LightweightReviewModelOption = Annotated[
+    str | None,
+    typer.Option(
+        "--lightweight-review-model",
+        help="Override lightweight_review_model from config.",
+    ),
+]
+LightweightReviewReasoningEffortOption = Annotated[
+    str | None,
+    typer.Option(
+        "--lightweight-review-reasoning-effort",
+        help="Override lightweight_review_reasoning_effort from config. Allowed: low, medium, high, max.",
+    ),
+]
 UseSavedReviewOption = Annotated[
     bool,
     typer.Option(
@@ -226,6 +263,11 @@ def _load_runtime(
     auto_post_review: bool | None,
     gemini_model: str | None,
     slash_command_enabled: bool | None,
+    triage_backend: str | None,
+    triage_model: str | None,
+    lightweight_review_backend: str | None,
+    lightweight_review_model: str | None,
+    lightweight_review_reasoning_effort: str | None,
 ) -> tuple[AppConfig, StateStore]:
     config = load_config(config_path)
     config = _apply_enabled_reviewer_override(config, enabled_reviewer)
@@ -275,6 +317,20 @@ def _load_runtime(
         slash_command_enabled,
         "--slash-command-enabled/--no-slash-command-enabled",
     )
+    config = _apply_field_override(config, "triage_backend", triage_backend, "--triage-backend")
+    config = _apply_field_override(config, "triage_model", triage_model, "--triage-model")
+    config = _apply_field_override(
+        config, "lightweight_review_backend", lightweight_review_backend, "--lightweight-review-backend"
+    )
+    config = _apply_field_override(
+        config, "lightweight_review_model", lightweight_review_model, "--lightweight-review-model"
+    )
+    config = _apply_field_override(
+        config,
+        "lightweight_review_reasoning_effort",
+        lightweight_review_reasoning_effort,
+        "--lightweight-review-reasoning-effort",
+    )
     store = StateStore(Path(config.state_file))
     store.acquire_lock()
     store.load()
@@ -307,6 +363,11 @@ def check_command(
     auto_post_review: AutoPostReviewOption = None,
     gemini_model: GeminiModelOption = None,
     slash_command_enabled: SlashCommandEnabledOption = None,
+    triage_backend: TriageBackendOption = None,
+    triage_model: TriageModelOption = None,
+    lightweight_review_backend: LightweightReviewBackendOption = None,
+    lightweight_review_model: LightweightReviewModelOption = None,
+    lightweight_review_reasoning_effort: LightweightReviewReasoningEffortOption = None,
 ) -> None:
     """Run preflight checks and print runtime summary."""
     cfg = load_config(config)
@@ -352,6 +413,20 @@ def check_command(
         slash_command_enabled,
         "--slash-command-enabled/--no-slash-command-enabled",
     )
+    cfg = _apply_field_override(cfg, "triage_backend", triage_backend, "--triage-backend")
+    cfg = _apply_field_override(cfg, "triage_model", triage_model, "--triage-model")
+    cfg = _apply_field_override(
+        cfg, "lightweight_review_backend", lightweight_review_backend, "--lightweight-review-backend"
+    )
+    cfg = _apply_field_override(
+        cfg, "lightweight_review_model", lightweight_review_model, "--lightweight-review-model"
+    )
+    cfg = _apply_field_override(
+        cfg,
+        "lightweight_review_reasoning_effort",
+        lightweight_review_reasoning_effort,
+        "--lightweight-review-reasoning-effort",
+    )
     preflight = run_preflight(cfg)
 
     table = Table(title="pr-reviewer check")
@@ -382,6 +457,13 @@ def check_command(
     table.add_row("Codex reasoning effort", cfg.codex_reasoning_effort or "default")
     table.add_row("Gemini model", cfg.gemini_model or "default")
     table.add_row("Slash command enabled", str(cfg.slash_command_enabled))
+    table.add_row("Triage backend", cfg.triage_backend)
+    table.add_row("Triage model", cfg.triage_model or "default")
+    table.add_row("Triage timeout", str(cfg.triage_timeout_seconds))
+    table.add_row("Lightweight review backend", cfg.lightweight_review_backend)
+    table.add_row("Lightweight review model", cfg.lightweight_review_model or "default")
+    table.add_row("Lightweight review reasoning effort", cfg.lightweight_review_reasoning_effort or "default")
+    table.add_row("Lightweight review timeout", str(cfg.lightweight_review_timeout_seconds))
     table.add_row("Trigger mode", cfg.trigger_mode)
     table.add_row("Output dir", str(Path(cfg.output_dir).resolve()))
     table.add_row("State file", str(Path(cfg.state_file).resolve()))
@@ -403,6 +485,11 @@ def run_once_command(
     auto_post_review: AutoPostReviewOption = None,
     gemini_model: GeminiModelOption = None,
     slash_command_enabled: SlashCommandEnabledOption = None,
+    triage_backend: TriageBackendOption = None,
+    triage_model: TriageModelOption = None,
+    lightweight_review_backend: LightweightReviewBackendOption = None,
+    lightweight_review_model: LightweightReviewModelOption = None,
+    lightweight_review_reasoning_effort: LightweightReviewReasoningEffortOption = None,
     pr_url: PrUrlOption = None,
     use_saved_review: UseSavedReviewOption = False,
 ) -> None:
@@ -425,6 +512,11 @@ def run_once_command(
         auto_post_review,
         gemini_model,
         slash_command_enabled,
+        triage_backend,
+        triage_model,
+        lightweight_review_backend,
+        lightweight_review_model,
+        lightweight_review_reasoning_effort,
     )
     try:
         preflight = run_preflight(cfg)
@@ -472,6 +564,11 @@ def start_command(
     auto_post_review: AutoPostReviewOption = None,
     gemini_model: GeminiModelOption = None,
     slash_command_enabled: SlashCommandEnabledOption = None,
+    triage_backend: TriageBackendOption = None,
+    triage_model: TriageModelOption = None,
+    lightweight_review_backend: LightweightReviewBackendOption = None,
+    lightweight_review_model: LightweightReviewModelOption = None,
+    lightweight_review_reasoning_effort: LightweightReviewReasoningEffortOption = None,
 ) -> None:
     """Run daemon forever."""
     cfg, store = _load_runtime(
@@ -488,6 +585,11 @@ def start_command(
         auto_post_review,
         gemini_model,
         slash_command_enabled,
+        triage_backend,
+        triage_model,
+        lightweight_review_backend,
+        lightweight_review_model,
+        lightweight_review_reasoning_effort,
     )
     try:
         preflight = run_preflight(cfg)
