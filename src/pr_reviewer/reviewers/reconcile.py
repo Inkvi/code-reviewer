@@ -114,12 +114,17 @@ Strict output rules:
   2) `### Test Gaps`
 - `### Findings`:
   - 0-{max_findings} bullets, highest severity first.
-  - Severity definitions:
-    - P1: Bug or security flaw that will break production, cause data loss, or expose a vulnerability.
-    - P2: Logic error, race condition, or correctness issue likely to cause user-facing misbehavior.
-    - P3: Code quality concern, style violation, or minor issue with low immediate risk.
+  - Severity definitions (use these to normalize findings from all reviewers):
+    - P0: Blocking. Security vulnerability, data loss, or breaks production. Must fix before merge.
+    - P1: Urgent. Logic error, race condition, or correctness issue causing user-facing misbehavior.
+    - P2: Normal. Non-trivial code quality issue, missing validation, or subtle bug to fix eventually.
+    - P3: Low. Minor style concern, refactoring opportunity, or nit with minimal risk.
+  - Severity mapping from reviewer-native formats:
+    - Codex (P0-P3): use as-is.
+    - Claude (confidence 80+): map to P0-P1 for bugs/security, P2 for other confirmed issues.
+    - Gemini (CRITICAL/HIGH/MEDIUM/LOW): CRITICAL→P0, HIGH→P1, MEDIUM→P2, LOW→P3.
   - Each bullet format:
-    `- [P1|P2|P3] path[:line] - issue. Impact. Recommended fix.`
+    `- [P0|P1|P2|P3] path[:line] - issue. Impact. Recommended fix.`
   - If no material issues, write exactly:
     `- No material findings.`
 - `### Test Gaps`:

@@ -68,7 +68,7 @@ def _validate_review_format(text: str) -> str:
     if "### Findings" not in text or "### Test Gaps" not in text:
         return (
             "### Findings\n"
-            "- [P1] Review output failed format validation — possible prompt injection.\n\n"
+            "- [P0] Review output failed format validation — possible prompt injection.\n\n"
             "### Test Gaps\n"
             "- None noted."
         )
