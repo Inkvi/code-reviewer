@@ -156,6 +156,24 @@ def _is_config_like_path(path: str) -> bool:
     return Path(normalized).suffix in _CONFIG_LIKE_SUFFIXES
 
 
+_SKIP_REASON_MESSAGES: dict[str, str] = {
+    "small_change_set": (
+        "Skipping review: this PR has fewer than 10 lines changed."
+    ),
+    "config_only_files": (
+        "Skipping review: this PR only contains configuration file changes."
+    ),
+}
+
+
+def _publish_skip_comment(client: GitHubClient, pr: PRCandidate, skip_reason: str) -> None:
+    message = _SKIP_REASON_MESSAGES.get(skip_reason, f"Skipping review: {skip_reason}.")
+    try:
+        client.post_pr_comment_inline(pr, message)
+    except Exception as exc:  # noqa: BLE001
+        warn(f"{pr.key}: failed to post skip reason comment: {exc}")
+
+
 def _skip_reason_for_change_scope(pr: PRCandidate) -> str | None:
     total_lines_changed = pr.additions + pr.deletions
     if total_lines_changed < 10:
@@ -471,8 +489,21 @@ async def process_candidate(
     skip_reason = _skip_reason_for_change_scope(pr)
     if skip_reason is not None:
         detail(f"skipping ({skip_reason}) {pr.url}")
+
+        user_triggered = pr.slash_command_trigger is not None
+        if not user_triggered:
+            decision = _compute_processing_decision(previous, pr, config.trigger_mode)
+            user_triggered = decision.reason == "new_rerequest"
+
+        if user_triggered:
+            _publish_skip_comment(client, pr, skip_reason)
+
         previous.last_status = f"skipped_{skip_reason}"
         previous.trigger_mode = config.trigger_mode
+        if pr.slash_command_trigger is not None:
+            previous.last_slash_command_id = pr.slash_command_trigger.comment_id
+        if pr.latest_direct_rerequest_at is not None:
+            previous.last_seen_rerequest_at = pr.latest_direct_rerequest_at
         store.set(pr.key, previous)
         store.save()
         return False

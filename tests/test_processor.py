@@ -326,6 +326,165 @@ def test_process_candidate_skips_config_only_files(monkeypatch, tmp_path) -> Non
     assert store.state.last_status == "skipped_config_only_files"
 
 
+def test_skip_publishes_reason_when_slash_command_triggered(monkeypatch, tmp_path) -> None:
+    from pr_reviewer.models import SlashCommandTrigger
+
+    store = DummyStore()
+    workspace = DummyWorkspace(tmp_path)
+    client = GitHubClient(viewer_login="Inkvi")
+
+    posted_comments: list[str] = []
+    monkeypatch.setattr(
+        GitHubClient,
+        "post_pr_comment_inline",
+        lambda _self, _pr, body: posted_comments.append(body),
+    )
+
+    trigger = SlashCommandTrigger(
+        comment_id=999, comment_author="alice", comment_created_at="2026-03-02T00:00:00Z"
+    )
+    cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["codex"])
+    pr = _sample_pr(additions=3, deletions=1, changed_file_paths=["src/app.py"])
+    pr.slash_command_trigger = trigger
+
+    changed = asyncio.run(process_candidate(cfg, client, store, workspace, pr))
+
+    assert changed is False
+    assert store.state.last_status == "skipped_small_change_set"
+    assert store.state.last_slash_command_id == 999
+    assert len(posted_comments) == 1
+    assert "fewer than 10 lines" in posted_comments[0]
+
+
+def test_skip_publishes_reason_when_rerequest_triggered(monkeypatch, tmp_path) -> None:
+    store = DummyStore(
+        ProcessedState(
+            last_processed_at="2026-03-01T00:00:00+00:00",
+            last_seen_rerequest_at="2026-03-01T00:00:00+00:00",
+        )
+    )
+    workspace = DummyWorkspace(tmp_path)
+    client = GitHubClient(viewer_login="Inkvi")
+
+    posted_comments: list[str] = []
+    monkeypatch.setattr(
+        GitHubClient,
+        "post_pr_comment_inline",
+        lambda _self, _pr, body: posted_comments.append(body),
+    )
+
+    cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["codex"])
+    pr = _sample_pr(
+        additions=10,
+        deletions=0,
+        changed_file_paths=["config.yaml"],
+        latest_direct_rerequest_at="2026-03-02T00:00:00+00:00",
+    )
+
+    changed = asyncio.run(process_candidate(cfg, client, store, workspace, pr))
+
+    assert changed is False
+    assert store.state.last_status == "skipped_config_only_files"
+    assert len(posted_comments) == 1
+    assert "configuration file" in posted_comments[0]
+
+
+def test_skip_no_comment_when_no_user_trigger(monkeypatch, tmp_path) -> None:
+    """When processing decision says no_new_trigger, skip reason shouldn't post a comment."""
+    store = DummyStore(
+        ProcessedState(
+            last_processed_at="2026-03-01T00:00:00+00:00",
+            last_seen_rerequest_at="2026-03-02T00:00:00+00:00",
+        )
+    )
+    workspace = DummyWorkspace(tmp_path)
+    client = GitHubClient(viewer_login="Inkvi")
+
+    posted_comments: list[str] = []
+    monkeypatch.setattr(
+        GitHubClient,
+        "post_pr_comment_inline",
+        lambda _self, _pr, body: posted_comments.append(body),
+    )
+
+    cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["codex"])
+    pr = _sample_pr(
+        additions=3,
+        deletions=1,
+        latest_direct_rerequest_at="2026-03-02T00:00:00+00:00",
+    )
+
+    changed = asyncio.run(process_candidate(cfg, client, store, workspace, pr))
+
+    assert changed is False
+    assert store.state.last_status == "skipped_small_change_set"
+    assert len(posted_comments) == 0
+
+
+def test_skip_no_comment_on_bootstrap_state(monkeypatch, tmp_path) -> None:
+    """First-seen small PR should not get a skip comment (bootstrap is not user-triggered)."""
+    store = DummyStore()  # last_processed_at=None → bootstrap_missing_state
+    workspace = DummyWorkspace(tmp_path)
+    client = GitHubClient(viewer_login="Inkvi")
+
+    posted_comments: list[str] = []
+    monkeypatch.setattr(
+        GitHubClient,
+        "post_pr_comment_inline",
+        lambda _self, _pr, body: posted_comments.append(body),
+    )
+
+    cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["codex"])
+    pr = _sample_pr(additions=3, deletions=1)
+
+    changed = asyncio.run(process_candidate(cfg, client, store, workspace, pr))
+
+    assert changed is False
+    assert store.state.last_status == "skipped_small_change_set"
+    assert len(posted_comments) == 0
+
+
+def test_skip_rerequest_advances_last_seen_rerequest_at(monkeypatch, tmp_path) -> None:
+    """After posting a skip comment for a rerequest, last_seen_rerequest_at must advance."""
+    store = DummyStore(
+        ProcessedState(
+            last_processed_at="2026-03-01T00:00:00+00:00",
+            last_seen_rerequest_at="2026-03-01T00:00:00+00:00",
+        )
+    )
+    workspace = DummyWorkspace(tmp_path)
+    client = GitHubClient(viewer_login="Inkvi")
+
+    monkeypatch.setattr(
+        GitHubClient,
+        "post_pr_comment_inline",
+        lambda _self, _pr, _body: None,
+    )
+
+    cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["codex"])
+    pr = _sample_pr(
+        additions=3,
+        deletions=1,
+        latest_direct_rerequest_at="2026-03-02T00:00:00+00:00",
+    )
+
+    asyncio.run(process_candidate(cfg, client, store, workspace, pr))
+
+    assert store.state.last_seen_rerequest_at == "2026-03-02T00:00:00+00:00"
+
+    # Second run should NOT post a comment (rerequest is now consumed).
+    posted_comments: list[str] = []
+    monkeypatch.setattr(
+        GitHubClient,
+        "post_pr_comment_inline",
+        lambda _self, _pr, body: posted_comments.append(body),
+    )
+
+    asyncio.run(process_candidate(cfg, client, store, workspace, pr))
+
+    assert len(posted_comments) == 0
+
+
 def test_processes_on_bootstrap_when_state_missing(monkeypatch, tmp_path) -> None:
     store = DummyStore()
     workspace = DummyWorkspace(tmp_path)
