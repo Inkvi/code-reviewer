@@ -87,6 +87,7 @@ class StateStore:
 
     def get(self, key: str) -> ProcessedState:
         item = self._data.get(key, {})
+        _raw_cmd_id = item.get("last_slash_command_id")
         return ProcessedState(
             last_reviewed_head_sha=item.get("last_reviewed_head_sha"),
             last_processed_at=item.get("last_processed_at"),
@@ -95,6 +96,7 @@ class StateStore:
             last_output_file=item.get("last_output_file"),
             last_status=item.get("last_status"),
             last_posted_at=item.get("last_posted_at"),
+            last_slash_command_id=int(_raw_cmd_id) if _raw_cmd_id is not None else None,
         )
 
     def set(self, key: str, state: ProcessedState) -> None:
@@ -106,4 +108,5 @@ class StateStore:
             "last_output_file": state.last_output_file,
             "last_status": state.last_status,
             "last_posted_at": state.last_posted_at,
+            "last_slash_command_id": state.last_slash_command_id,
         }
