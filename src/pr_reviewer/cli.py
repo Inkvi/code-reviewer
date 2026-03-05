@@ -117,6 +117,13 @@ AutoPostReviewOption = Annotated[
         help="Override auto_post_review from config.",
     ),
 ]
+SlashCommandEnabledOption = Annotated[
+    bool | None,
+    typer.Option(
+        "--slash-command-enabled/--no-slash-command-enabled",
+        help="Override slash_command_enabled from config.",
+    ),
+]
 UseSavedReviewOption = Annotated[
     bool,
     typer.Option(
@@ -218,6 +225,7 @@ def _load_runtime(
     codex_reasoning_effort: str | None,
     auto_post_review: bool | None,
     gemini_model: str | None,
+    slash_command_enabled: bool | None,
 ) -> tuple[AppConfig, StateStore]:
     config = load_config(config_path)
     config = _apply_enabled_reviewer_override(config, enabled_reviewer)
@@ -261,6 +269,12 @@ def _load_runtime(
         "--auto-post-review/--no-auto-post-review",
     )
     config = _apply_field_override(config, "gemini_model", gemini_model, "--gemini-model")
+    config = _apply_bool_override(
+        config,
+        "slash_command_enabled",
+        slash_command_enabled,
+        "--slash-command-enabled/--no-slash-command-enabled",
+    )
     store = StateStore(Path(config.state_file))
     store.acquire_lock()
     store.load()
@@ -292,6 +306,7 @@ def check_command(
     codex_reasoning_effort: CodexReasoningEffortOption = None,
     auto_post_review: AutoPostReviewOption = None,
     gemini_model: GeminiModelOption = None,
+    slash_command_enabled: SlashCommandEnabledOption = None,
 ) -> None:
     """Run preflight checks and print runtime summary."""
     cfg = load_config(config)
@@ -331,6 +346,12 @@ def check_command(
         "--auto-post-review/--no-auto-post-review",
     )
     cfg = _apply_field_override(cfg, "gemini_model", gemini_model, "--gemini-model")
+    cfg = _apply_bool_override(
+        cfg,
+        "slash_command_enabled",
+        slash_command_enabled,
+        "--slash-command-enabled/--no-slash-command-enabled",
+    )
     preflight = run_preflight(cfg)
 
     table = Table(title="pr-reviewer check")
@@ -360,6 +381,7 @@ def check_command(
     table.add_row("Codex model", cfg.codex_model)
     table.add_row("Codex reasoning effort", cfg.codex_reasoning_effort or "default")
     table.add_row("Gemini model", cfg.gemini_model or "default")
+    table.add_row("Slash command enabled", str(cfg.slash_command_enabled))
     table.add_row("Trigger mode", cfg.trigger_mode)
     table.add_row("Output dir", str(Path(cfg.output_dir).resolve()))
     table.add_row("State file", str(Path(cfg.state_file).resolve()))
@@ -380,6 +402,7 @@ def run_once_command(
     codex_reasoning_effort: CodexReasoningEffortOption = None,
     auto_post_review: AutoPostReviewOption = None,
     gemini_model: GeminiModelOption = None,
+    slash_command_enabled: SlashCommandEnabledOption = None,
     pr_url: PrUrlOption = None,
     use_saved_review: UseSavedReviewOption = False,
 ) -> None:
@@ -401,6 +424,7 @@ def run_once_command(
         codex_reasoning_effort,
         auto_post_review,
         gemini_model,
+        slash_command_enabled,
     )
     try:
         preflight = run_preflight(cfg)
@@ -447,6 +471,7 @@ def start_command(
     codex_reasoning_effort: CodexReasoningEffortOption = None,
     auto_post_review: AutoPostReviewOption = None,
     gemini_model: GeminiModelOption = None,
+    slash_command_enabled: SlashCommandEnabledOption = None,
 ) -> None:
     """Run daemon forever."""
     cfg, store = _load_runtime(
@@ -462,6 +487,7 @@ def start_command(
         codex_reasoning_effort,
         auto_post_review,
         gemini_model,
+        slash_command_enabled,
     )
     try:
         preflight = run_preflight(cfg)

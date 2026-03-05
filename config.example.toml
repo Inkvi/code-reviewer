@@ -50,3 +50,5 @@ max_findings = 10
 max_test_gaps = 3
 # Post a comment when starting a review triggered by a re-request (default true):
 post_rerequest_comment = true
+# Slash command trigger — respond to /review comments in monitored org PRs
+slash_command_enabled = true
