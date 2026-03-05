@@ -153,11 +153,11 @@ def test_slash_command_triggers_review(monkeypatch, tmp_path) -> None:
     )
 
     cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["codex"])
-    changed = asyncio.run(
+    result = asyncio.run(
         process_candidate(cfg, client, store, workspace, _sample_pr_with_slash_command())
     )
 
-    assert changed is True
+    assert result.processed is True
     assert store.state.last_slash_command_id == 123456
     assert ("polymerdao", "obul", 123456, "eyes") in reactions
     assert any("starting review" in c.lower() for c in posted_comments)
@@ -188,11 +188,11 @@ def test_slash_command_skips_when_already_reviewed_at_head(monkeypatch, tmp_path
     )
 
     cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["codex"])
-    changed = asyncio.run(
+    result = asyncio.run(
         process_candidate(cfg, client, store, workspace, _sample_pr_with_slash_command(force=False))
     )
 
-    assert changed is False
+    assert result.processed is False
     assert any("already reviewed" in c.lower() for c in posted_comments)
     assert store.state.last_slash_command_id == 123456
 
@@ -245,11 +245,11 @@ def test_slash_command_force_reviews_even_when_already_reviewed(monkeypatch, tmp
     )
 
     cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["codex"])
-    changed = asyncio.run(
+    result = asyncio.run(
         process_candidate(cfg, client, store, workspace, _sample_pr_with_slash_command(force=True))
     )
 
-    assert changed is True
+    assert result.processed is True
     assert store.state.last_status == "generated"
     assert store.state.last_slash_command_id == 123456
 
@@ -324,10 +324,10 @@ def test_slash_command_full_flow_react_reply_review_post(monkeypatch, tmp_path) 
     )
     pr = _sample_pr_with_slash_command()
 
-    changed = asyncio.run(process_candidate(cfg, client, store, workspace, pr))
+    result = asyncio.run(process_candidate(cfg, client, store, workspace, pr))
 
     # Verify the full flow happened in order.
-    assert changed is True
+    assert result.processed is True
     assert api_calls[0] == "react:polymerdao/obul#123456:eyes"
     assert api_calls[1] == "comment:polymerdao/obul#64"
     assert "starting review" in posted_comments[0].lower()

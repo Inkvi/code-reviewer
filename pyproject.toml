@@ -33,6 +33,12 @@ target-version = "py312"
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "W"]
 
+[tool.ruff.lint.per-file-ignores]
+# Prompt template strings contain long lines by design.
+"src/pr_reviewer/reviewers/reconcile.py" = ["E501"]
+"src/pr_reviewer/reviewers/triage.py" = ["E501"]
+"src/pr_reviewer/reviewers/lightweight.py" = ["E501"]
+
 [tool.pytest.ini_options]
 addopts = "-q"
 testpaths = ["tests"]

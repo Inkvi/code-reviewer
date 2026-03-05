@@ -1,11 +1,9 @@
 import asyncio
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
-
-import pytest
+from unittest.mock import patch
 
 from pr_reviewer.models import PRCandidate
-from pr_reviewer.reviewers.triage import run_triage, TriageResult
+from pr_reviewer.reviewers.triage import TriageResult, run_triage
 
 
 def _sample_pr() -> PRCandidate:

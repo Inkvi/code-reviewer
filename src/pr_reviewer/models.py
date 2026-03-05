@@ -70,6 +70,76 @@ class ReviewerOutput:
 
 
 @dataclass(slots=True)
+class ReviewerOutputSummary:
+    reviewer: str
+    status: str
+    duration_seconds: float
+    error: str | None = None
+    token_usage: TokenUsage | None = None
+
+
+@dataclass(slots=True)
+class ProcessingResult:
+    processed: bool
+    pr_url: str
+    pr_key: str
+    status: str
+    final_review: str | None = None
+    output_file: str | None = None
+    triage_result: str | None = None
+    review_decision: str | None = None
+    reviewer_outputs: list[ReviewerOutputSummary] | None = None
+    total_token_usage: TokenUsage | None = None
+    error: str | None = None
+
+    def to_dict(self) -> dict:
+        d: dict = {
+            "processed": self.processed,
+            "pr_url": self.pr_url,
+            "pr_key": self.pr_key,
+            "status": self.status,
+        }
+        if self.final_review is not None:
+            d["final_review"] = self.final_review
+        if self.output_file is not None:
+            d["output_file"] = self.output_file
+        if self.triage_result is not None:
+            d["triage_result"] = self.triage_result
+        if self.review_decision is not None:
+            d["review_decision"] = self.review_decision
+        if self.reviewer_outputs is not None:
+            d["reviewer_outputs"] = [
+                {
+                    "reviewer": ro.reviewer,
+                    "status": ro.status,
+                    "duration_seconds": ro.duration_seconds,
+                    "error": ro.error,
+                    **(
+                        {
+                            "token_usage": {
+                                "input_tokens": ro.token_usage.input_tokens,
+                                "output_tokens": ro.token_usage.output_tokens,
+                                "cost_usd": ro.token_usage.cost_usd,
+                            }
+                        }
+                        if ro.token_usage is not None
+                        else {}
+                    ),
+                }
+                for ro in self.reviewer_outputs
+            ]
+        if self.total_token_usage is not None:
+            d["total_token_usage"] = {
+                "input_tokens": self.total_token_usage.input_tokens,
+                "output_tokens": self.total_token_usage.output_tokens,
+                "cost_usd": self.total_token_usage.cost_usd,
+            }
+        if self.error is not None:
+            d["error"] = self.error
+        return d
+
+
+@dataclass(slots=True)
 class ProcessedState:
     # Legacy field kept for backward-compatibility with existing state files.
     last_reviewed_head_sha: str | None = None

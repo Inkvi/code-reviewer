@@ -6,9 +6,9 @@ from pr_reviewer.config import AppConfig
 from pr_reviewer.github import GitHubClient
 from pr_reviewer.models import PRCandidate, ProcessedState, ReviewerOutput
 from pr_reviewer.processor import (
-    _NewCommitDetected,
     _check_pr_head_changed,
     _compute_processing_decision,
+    _NewCommitDetected,
     _resolve_reconciler_settings,
     _run_reviewers_with_monitoring,
     _single_reviewer_final_review,
@@ -307,9 +307,9 @@ def test_processes_on_bootstrap_when_state_missing(monkeypatch, tmp_path) -> Non
     )
 
     cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["codex"])
-    changed = asyncio.run(process_candidate(cfg, client, store, workspace, _sample_pr()))
+    result = asyncio.run(process_candidate(cfg, client, store, workspace, _sample_pr()))
 
-    assert changed is True
+    assert result.processed is True
     assert store.saved is True
     assert store.state.last_status == "generated"
     assert store.state.last_processed_at is not None
@@ -355,9 +355,9 @@ def test_process_candidate_adds_eyes_reaction(monkeypatch, tmp_path) -> None:
     )
 
     cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["codex"])
-    changed = asyncio.run(process_candidate(cfg, client, store, workspace, _sample_pr()))
+    result = asyncio.run(process_candidate(cfg, client, store, workspace, _sample_pr()))
 
-    assert changed is True
+    assert result.processed is True
     assert reacted_prs == ["polymerdao/obul#64"]
 
 
@@ -379,7 +379,7 @@ def test_skips_without_new_rerequest_after_processed(monkeypatch, tmp_path) -> N
     )
 
     cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["codex"])
-    changed = asyncio.run(
+    result = asyncio.run(
         process_candidate(
             cfg,
             client,
@@ -389,7 +389,7 @@ def test_skips_without_new_rerequest_after_processed(monkeypatch, tmp_path) -> N
         )
     )
 
-    assert changed is False
+    assert result.processed is False
     assert store.saved is True
     assert store.state.last_status == "skipped_no_new_trigger"
 
@@ -433,7 +433,7 @@ def test_processes_on_newer_direct_rerequest(monkeypatch, tmp_path) -> None:
     )
 
     cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["codex"])
-    changed = asyncio.run(
+    result = asyncio.run(
         process_candidate(
             cfg,
             client,
@@ -443,7 +443,7 @@ def test_processes_on_newer_direct_rerequest(monkeypatch, tmp_path) -> None:
         )
     )
 
-    assert changed is True
+    assert result.processed is True
     assert store.state.last_status == "generated"
     assert store.state.last_seen_rerequest_at == "2026-03-03T02:00:00+00:00"
 
@@ -635,7 +635,7 @@ def test_does_not_advance_trigger_checkpoint_on_failure(monkeypatch, tmp_path) -
     monkeypatch.setattr("pr_reviewer.processor.run_codex_review", fake_codex)
 
     cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["codex"])
-    changed = asyncio.run(
+    result = asyncio.run(
         process_candidate(
             cfg,
             client,
@@ -645,7 +645,7 @@ def test_does_not_advance_trigger_checkpoint_on_failure(monkeypatch, tmp_path) -
         )
     )
 
-    assert changed is False
+    assert result.processed is False
     assert store.saved is True
     assert store.state.last_status == "error: codex boom"
     assert store.state.last_processed_at == "2026-03-03T00:00:00+00:00"
@@ -686,7 +686,7 @@ def test_use_saved_review_still_bypasses_generation(monkeypatch, tmp_path) -> No
         output_dir=str(tmp_path),
         auto_post_review=True,
     )
-    changed = asyncio.run(
+    result = asyncio.run(
         process_candidate(
             cfg,
             client,
@@ -697,7 +697,7 @@ def test_use_saved_review_still_bypasses_generation(monkeypatch, tmp_path) -> No
         )
     )
 
-    assert changed is True
+    assert result.processed is True
     assert posted == [str(review_path)]
     assert store.state.last_status == "posted"
     assert store.state.last_output_file == str(review_path.resolve())
@@ -745,9 +745,9 @@ def test_saved_review_existing_does_not_skip_normal_flow(monkeypatch, tmp_path) 
         enabled_reviewers=["codex"],
         output_dir=str(tmp_path),
     )
-    changed = asyncio.run(process_candidate(cfg, client, store, workspace, pr))
+    result = asyncio.run(process_candidate(cfg, client, store, workspace, pr))
 
-    assert changed is True
+    assert result.processed is True
     assert store.state.last_status == "generated"
 
 
@@ -838,9 +838,9 @@ def test_process_candidate_reconcile_uses_enabled_reviewer_order(monkeypatch, tm
         reconciler_model="gpt-5.3-codex-mini",
         reconciler_reasoning_effort="high",
     )
-    changed = asyncio.run(process_candidate(cfg, client, store, workspace, _sample_pr()))
+    result = asyncio.run(process_candidate(cfg, client, store, workspace, _sample_pr()))
 
-    assert changed is True
+    assert result.processed is True
     assert seen_order == ["gemini", "codex"]
     assert seen_comments == ["@alice (2026-03-03T00:00:00Z): please verify x"]
     assert seen_reconciler_backend == "codex"
@@ -926,9 +926,9 @@ def test_process_candidate_reconcile_falls_back_to_claude_settings(monkeypatch, 
         claude_model="claude-sonnet-4-5",
         claude_reasoning_effort="medium",
     )
-    changed = asyncio.run(process_candidate(cfg, client, store, workspace, _sample_pr()))
+    result = asyncio.run(process_candidate(cfg, client, store, workspace, _sample_pr()))
 
-    assert changed is True
+    assert result.processed is True
     assert seen_reconciler_backend == "claude"
     assert seen_reconciler_model == "claude-sonnet-4-5"
     assert seen_reconciler_reasoning_effort == "medium"
@@ -1035,9 +1035,9 @@ def test_process_candidate_restarts_on_new_commit(monkeypatch, tmp_path) -> None
         max_mid_review_restarts=2,
     )
     pr = _sample_pr()
-    changed = asyncio.run(process_candidate(cfg, client, store, workspace, pr))
+    result = asyncio.run(process_candidate(cfg, client, store, workspace, pr))
 
-    assert changed is True
+    assert result.processed is True
     assert store.state.last_status == "generated"
     # PR head_sha should have been updated.
     assert pr.head_sha == "newcommitsha1"
@@ -1069,10 +1069,10 @@ def test_process_candidate_exhausts_restarts(monkeypatch, tmp_path) -> None:
         max_mid_review_restarts=1,
     )
     pr = _sample_pr()
-    changed = asyncio.run(process_candidate(cfg, client, store, workspace, pr))
+    result = asyncio.run(process_candidate(cfg, client, store, workspace, pr))
 
     # Should still succeed (with disabled/empty outputs) since it exhausts restarts gracefully.
-    assert changed is True
+    assert result.processed is True
     assert store.state.last_status == "generated"
 
 
@@ -1121,9 +1121,9 @@ def test_process_candidate_no_restart_when_disabled(monkeypatch, tmp_path) -> No
         enabled_reviewers=["codex"],
         max_mid_review_restarts=0,
     )
-    changed = asyncio.run(process_candidate(cfg, client, store, workspace, _sample_pr()))
+    result = asyncio.run(process_candidate(cfg, client, store, workspace, _sample_pr()))
 
-    assert changed is True
+    assert result.processed is True
     # SHA check should never be called since monitoring is disabled.
     assert sha_checked is False
 
@@ -1167,9 +1167,9 @@ def test_process_candidate_triage_simple_runs_lightweight(monkeypatch, tmp_path)
     cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["claude", "codex"])
     pr = _sample_pr(additions=3, deletions=1, changed_file_paths=["config.yaml"])
 
-    changed = asyncio.run(process_candidate(cfg, client, store, workspace, pr))
+    result = asyncio.run(process_candidate(cfg, client, store, workspace, pr))
 
-    assert changed is True
+    assert result.processed is True
     assert "lightweight" in store.state.last_status
 
 
@@ -1212,9 +1212,9 @@ def test_process_candidate_triage_full_runs_normal_pipeline(monkeypatch, tmp_pat
     cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["claude", "codex"])
     pr = _sample_pr()
 
-    changed = asyncio.run(process_candidate(cfg, client, store, workspace, pr))
+    result = asyncio.run(process_candidate(cfg, client, store, workspace, pr))
 
-    assert changed is True
+    assert result.processed is True
     assert "lightweight" not in (store.state.last_status or "")
 
 
@@ -1256,6 +1256,6 @@ def test_process_candidate_triage_failure_falls_through_to_full(monkeypatch, tmp
     cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["claude", "codex"])
     pr = _sample_pr(additions=3, deletions=1, changed_file_paths=["config.yaml"])
 
-    changed = asyncio.run(process_candidate(cfg, client, store, workspace, pr))
+    result = asyncio.run(process_candidate(cfg, client, store, workspace, pr))
 
-    assert changed is True
+    assert result.processed is True

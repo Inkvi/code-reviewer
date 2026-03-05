@@ -9,7 +9,14 @@ from typing import Literal
 from pr_reviewer.config import AppConfig
 from pr_reviewer.github import GitHubClient
 from pr_reviewer.logger import info, warn
-from pr_reviewer.models import PRCandidate, ProcessedState, ReviewerOutput, TokenUsage
+from pr_reviewer.models import (
+    PRCandidate,
+    ProcessedState,
+    ProcessingResult,
+    ReviewerOutput,
+    ReviewerOutputSummary,
+    TokenUsage,
+)
 from pr_reviewer.output import write_review_markdown, write_reviewer_sidecar_markdown
 from pr_reviewer.review_decision import infer_review_decision
 from pr_reviewer.reviewers import (
@@ -421,6 +428,36 @@ def _log_token_usage(
         )
 
 
+def _make_reviewer_summaries(
+    active_outputs: dict[str, ReviewerOutput],
+) -> list[ReviewerOutputSummary]:
+    return [
+        ReviewerOutputSummary(
+            reviewer=name,
+            status=output.status,
+            duration_seconds=output.duration_seconds,
+            error=output.error,
+            token_usage=output.token_usage,
+        )
+        for name, output in active_outputs.items()
+    ]
+
+
+def _compute_total_token_usage(
+    active_outputs: dict[str, ReviewerOutput],
+    reconciler_usage: TokenUsage | None,
+) -> TokenUsage | None:
+    total = TokenUsage()
+    for output in active_outputs.values():
+        if output.token_usage is not None:
+            total = total + output.token_usage
+    if reconciler_usage is not None:
+        total = total + reconciler_usage
+    if total.input_tokens == 0 and total.output_tokens == 0:
+        return None
+    return total
+
+
 async def process_candidate(
     config: AppConfig,
     client: GitHubClient,
@@ -430,7 +467,7 @@ async def process_candidate(
     *,
     use_saved_review: bool = False,
     verbose: bool = True,
-) -> bool:
+) -> ProcessingResult:
     def detail(message: str) -> None:
         if verbose:
             info(message)
@@ -446,7 +483,10 @@ async def process_candidate(
             previous.trigger_mode = config.trigger_mode
             store.set(pr.key, previous)
             store.save()
-            return False
+            return ProcessingResult(
+                processed=False, pr_url=pr.url, pr_key=pr.key,
+                status="skipped_missing_saved_review",
+            )
         detail(f"using saved review file ({saved_review_path}) {pr.url}")
         review_text_for_decision = saved_review_path.read_text(encoding="utf-8")
         _publish_and_persist(
@@ -460,7 +500,12 @@ async def process_candidate(
             previous=previous,
         )
         info(f"processing complete (reused saved review) {pr.url}")
-        return True
+        return ProcessingResult(
+            processed=True, pr_url=pr.url, pr_key=pr.key,
+            status="reused_saved_review",
+            final_review=review_text_for_decision,
+            output_file=str(saved_review_path.resolve()),
+        )
 
     if pr.slash_command_trigger is not None:
         trigger = pr.slash_command_trigger
@@ -489,7 +534,10 @@ async def process_candidate(
             previous.last_slash_command_id = trigger.comment_id
             store.set(pr.key, previous)
             store.save()
-            return False
+            return ProcessingResult(
+                processed=False, pr_url=pr.url, pr_key=pr.key,
+                status="skipped_already_reviewed",
+            )
 
         try:
             client.post_pr_comment_inline(pr, "Starting review of the latest changes…")
@@ -505,7 +553,10 @@ async def process_candidate(
             previous.trigger_mode = config.trigger_mode
             store.set(pr.key, previous)
             store.save()
-            return False
+            return ProcessingResult(
+                processed=False, pr_url=pr.url, pr_key=pr.key,
+                status=f"skipped_{decision.reason}",
+            )
 
         try:
             client.add_eyes_reaction(pr)
@@ -550,12 +601,13 @@ async def process_candidate(
             lightweight_text = _validate_review_format(lightweight_text)
 
             if lightweight_usage is not None:
+                cost = lightweight_usage.cost_usd
+                cost_str = f" cost=${cost:.4f}" if cost is not None else ""
                 info(
                     f"token usage [lightweight]: "
                     f"input={lightweight_usage.input_tokens:,} "
                     f"output={lightweight_usage.output_tokens:,}"
-                    f"{f' cost=${lightweight_usage.cost_usd:.4f}' if lightweight_usage.cost_usd is not None else ''}"
-                    f" {pr.url}"
+                    f"{cost_str} {pr.url}"
                 )
 
             info(f"writing lightweight review output {pr.url}")
@@ -572,7 +624,14 @@ async def process_candidate(
                 previous=previous,
             )
             info(f"processing complete (lightweight) {pr.url}")
-            return True
+            return ProcessingResult(
+                processed=True, pr_url=pr.url, pr_key=pr.key,
+                status="lightweight_generated",
+                final_review=lightweight_text,
+                output_file=str(output_path.resolve()),
+                triage_result="simple",
+                total_token_usage=lightweight_usage,
+            )
 
         # Full review path continues below
         # Retry loop: restart reviewers when new commits are pushed mid-review.
@@ -683,7 +742,17 @@ async def process_candidate(
             previous=previous,
         )
         info(f"processing complete {pr.url}")
-        return True
+        review_decision = infer_review_decision(final_review) if final_review else None
+        return ProcessingResult(
+            processed=True, pr_url=pr.url, pr_key=pr.key,
+            status="generated",
+            final_review=final_review,
+            output_file=str(output_path.resolve()),
+            triage_result="full_review",
+            review_decision=review_decision,
+            reviewer_outputs=_make_reviewer_summaries(active_outputs),
+            total_token_usage=_compute_total_token_usage(active_outputs, reconciler_usage),
+        )
     except Exception as exc:  # noqa: BLE001
         warn(f"failed processing: {exc} {pr.url}")
         state = store.get(pr.key)
@@ -691,7 +760,10 @@ async def process_candidate(
         state.trigger_mode = config.trigger_mode
         store.set(pr.key, state)
         store.save()
-        return False
+        return ProcessingResult(
+            processed=False, pr_url=pr.url, pr_key=pr.key,
+            status="error", error=str(exc),
+        )
     finally:
         if workdir is not None:
             workspace_mgr.cleanup(workdir)

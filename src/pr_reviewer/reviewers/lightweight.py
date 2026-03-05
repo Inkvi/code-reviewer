@@ -8,7 +8,6 @@ from pr_reviewer.reviewers.claude_sdk import _run_claude_prompt
 from pr_reviewer.reviewers.codex_cli import run_codex_prompt
 from pr_reviewer.reviewers.gemini_cli import run_gemini_prompt
 
-
 _LIGHTWEIGHT_REVIEW_PROMPT_TEMPLATE = """You are reviewing a simple configuration or infrastructure pull request. Perform a focused checklist review.
 
 PR:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 from typing import Annotated
 
@@ -12,6 +13,7 @@ from pr_reviewer.config import AppConfig, load_config
 from pr_reviewer.daemon import run_cycle, start_daemon
 from pr_reviewer.github import GitHubClient
 from pr_reviewer.logger import console, error, info
+from pr_reviewer.models import ProcessingResult
 from pr_reviewer.preflight import run_preflight
 from pr_reviewer.processor import process_candidate
 from pr_reviewer.state import StateStore
@@ -156,7 +158,10 @@ LightweightReviewReasoningEffortOption = Annotated[
     str | None,
     typer.Option(
         "--lightweight-review-reasoning-effort",
-        help="Override lightweight_review_reasoning_effort from config. Allowed: low, medium, high, max.",
+        help=(
+            "Override lightweight_review_reasoning_effort from config. "
+            "Allowed: low, medium, high, max."
+        ),
     ),
 ]
 UseSavedReviewOption = Annotated[
@@ -325,7 +330,10 @@ def _load_runtime(
     config = _apply_field_override(config, "triage_backend", triage_backend, "--triage-backend")
     config = _apply_field_override(config, "triage_model", triage_model, "--triage-model")
     config = _apply_field_override(
-        config, "lightweight_review_backend", lightweight_review_backend, "--lightweight-review-backend"
+        config,
+        "lightweight_review_backend",
+        lightweight_review_backend,
+        "--lightweight-review-backend",
     )
     config = _apply_field_override(
         config, "lightweight_review_model", lightweight_review_model, "--lightweight-review-model"
@@ -421,7 +429,10 @@ def check_command(
     cfg = _apply_field_override(cfg, "triage_backend", triage_backend, "--triage-backend")
     cfg = _apply_field_override(cfg, "triage_model", triage_model, "--triage-model")
     cfg = _apply_field_override(
-        cfg, "lightweight_review_backend", lightweight_review_backend, "--lightweight-review-backend"
+        cfg,
+        "lightweight_review_backend",
+        lightweight_review_backend,
+        "--lightweight-review-backend",
     )
     cfg = _apply_field_override(
         cfg, "lightweight_review_model", lightweight_review_model, "--lightweight-review-model"
@@ -467,7 +478,8 @@ def check_command(
     table.add_row("Triage timeout", str(cfg.triage_timeout_seconds))
     table.add_row("Lightweight review backend", cfg.lightweight_review_backend)
     table.add_row("Lightweight review model", cfg.lightweight_review_model or "default")
-    table.add_row("Lightweight review reasoning effort", cfg.lightweight_review_reasoning_effort or "default")
+    lw_effort = cfg.lightweight_review_reasoning_effort or "default"
+    table.add_row("Lightweight review reasoning effort", lw_effort)
     table.add_row("Lightweight review timeout", str(cfg.lightweight_review_timeout_seconds))
     table.add_row("Trigger mode", cfg.trigger_mode)
     table.add_row("Output dir", str(Path(cfg.output_dir).resolve()))
@@ -497,8 +509,13 @@ def run_once_command(
     lightweight_review_reasoning_effort: LightweightReviewReasoningEffortOption = None,
     pr_url: PrUrlOption = None,
     use_saved_review: UseSavedReviewOption = False,
+    output_format: OutputFormatOption = "text",
 ) -> None:
     """Run one polling cycle."""
+    if output_format not in ("text", "json"):
+        raise typer.BadParameter(
+            f"Invalid --output-format: {output_format}. Use 'text' or 'json'."
+        )
     target_pr_urls = _target_pr_urls_for_run_once(
         pr_url,
         use_saved_review=use_saved_review,
@@ -523,18 +540,19 @@ def run_once_command(
         lightweight_review_model,
         lightweight_review_reasoning_effort,
     )
+    results: list[ProcessingResult] = []
     try:
         preflight = run_preflight(cfg)
         if target_pr_urls:
             client = GitHubClient(viewer_login=preflight.viewer_login)
             workspace_mgr = PRWorkspace(Path(cfg.clone_root))
 
-            async def _run_targeted() -> int:
-                processed = 0
+            async def _run_targeted() -> list[ProcessingResult]:
+                run_results: list[ProcessingResult] = []
                 for index, url in enumerate(target_pr_urls, start=1):
                     info(f"PR {index}/{len(target_pr_urls)}: {url}")
                     candidate = client.get_pr_candidate(url)
-                    changed = await process_candidate(
+                    result = await process_candidate(
                         cfg,
                         client,
                         store,
@@ -542,14 +560,18 @@ def run_once_command(
                         candidate,
                         use_saved_review=use_saved_review,
                     )
-                    if changed:
-                        processed += 1
-                return processed
+                    run_results.append(result)
+                return run_results
 
-            processed = asyncio.run(_run_targeted())
+            results = asyncio.run(_run_targeted())
+            processed = sum(1 for r in results if r.processed)
         else:
             processed = asyncio.run(run_cycle(cfg, preflight, store))
-        info(f"run-once finished. Processed {processed} PR(s)")
+
+        if output_format == "json" and results:
+            print(json.dumps([r.to_dict() for r in results], indent=2))
+        else:
+            info(f"run-once finished. Processed {processed} PR(s)")
     finally:
         store.release_lock()
 

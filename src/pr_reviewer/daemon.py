@@ -58,7 +58,7 @@ async def run_cycle(
         for index, pr in enumerate(candidates, start=1):
             if verbose:
                 info(f"PR {index}/{len(candidates)} {pr.url}")
-            changed = await process_candidate(
+            result = await process_candidate(
                 config,
                 client,
                 store,
@@ -66,7 +66,7 @@ async def run_cycle(
                 pr,
                 verbose=verbose,
             )
-            if changed:
+            if result.processed:
                 processed += 1
         return processed
 
@@ -74,7 +74,7 @@ async def run_cycle(
 
     async def _bounded_process(pr: PRCandidate) -> bool:
         async with semaphore:
-            return await process_candidate(
+            r = await process_candidate(
                 config,
                 client,
                 store,
@@ -82,6 +82,7 @@ async def run_cycle(
                 pr,
                 verbose=verbose,
             )
+            return r.processed
 
     tasks = [asyncio.create_task(_bounded_process(pr)) for pr in candidates]
     results = await asyncio.gather(*tasks, return_exceptions=True)

@@ -5,7 +5,7 @@ import pytest
 from pr_reviewer.config import AppConfig
 from pr_reviewer.daemon import run_cycle, start_daemon
 from pr_reviewer.github import GitHubClient
-from pr_reviewer.models import PRCandidate, SlashCommandTrigger
+from pr_reviewer.models import PRCandidate, ProcessingResult, SlashCommandTrigger
 from pr_reviewer.preflight import PreflightResult
 from pr_reviewer.state import StateStore
 
@@ -47,9 +47,11 @@ def test_run_cycle_quiet_mode_suppresses_per_pr_logs(monkeypatch) -> None:
         *,
         verbose=True,
         **_kwargs,
-    ) -> bool:
+    ) -> ProcessingResult:
         verbose_args.append(verbose)
-        return False
+        return ProcessingResult(
+            processed=False, pr_url=_pr.url, pr_key=_pr.key, status="skipped",
+        )
 
     monkeypatch.setattr("pr_reviewer.daemon.process_candidate", fake_process_candidate)
 
@@ -139,7 +141,9 @@ def test_run_cycle_merges_slash_command_candidates(monkeypatch, tmp_path) -> Non
 
     async def fake_process(_config, _client, _store, _workspace, pr, **_kwargs):
         processed_keys.append(pr.key)
-        return True
+        return ProcessingResult(
+            processed=True, pr_url=pr.url, pr_key=pr.key, status="generated",
+        )
 
     monkeypatch.setattr("pr_reviewer.daemon.process_candidate", fake_process)
 
@@ -209,7 +213,9 @@ def test_run_cycle_slash_command_replaces_existing_candidate(monkeypatch, tmp_pa
 
     async def fake_process(_config, _client, _store, _workspace, pr, **_kwargs):
         processed_prs.append(pr)
-        return True
+        return ProcessingResult(
+            processed=True, pr_url=pr.url, pr_key=pr.key, status="generated",
+        )
 
     monkeypatch.setattr("pr_reviewer.daemon.process_candidate", fake_process)
 
