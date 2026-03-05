@@ -372,7 +372,8 @@ class GitHubClient:
                 f"repos/{owner}/{repo}/issues/{number}/comments",
                 "--jq",
                 '.[] | {id, user: .user.login, created_at, body} | @json',
-            ]
+            ],
+            retries=2,
         )
 
         latest: SlashCommandTrigger | None = None

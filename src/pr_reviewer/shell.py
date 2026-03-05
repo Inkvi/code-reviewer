@@ -37,20 +37,28 @@ def run_command(
     cwd: Path | None = None,
     timeout: int | None = None,
     check: bool = True,
+    retries: int = 0,
 ) -> subprocess.CompletedProcess[str]:
-    if args and args[0] == "gh":
-        _gh_throttle()
-    proc = subprocess.run(
-        args,
-        cwd=cwd,
-        timeout=timeout,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    if check and proc.returncode != 0:
-        raise CommandError(args, proc.returncode, proc.stdout, proc.stderr)
-    return proc
+    last_proc: subprocess.CompletedProcess[str] | None = None
+    for attempt in range(1 + retries):
+        if args and args[0] == "gh":
+            _gh_throttle()
+        last_proc = subprocess.run(
+            args,
+            cwd=cwd,
+            timeout=timeout,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if last_proc.returncode == 0:
+            return last_proc
+        if attempt < retries:
+            time.sleep(2 ** attempt)
+    assert last_proc is not None
+    if check:
+        raise CommandError(args, last_proc.returncode, last_proc.stdout, last_proc.stderr)
+    return last_proc
 
 
 def run_json(args: list[str], *, cwd: Path | None = None, timeout: int | None = None) -> object:
