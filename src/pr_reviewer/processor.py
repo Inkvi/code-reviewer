@@ -461,6 +461,11 @@ async def process_candidate(
         store.save()
         return False
 
+    try:
+        client.add_eyes_reaction(pr)
+    except Exception as exc:  # noqa: BLE001
+        warn(f"{pr.key}: failed to add eyes reaction: {exc}")
+
     workdir: Path | None = None
     restarts_remaining = config.max_mid_review_restarts
     try:

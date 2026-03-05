@@ -312,6 +312,18 @@ class GitHubClient:
         )
         return any(line.strip() == self.viewer_login for line in proc.stdout.splitlines())
 
+    def add_eyes_reaction(self, pr: PRCandidate) -> None:
+        run_command(
+            [
+                "gh",
+                "api",
+                f"repos/{pr.owner}/{pr.repo}/issues/{pr.number}/reactions",
+                "-f",
+                "content=eyes",
+                "--silent",
+            ]
+        )
+
     def post_pr_comment(self, pr: PRCandidate, body_file: str) -> None:
         run_command(["gh", "pr", "comment", pr.url, "--body-file", body_file])
 

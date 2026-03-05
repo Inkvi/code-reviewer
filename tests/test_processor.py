@@ -330,6 +330,7 @@ def test_processes_on_bootstrap_when_state_missing(monkeypatch, tmp_path) -> Non
     store = DummyStore()
     workspace = DummyWorkspace(tmp_path)
     client = GitHubClient(viewer_login="Inkvi")
+    monkeypatch.setattr(GitHubClient, "add_eyes_reaction", lambda _self, _pr: None)
 
     now = datetime.now(UTC)
     ok_output = ReviewerOutput(
@@ -364,6 +365,50 @@ def test_processes_on_bootstrap_when_state_missing(monkeypatch, tmp_path) -> Non
     assert store.state.last_status == "generated"
     assert store.state.last_processed_at is not None
     assert store.state.last_seen_rerequest_at == "2026-03-02T00:00:00+00:00"
+
+
+def test_process_candidate_adds_eyes_reaction(monkeypatch, tmp_path) -> None:
+    store = DummyStore()
+    workspace = DummyWorkspace(tmp_path)
+    client = GitHubClient(viewer_login="Inkvi")
+
+    reacted_prs: list[str] = []
+    monkeypatch.setattr(
+        GitHubClient,
+        "add_eyes_reaction",
+        lambda _self, pr: reacted_prs.append(pr.key),
+    )
+
+    now = datetime.now(UTC)
+    ok_output = ReviewerOutput(
+        reviewer="codex",
+        status="ok",
+        markdown="### Findings\n- No material findings.\n\n### Test Gaps\n- None noted.",
+        stdout="",
+        stderr="",
+        error=None,
+        started_at=now,
+        ended_at=now,
+    )
+
+    async def fake_codex(_pr, _workdir, _timeout, *, model=None, reasoning_effort=None):  # noqa: ANN001
+        return ok_output
+
+    monkeypatch.setattr("pr_reviewer.processor.run_codex_review", fake_codex)
+    monkeypatch.setattr(
+        "pr_reviewer.processor.write_review_markdown",
+        lambda *_args, **_kwargs: tmp_path / "out.md",
+    )
+    monkeypatch.setattr(
+        "pr_reviewer.processor.write_reviewer_sidecar_markdown",
+        lambda *_args, **_kwargs: tmp_path / "out.raw.md",
+    )
+
+    cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["codex"])
+    changed = asyncio.run(process_candidate(cfg, client, store, workspace, _sample_pr()))
+
+    assert changed is True
+    assert reacted_prs == ["polymerdao/obul#64"]
 
 
 def test_skips_without_new_rerequest_after_processed(monkeypatch, tmp_path) -> None:
@@ -408,6 +453,7 @@ def test_processes_on_newer_direct_rerequest(monkeypatch, tmp_path) -> None:
     )
     workspace = DummyWorkspace(tmp_path)
     client = GitHubClient(viewer_login="Inkvi")
+    monkeypatch.setattr(GitHubClient, "add_eyes_reaction", lambda _self, _pr: None)
 
     now = datetime.now(UTC)
     ok_output = ReviewerOutput(
@@ -459,6 +505,7 @@ def test_does_not_advance_trigger_checkpoint_on_failure(monkeypatch, tmp_path) -
     )
     workspace = DummyWorkspace(tmp_path)
     client = GitHubClient(viewer_login="Inkvi")
+    monkeypatch.setattr(GitHubClient, "add_eyes_reaction", lambda _self, _pr: None)
 
     async def fake_codex(_pr, _workdir, _timeout, *, model=None, reasoning_effort=None):  # noqa: ANN001
         raise RuntimeError("codex boom")
@@ -538,6 +585,7 @@ def test_saved_review_existing_does_not_skip_normal_flow(monkeypatch, tmp_path) 
     store = DummyStore()
     workspace = DummyWorkspace(tmp_path)
     client = GitHubClient(viewer_login="Inkvi")
+    monkeypatch.setattr(GitHubClient, "add_eyes_reaction", lambda _self, _pr: None)
     pr = _sample_pr()
 
     review_path = tmp_path / pr.owner / pr.repo / f"pr-{pr.number}.md"
@@ -584,6 +632,7 @@ def test_process_candidate_reconcile_uses_enabled_reviewer_order(monkeypatch, tm
     store = DummyStore()
     workspace = DummyWorkspace(tmp_path)
     client = GitHubClient(viewer_login="Inkvi")
+    monkeypatch.setattr(GitHubClient, "add_eyes_reaction", lambda _self, _pr: None)
 
     now = datetime.now(UTC)
     codex_output = ReviewerOutput(
@@ -678,6 +727,7 @@ def test_process_candidate_reconcile_falls_back_to_claude_settings(monkeypatch, 
     store = DummyStore()
     workspace = DummyWorkspace(tmp_path)
     client = GitHubClient(viewer_login="Inkvi")
+    monkeypatch.setattr(GitHubClient, "add_eyes_reaction", lambda _self, _pr: None)
 
     now = datetime.now(UTC)
     codex_output = ReviewerOutput(
