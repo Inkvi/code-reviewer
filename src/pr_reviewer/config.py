@@ -266,6 +266,18 @@ class AppConfig(BaseModel):
             )
         return self
 
+    @model_validator(mode="after")
+    def validate_lightweight_review_backend_settings(self) -> AppConfig:
+        if (
+            self.lightweight_review_backend == "codex"
+            and self.lightweight_review_reasoning_effort == "max"
+        ):
+            raise ValueError(
+                "lightweight_review_reasoning_effort must be one of: low, medium, high "
+                "when lightweight_review_backend=codex"
+            )
+        return self
+
 
 def load_config(path: Path) -> AppConfig:
     if not path.exists():

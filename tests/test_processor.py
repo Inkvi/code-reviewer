@@ -1259,3 +1259,48 @@ def test_process_candidate_triage_failure_falls_through_to_full(monkeypatch, tmp
     result = asyncio.run(process_candidate(cfg, client, store, workspace, pr))
 
     assert result.processed is True
+
+
+def test_process_candidate_lightweight_failure_falls_back_to_full(monkeypatch, tmp_path) -> None:
+    """If lightweight review raises, should fall back to full review pipeline."""
+    store = DummyStore()
+    workspace = DummyWorkspace(tmp_path)
+    client = GitHubClient(viewer_login="Inkvi")
+    monkeypatch.setattr(GitHubClient, "add_eyes_reaction", lambda _self, _pr: None)
+
+    async def fake_triage(*args, **kwargs):
+        return TriageResult.SIMPLE
+
+    monkeypatch.setattr("pr_reviewer.processor.run_triage", fake_triage)
+
+    async def fake_lightweight(*args, **kwargs):
+        raise RuntimeError("lightweight backend timeout")
+
+    monkeypatch.setattr("pr_reviewer.processor.run_lightweight_review", fake_lightweight)
+
+    async def fake_codex(*args, **kwargs):
+        return await _ok_output("codex")
+
+    monkeypatch.setattr("pr_reviewer.processor.run_codex_review", fake_codex)
+
+    async def fake_reconcile(*args, **kwargs):
+        return "### Findings\n- No material findings.\n\n### Test Gaps\n- None noted.", None
+
+    monkeypatch.setattr("pr_reviewer.processor.reconcile_reviews", fake_reconcile)
+    monkeypatch.setattr(GitHubClient, "get_pr_issue_comments", lambda _self, _pr: [])
+    monkeypatch.setattr(
+        "pr_reviewer.processor.write_review_markdown",
+        lambda *_args, **_kwargs: tmp_path / "out.md",
+    )
+    monkeypatch.setattr(
+        "pr_reviewer.processor.write_reviewer_sidecar_markdown",
+        lambda *_args, **_kwargs: tmp_path / "out.raw.md",
+    )
+
+    cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["codex"])
+    pr = _sample_pr(additions=3, deletions=1, changed_file_paths=["config.yaml"])
+
+    result = asyncio.run(process_candidate(cfg, client, store, workspace, pr))
+
+    assert result.processed is True
+    assert "lightweight" not in (store.state.last_status or "")

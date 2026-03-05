@@ -141,8 +141,10 @@ uv run pr-reviewer run-once --pr-url https://github.com/<org>/<repo>/pull/<numbe
 - Uses trigger state machine from `trigger_mode`
 - Codex CLI backend uses `codex review` and, when supported by CLI version, can parse JSON event output
 - Skips draft PRs and (by default) PRs authored by you
-- Skips PRs with fewer than 10 total changed lines (`additions + deletions`)
-- Skips PRs that only touch config-like files (`.yaml`, `.yml`, `.json`, `.toml`, etc.)
+- Triages every PR as "simple" or "full_review" using a configurable model (default: Gemini)
+- Simple PRs (config changes, version bumps, image tags) get a lightweight single-model checklist review
+- Complex PRs go through the full multi-reviewer + reconciler pipeline
+- If triage or lightweight review fails, falls back to full review
 - Bootstraps all discovered candidate PRs when no prior state exists
 - After bootstrap, processes PRs when a newer direct re-request to you is observed
 - Runs all enabled reviewers in parallel

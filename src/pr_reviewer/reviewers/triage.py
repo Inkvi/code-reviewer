@@ -69,8 +69,10 @@ def _parse_triage_response(text: str) -> TriageResult:
         else:
             return TriageResult.FULL_REVIEW
 
-    classification = data.get("classification", "").strip().lower()
-    if classification == "simple":
+    raw = data.get("classification")
+    if not isinstance(raw, str):
+        return TriageResult.FULL_REVIEW
+    if raw.strip().lower() == "simple":
         return TriageResult.SIMPLE
     return TriageResult.FULL_REVIEW
 

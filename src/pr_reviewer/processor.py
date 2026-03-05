@@ -590,14 +590,35 @@ async def process_candidate(
 
         if triage_result == TriageResult.SIMPLE:
             # Lightweight review path
-            lightweight_text, lightweight_usage = await run_lightweight_review(
-                pr,
-                workdir,
-                config.lightweight_review_timeout_seconds,
-                backend=config.lightweight_review_backend,
-                model=config.lightweight_review_model,
-                reasoning_effort=config.lightweight_review_reasoning_effort,
-            )
+            try:
+                # Check for new commits before starting lightweight review
+                if config.max_mid_review_restarts > 0:
+                    new_sha = _check_pr_head_changed(client, pr)
+                    if new_sha is not None:
+                        info(
+                            f"new commit detected before lightweight review "
+                            f"({pr.head_sha[:12]} -> {new_sha[:12]}), "
+                            f"updating {pr.url}"
+                        )
+                        pr.head_sha = new_sha
+                        workspace_mgr.update_to_latest(workdir, pr)
+
+                lightweight_text, lightweight_usage = await run_lightweight_review(
+                    pr,
+                    workdir,
+                    config.lightweight_review_timeout_seconds,
+                    backend=config.lightweight_review_backend,
+                    model=config.lightweight_review_model,
+                    reasoning_effort=config.lightweight_review_reasoning_effort,
+                )
+            except Exception as exc:  # noqa: BLE001
+                warn(
+                    f"lightweight review failed, falling back to full review: "
+                    f"{exc} {pr.url}"
+                )
+                triage_result = TriageResult.FULL_REVIEW
+
+        if triage_result == TriageResult.SIMPLE:
             lightweight_text = _validate_review_format(lightweight_text)
 
             if lightweight_usage is not None:

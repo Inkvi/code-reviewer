@@ -3,7 +3,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from pr_reviewer.models import PRCandidate
-from pr_reviewer.reviewers.triage import TriageResult, run_triage
+from pr_reviewer.reviewers.triage import TriageResult, _parse_triage_response, run_triage
 
 
 def _sample_pr() -> PRCandidate:
@@ -87,6 +87,18 @@ def test_triage_codex_backend(tmp_path: Path) -> None:
             run_triage(_sample_pr(), tmp_path, timeout_seconds=60, backend="codex")
         )
     assert result == TriageResult.SIMPLE
+
+
+def test_triage_handles_null_classification(tmp_path: Path) -> None:
+    """Null classification value should not crash, should return FULL_REVIEW."""
+    result = _parse_triage_response('{"classification": null}')
+    assert result == TriageResult.FULL_REVIEW
+
+
+def test_triage_handles_numeric_classification(tmp_path: Path) -> None:
+    """Non-string classification should return FULL_REVIEW, not crash."""
+    result = _parse_triage_response('{"classification": 42}')
+    assert result == TriageResult.FULL_REVIEW
 
 
 def test_triage_extracts_json_from_markdown_code_block(tmp_path: Path) -> None:

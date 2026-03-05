@@ -323,6 +323,18 @@ def test_load_config_rejects_invalid_lightweight_review_reasoning_effort(tmp_pat
         load_config(path)
 
 
+def test_load_config_rejects_codex_lightweight_max_reasoning_effort(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text(
+        'github_orgs=["polymerdao"]\n'
+        'lightweight_review_backend = "codex"\n'
+        'lightweight_review_reasoning_effort = "max"\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="lightweight_review_reasoning_effort"):
+        load_config(path)
+
+
 def test_load_config_rejects_empty_triage_model(tmp_path: Path) -> None:
     path = tmp_path / "config.toml"
     path.write_text(
