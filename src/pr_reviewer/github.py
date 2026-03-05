@@ -327,6 +327,9 @@ class GitHubClient:
     def post_pr_comment(self, pr: PRCandidate, body_file: str) -> None:
         run_command(["gh", "pr", "comment", pr.url, "--body-file", body_file])
 
+    def post_pr_comment_inline(self, pr: PRCandidate, body: str) -> None:
+        run_command(["gh", "pr", "comment", pr.url, "--body", body])
+
     def submit_pr_review(
         self,
         pr: PRCandidate,

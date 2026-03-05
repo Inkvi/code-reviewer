@@ -454,6 +454,7 @@ def test_processes_on_newer_direct_rerequest(monkeypatch, tmp_path) -> None:
     workspace = DummyWorkspace(tmp_path)
     client = GitHubClient(viewer_login="Inkvi")
     monkeypatch.setattr(GitHubClient, "add_eyes_reaction", lambda _self, _pr: None)
+    monkeypatch.setattr(GitHubClient, "post_pr_comment_inline", lambda _self, _pr, _body: None)
 
     now = datetime.now(UTC)
     ok_output = ReviewerOutput(
@@ -496,6 +497,171 @@ def test_processes_on_newer_direct_rerequest(monkeypatch, tmp_path) -> None:
     assert store.state.last_seen_rerequest_at == "2026-03-03T02:00:00+00:00"
 
 
+def test_rerequest_posts_starting_review_comment(monkeypatch, tmp_path) -> None:
+    store = DummyStore(
+        ProcessedState(
+            last_processed_at="2026-03-03T00:00:00+00:00",
+            last_seen_rerequest_at="2026-03-03T01:00:00+00:00",
+        )
+    )
+    workspace = DummyWorkspace(tmp_path)
+    client = GitHubClient(viewer_login="Inkvi")
+    monkeypatch.setattr(GitHubClient, "add_eyes_reaction", lambda _self, _pr: None)
+
+    posted_comments: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        GitHubClient,
+        "post_pr_comment_inline",
+        lambda _self, pr, body: posted_comments.append((pr.key, body)),
+    )
+
+    now = datetime.now(UTC)
+    ok_output = ReviewerOutput(
+        reviewer="codex",
+        status="ok",
+        markdown="### Findings\n- No material findings.\n\n### Test Gaps\n- None noted.",
+        stdout="",
+        stderr="",
+        error=None,
+        started_at=now,
+        ended_at=now,
+    )
+
+    async def fake_codex(_pr, _workdir, _timeout, *, model=None, reasoning_effort=None):  # noqa: ANN001
+        return ok_output
+
+    monkeypatch.setattr("pr_reviewer.processor.run_codex_review", fake_codex)
+    monkeypatch.setattr(
+        "pr_reviewer.processor.write_review_markdown",
+        lambda *_args, **_kwargs: tmp_path / "out.md",
+    )
+    monkeypatch.setattr(
+        "pr_reviewer.processor.write_reviewer_sidecar_markdown",
+        lambda *_args, **_kwargs: tmp_path / "out.raw.md",
+    )
+
+    cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["codex"])
+    asyncio.run(
+        process_candidate(
+            cfg,
+            client,
+            store,
+            workspace,
+            _sample_pr(latest_direct_rerequest_at="2026-03-03T02:00:00+00:00"),
+        )
+    )
+
+    assert len(posted_comments) == 1
+    assert posted_comments[0][0] == "polymerdao/obul#64"
+    assert "latest changes" in posted_comments[0][1].lower()
+
+
+def test_bootstrap_does_not_post_rerequest_comment(monkeypatch, tmp_path) -> None:
+    """First-time processing (bootstrap) should NOT post a rerequest comment."""
+    store = DummyStore()
+    workspace = DummyWorkspace(tmp_path)
+    client = GitHubClient(viewer_login="Inkvi")
+    monkeypatch.setattr(GitHubClient, "add_eyes_reaction", lambda _self, _pr: None)
+
+    posted_comments: list[str] = []
+    monkeypatch.setattr(
+        GitHubClient,
+        "post_pr_comment_inline",
+        lambda _self, _pr, body: posted_comments.append(body),
+    )
+
+    now = datetime.now(UTC)
+    ok_output = ReviewerOutput(
+        reviewer="codex",
+        status="ok",
+        markdown="### Findings\n- No material findings.\n\n### Test Gaps\n- None noted.",
+        stdout="",
+        stderr="",
+        error=None,
+        started_at=now,
+        ended_at=now,
+    )
+
+    async def fake_codex(_pr, _workdir, _timeout, *, model=None, reasoning_effort=None):  # noqa: ANN001
+        return ok_output
+
+    monkeypatch.setattr("pr_reviewer.processor.run_codex_review", fake_codex)
+    monkeypatch.setattr(
+        "pr_reviewer.processor.write_review_markdown",
+        lambda *_args, **_kwargs: tmp_path / "out.md",
+    )
+    monkeypatch.setattr(
+        "pr_reviewer.processor.write_reviewer_sidecar_markdown",
+        lambda *_args, **_kwargs: tmp_path / "out.raw.md",
+    )
+
+    cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["codex"])
+    asyncio.run(process_candidate(cfg, client, store, workspace, _sample_pr()))
+
+    assert posted_comments == []
+
+
+def test_rerequest_comment_disabled_by_config(monkeypatch, tmp_path) -> None:
+    store = DummyStore(
+        ProcessedState(
+            last_processed_at="2026-03-03T00:00:00+00:00",
+            last_seen_rerequest_at="2026-03-03T01:00:00+00:00",
+        )
+    )
+    workspace = DummyWorkspace(tmp_path)
+    client = GitHubClient(viewer_login="Inkvi")
+    monkeypatch.setattr(GitHubClient, "add_eyes_reaction", lambda _self, _pr: None)
+
+    posted_comments: list[str] = []
+    monkeypatch.setattr(
+        GitHubClient,
+        "post_pr_comment_inline",
+        lambda _self, _pr, body: posted_comments.append(body),
+    )
+
+    now = datetime.now(UTC)
+    ok_output = ReviewerOutput(
+        reviewer="codex",
+        status="ok",
+        markdown="### Findings\n- No material findings.\n\n### Test Gaps\n- None noted.",
+        stdout="",
+        stderr="",
+        error=None,
+        started_at=now,
+        ended_at=now,
+    )
+
+    async def fake_codex(_pr, _workdir, _timeout, *, model=None, reasoning_effort=None):  # noqa: ANN001
+        return ok_output
+
+    monkeypatch.setattr("pr_reviewer.processor.run_codex_review", fake_codex)
+    monkeypatch.setattr(
+        "pr_reviewer.processor.write_review_markdown",
+        lambda *_args, **_kwargs: tmp_path / "out.md",
+    )
+    monkeypatch.setattr(
+        "pr_reviewer.processor.write_reviewer_sidecar_markdown",
+        lambda *_args, **_kwargs: tmp_path / "out.raw.md",
+    )
+
+    cfg = AppConfig(
+        github_orgs=["polymerdao"],
+        enabled_reviewers=["codex"],
+        post_rerequest_comment=False,
+    )
+    asyncio.run(
+        process_candidate(
+            cfg,
+            client,
+            store,
+            workspace,
+            _sample_pr(latest_direct_rerequest_at="2026-03-03T02:00:00+00:00"),
+        )
+    )
+
+    assert posted_comments == []
+
+
 def test_does_not_advance_trigger_checkpoint_on_failure(monkeypatch, tmp_path) -> None:
     store = DummyStore(
         ProcessedState(
@@ -506,6 +672,7 @@ def test_does_not_advance_trigger_checkpoint_on_failure(monkeypatch, tmp_path) -
     workspace = DummyWorkspace(tmp_path)
     client = GitHubClient(viewer_login="Inkvi")
     monkeypatch.setattr(GitHubClient, "add_eyes_reaction", lambda _self, _pr: None)
+    monkeypatch.setattr(GitHubClient, "post_pr_comment_inline", lambda _self, _pr, _body: None)
 
     async def fake_codex(_pr, _workdir, _timeout, *, model=None, reasoning_effort=None):  # noqa: ANN001
         raise RuntimeError("codex boom")

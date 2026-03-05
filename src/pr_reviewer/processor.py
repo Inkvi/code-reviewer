@@ -9,7 +9,7 @@ from typing import Literal
 from pr_reviewer.config import AppConfig
 from pr_reviewer.github import GitHubClient
 from pr_reviewer.logger import info, warn
-from pr_reviewer.models import PRCandidate, ProcessedState, ReviewerOutput
+from pr_reviewer.models import PRCandidate, ProcessedState, ReviewerOutput, TokenUsage
 from pr_reviewer.output import write_review_markdown, write_reviewer_sidecar_markdown
 from pr_reviewer.review_decision import infer_review_decision
 from pr_reviewer.reviewers import (
@@ -401,6 +401,41 @@ async def _run_reviewers_with_monitoring(
     return reviewer_outputs
 
 
+def _log_token_usage(
+    active_outputs: dict[str, ReviewerOutput],
+    reconciler_usage: TokenUsage | None,
+    pr_url: str,
+) -> None:
+    total = TokenUsage()
+    for name, output in active_outputs.items():
+        if output.token_usage is not None:
+            info(
+                f"token usage [{name}]: "
+                f"input={output.token_usage.input_tokens:,} "
+                f"output={output.token_usage.output_tokens:,}"
+                f"{f' cost=${output.token_usage.cost_usd:.4f}' if output.token_usage.cost_usd is not None else ''}"
+                f" {pr_url}"
+            )
+            total = total + output.token_usage
+    if reconciler_usage is not None:
+        info(
+            f"token usage [reconciler]: "
+            f"input={reconciler_usage.input_tokens:,} "
+            f"output={reconciler_usage.output_tokens:,}"
+            f"{f' cost=${reconciler_usage.cost_usd:.4f}' if reconciler_usage.cost_usd is not None else ''}"
+            f" {pr_url}"
+        )
+        total = total + reconciler_usage
+    if total.input_tokens > 0 or total.output_tokens > 0:
+        info(
+            f"token usage [total]: "
+            f"input={total.input_tokens:,} "
+            f"output={total.output_tokens:,}"
+            f"{f' cost=${total.cost_usd:.4f}' if total.cost_usd is not None else ''}"
+            f" {pr_url}"
+        )
+
+
 async def process_candidate(
     config: AppConfig,
     client: GitHubClient,
@@ -466,6 +501,15 @@ async def process_candidate(
     except Exception as exc:  # noqa: BLE001
         warn(f"{pr.key}: failed to add eyes reaction: {exc}")
 
+    if decision.reason == "new_rerequest" and config.post_rerequest_comment:
+        try:
+            client.post_pr_comment_inline(
+                pr,
+                "Starting review of the latest changes…",
+            )
+        except Exception as exc:  # noqa: BLE001
+            warn(f"{pr.key}: failed to post rerequest comment: {exc}")
+
     workdir: Path | None = None
     restarts_remaining = config.max_mid_review_restarts
     try:
@@ -528,7 +572,7 @@ async def process_candidate(
                 pr_comments = client.get_pr_issue_comments(pr)
             except Exception as exc:  # noqa: BLE001
                 warn(f"failed to fetch PR issue comments for reconciliation: {exc} {pr.url}")
-            final_review = await reconcile_reviews(
+            final_review, reconciler_usage = await reconcile_reviews(
                 pr,
                 workdir,
                 list(active_outputs.values()),
@@ -544,8 +588,11 @@ async def process_candidate(
             sole_reviewer = enabled_reviewers[0]
             info(f"single reviewer mode ({sole_reviewer}) {pr.url}")
             final_review = _single_reviewer_final_review(active_outputs[sole_reviewer])
+            reconciler_usage = None
         else:
             raise RuntimeError("No enabled reviewers configured")
+
+        _log_token_usage(active_outputs, reconciler_usage, pr.url)
         info(f"writing final markdown output {pr.url}")
         version_label = _output_version_label(pr)
         output_path = write_review_markdown(
