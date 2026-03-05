@@ -537,6 +537,8 @@ async def process_candidate(
                 pr_comments=pr_comments,
                 reconciler_model=reconciler_model,
                 reconciler_reasoning_effort=reconciler_reasoning_effort,
+                max_findings=config.max_findings,
+                max_test_gaps=config.max_test_gaps,
             )
         elif len(enabled_reviewers) == 1:
             sole_reviewer = enabled_reviewers[0]

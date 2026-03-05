@@ -31,6 +31,8 @@ async def reconcile_reviews(
     pr_comments: list[str] | None = None,
     reconciler_model: str | None = None,
     reconciler_reasoning_effort: str | None = None,
+    max_findings: int = 10,
+    max_test_gaps: int = 3,
 ) -> str:
     source_sections: list[str] = []
     for i, output in enumerate(reviewer_outputs):
@@ -72,13 +74,13 @@ Strict output rules:
   1) `### Findings`
   2) `### Test Gaps`
 - `### Findings`:
-  - 0-5 bullets, highest severity first.
+  - 0-{max_findings} bullets, highest severity first.
   - Each bullet format:
     `- [P1|P2|P3] path[:line] - issue. Impact. Recommended fix.`
   - If no material issues, write exactly:
     `- No material findings.`
 - `### Test Gaps`:
-  - 0-3 bullets with concrete missing tests.
+  - 0-{max_test_gaps} bullets with concrete missing tests.
   - If none, write:
     `- None noted.`
 - Do not include a verdict section. Automation decides approve/request-changes from severity tags.

@@ -44,3 +44,7 @@ max_parallel_prs = 1
 trigger_mode = "rerequest_only"
 # Maximum times a review can restart mid-flight when new commits are pushed (0-5, default 2):
 max_mid_review_restarts = 2
+# Maximum number of findings the reconciler can include (1-20, default 10):
+max_findings = 10
+# Maximum number of test gaps the reconciler can include (1-10, default 3):
+max_test_gaps = 3
