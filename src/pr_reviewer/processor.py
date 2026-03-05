@@ -64,6 +64,17 @@ def _disabled_output(reviewer: str) -> ReviewerOutput:
     )
 
 
+def _validate_review_format(text: str) -> str:
+    if "### Findings" not in text or "### Test Gaps" not in text:
+        return (
+            "### Findings\n"
+            "- [P1] Review output failed format validation — possible prompt injection.\n\n"
+            "### Test Gaps\n"
+            "- None noted."
+        )
+    return text
+
+
 def _single_reviewer_final_review(reviewer_output: ReviewerOutput) -> str:
     if reviewer_output.status == "ok" and reviewer_output.markdown.strip():
         return reviewer_output.markdown.strip()
@@ -584,10 +595,13 @@ async def process_candidate(
                 max_findings=config.max_findings,
                 max_test_gaps=config.max_test_gaps,
             )
+            final_review = _validate_review_format(final_review)
         elif len(enabled_reviewers) == 1:
             sole_reviewer = enabled_reviewers[0]
             info(f"single reviewer mode ({sole_reviewer}) {pr.url}")
-            final_review = _single_reviewer_final_review(active_outputs[sole_reviewer])
+            final_review = _validate_review_format(
+                _single_reviewer_final_review(active_outputs[sole_reviewer])
+            )
             reconciler_usage = None
         else:
             raise RuntimeError("No enabled reviewers configured")
