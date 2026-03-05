@@ -44,10 +44,16 @@ def _invoke_runner_sync(runner: Any, agent: Any, prompt: str) -> Any:
 
 def _extract_token_usage(result: Any) -> TokenUsage | None:
     usage = getattr(result, "usage", None)
+    if usage is None and isinstance(result, dict):
+        usage = result.get("usage")
     if usage is None:
         return None
-    input_tokens = getattr(usage, "input_tokens", 0) or 0
-    output_tokens = getattr(usage, "output_tokens", 0) or 0
+    if isinstance(usage, dict):
+        input_tokens = usage.get("input_tokens", 0) or 0
+        output_tokens = usage.get("output_tokens", 0) or 0
+    else:
+        input_tokens = getattr(usage, "input_tokens", 0) or 0
+        output_tokens = getattr(usage, "output_tokens", 0) or 0
     if not input_tokens and not output_tokens:
         return None
     return TokenUsage(input_tokens=input_tokens, output_tokens=output_tokens)
