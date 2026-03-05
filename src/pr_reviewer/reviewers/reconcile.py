@@ -114,6 +114,10 @@ Strict output rules:
   2) `### Test Gaps`
 - `### Findings`:
   - 0-{max_findings} bullets, highest severity first.
+  - Severity definitions:
+    - P1: Bug or security flaw that will break production, cause data loss, or expose a vulnerability.
+    - P2: Logic error, race condition, or correctness issue likely to cause user-facing misbehavior.
+    - P3: Code quality concern, style violation, or minor issue with low immediate risk.
   - Each bullet format:
     `- [P1|P2|P3] path[:line] - issue. Impact. Recommended fix.`
   - If no material issues, write exactly:
