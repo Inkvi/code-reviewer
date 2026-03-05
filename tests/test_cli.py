@@ -199,6 +199,21 @@ def test_apply_field_override_gemini_model() -> None:
     assert out.gemini_model == "gemini-3.1-pro-preview"
 
 
+def test_output_format_json_requires_pr_url() -> None:
+    runner = CliRunner()
+    result = runner.invoke(app, ["run-once", "--output-format", "json"])
+
+    assert result.exit_code != 0
+    assert "requires" in result.output.lower() or "pr-url" in result.output.lower()
+
+
+def test_output_format_invalid_value_rejected() -> None:
+    runner = CliRunner()
+    result = runner.invoke(app, ["run-once", "--output-format", "xml"])
+
+    assert result.exit_code != 0
+
+
 @pytest.mark.parametrize(
     "flag",
     [

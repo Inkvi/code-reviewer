@@ -12,7 +12,7 @@ from rich.table import Table
 from pr_reviewer.config import AppConfig, load_config
 from pr_reviewer.daemon import run_cycle, start_daemon
 from pr_reviewer.github import GitHubClient
-from pr_reviewer.logger import console, error, info
+from pr_reviewer.logger import console, error, info, redirect_to_stderr
 from pr_reviewer.models import ProcessingResult
 from pr_reviewer.preflight import run_preflight
 from pr_reviewer.processor import process_candidate
@@ -516,6 +516,10 @@ def run_once_command(
         raise typer.BadParameter(
             f"Invalid --output-format: {output_format}. Use 'text' or 'json'."
         )
+    if output_format == "json" and not pr_url:
+        raise typer.BadParameter("--output-format json requires at least one --pr-url.")
+    if output_format == "json":
+        redirect_to_stderr()
     target_pr_urls = _target_pr_urls_for_run_once(
         pr_url,
         use_saved_review=use_saved_review,
@@ -568,7 +572,7 @@ def run_once_command(
         else:
             processed = asyncio.run(run_cycle(cfg, preflight, store))
 
-        if output_format == "json" and results:
+        if output_format == "json":
             print(json.dumps([r.to_dict() for r in results], indent=2))
         else:
             info(f"run-once finished. Processed {processed} PR(s)")
