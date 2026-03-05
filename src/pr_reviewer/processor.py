@@ -260,6 +260,10 @@ def _publish_and_persist(
     if pr.latest_direct_rerequest_at is not None:
         last_seen_rerequest_at = pr.latest_direct_rerequest_at
 
+    last_slash_command_id = previous.last_slash_command_id
+    if pr.slash_command_trigger is not None:
+        last_slash_command_id = pr.slash_command_trigger.comment_id
+
     store.set(
         pr.key,
         ProcessedState(
@@ -270,6 +274,7 @@ def _publish_and_persist(
             last_output_file=str(output_path.resolve()),
             last_status=status,
             last_posted_at=posted_at,
+            last_slash_command_id=last_slash_command_id,
         ),
     )
     store.save()
@@ -496,30 +501,64 @@ async def process_candidate(
         info(f"processing complete (reused saved review) {pr.url}")
         return True
 
-    decision = _compute_processing_decision(previous, pr, config.trigger_mode)
-    if decision.should_process:
-        detail(f"trigger check passed ({decision.reason}) {pr.url}")
-    else:
-        detail(f"skipping, trigger check skipped ({decision.reason}) {pr.url}")
-        previous.last_status = f"skipped_{decision.reason}"
-        previous.trigger_mode = config.trigger_mode
-        store.set(pr.key, previous)
-        store.save()
-        return False
+    if pr.slash_command_trigger is not None:
+        trigger = pr.slash_command_trigger
 
-    try:
-        client.add_eyes_reaction(pr)
-    except Exception as exc:  # noqa: BLE001
-        warn(f"{pr.key}: failed to add eyes reaction: {exc}")
-
-    if decision.reason == "new_rerequest" and config.post_rerequest_comment:
         try:
-            client.post_pr_comment_inline(
-                pr,
-                "Starting review of the latest changes…",
-            )
+            client.add_reaction_to_comment(pr.owner, pr.repo, trigger.comment_id, "eyes")
         except Exception as exc:  # noqa: BLE001
-            warn(f"{pr.key}: failed to post rerequest comment: {exc}")
+            warn(f"{pr.key}: failed to react to /review comment: {exc}")
+
+        already_reviewed = (
+            not trigger.force
+            and previous.last_reviewed_head_sha == pr.head_sha
+            and previous.last_status
+            in ("posted", "approved", "changes_requested", "generated")
+        )
+        if already_reviewed:
+            try:
+                client.post_pr_comment_inline(
+                    pr,
+                    "Already reviewed at this commit. Push new changes or use "
+                    "`/review force` to re-review.",
+                )
+            except Exception as exc:  # noqa: BLE001
+                warn(f"{pr.key}: failed to post already-reviewed reply: {exc}")
+
+            previous.last_slash_command_id = trigger.comment_id
+            store.set(pr.key, previous)
+            store.save()
+            return False
+
+        try:
+            client.post_pr_comment_inline(pr, "Starting review of the latest changes…")
+        except Exception as exc:  # noqa: BLE001
+            warn(f"{pr.key}: failed to post starting-review comment: {exc}")
+    else:
+        decision = _compute_processing_decision(previous, pr, config.trigger_mode)
+        if decision.should_process:
+            detail(f"trigger check passed ({decision.reason}) {pr.url}")
+        else:
+            detail(f"skipping, trigger check skipped ({decision.reason}) {pr.url}")
+            previous.last_status = f"skipped_{decision.reason}"
+            previous.trigger_mode = config.trigger_mode
+            store.set(pr.key, previous)
+            store.save()
+            return False
+
+        try:
+            client.add_eyes_reaction(pr)
+        except Exception as exc:  # noqa: BLE001
+            warn(f"{pr.key}: failed to add eyes reaction: {exc}")
+
+        if decision.reason == "new_rerequest" and config.post_rerequest_comment:
+            try:
+                client.post_pr_comment_inline(
+                    pr,
+                    "Starting review of the latest changes…",
+                )
+            except Exception as exc:  # noqa: BLE001
+                warn(f"{pr.key}: failed to post rerequest comment: {exc}")
 
     workdir: Path | None = None
     restarts_remaining = config.max_mid_review_restarts
