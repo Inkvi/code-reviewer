@@ -1,8 +1,10 @@
 import subprocess
+from pathlib import Path
 
 from pr_reviewer.config import AppConfig
 from pr_reviewer.github import GitHubClient
 from pr_reviewer.models import PRCandidate
+from pr_reviewer.state import StateStore
 
 
 def test_discover_pr_candidates_skips_excluded_repo_and_sets_latest_rerequest(monkeypatch) -> None:
@@ -373,3 +375,171 @@ def test_add_reaction_to_comment_calls_gh_api(monkeypatch) -> None:
     assert len(captured_args) == 1
     assert "repos/polymerdao/obul/issues/comments/123456/reactions" in captured_args[0]
     assert "content=eyes" in captured_args[0]
+
+
+def test_discover_slash_command_candidates_finds_review_comment(monkeypatch) -> None:
+    client = GitHubClient(viewer_login="Inkvi")
+    config = AppConfig(github_orgs=["polymerdao"], slash_command_enabled=True)
+
+    def fake_run_json(args):
+        if args[:3] == ["gh", "search", "issues"]:
+            return [
+                {
+                    "number": 64,
+                    "repository": {"nameWithOwner": "polymerdao/obul"},
+                    "url": "https://github.com/polymerdao/obul/issues/64",
+                    "title": "test pr",
+                    "author": {"login": "alice"},
+                    "updatedAt": "2026-03-05T10:00:00Z",
+                }
+            ]
+        if args[:3] == ["gh", "pr", "view"]:
+            return {
+                "number": 64,
+                "url": "https://github.com/polymerdao/obul/pull/64",
+                "title": "test pr",
+                "author": {"login": "alice"},
+                "baseRefName": "main",
+                "headRefOid": "deadbeef",
+                "updatedAt": "2026-03-05T10:00:00Z",
+                "additions": 20,
+                "deletions": 5,
+                "files": [{"path": "src/app.py"}],
+            }
+        raise AssertionError(f"unexpected args: {args}")
+
+    def fake_run_command(args, **_kwargs):
+        cmd_str = " ".join(str(a) for a in args)
+        if "issues" in cmd_str and "comments" in cmd_str and "--jq" in cmd_str:
+            return subprocess.CompletedProcess(
+                args=args,
+                returncode=0,
+                stdout='{"id":123456,"user":"alice","created_at":"2026-03-05T10:05:00Z","body":"/review"}\n',
+                stderr="",
+            )
+        if "members" in cmd_str:
+            return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
+        return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr("pr_reviewer.github.run_json", fake_run_json)
+    monkeypatch.setattr("pr_reviewer.github.run_command", fake_run_command)
+
+    store = StateStore(Path("/tmp/fake-state.json"))
+    store._data = {}
+
+    candidates = client.discover_slash_command_candidates(config, store)
+
+    assert len(candidates) == 1
+    assert candidates[0].key == "polymerdao/obul#64"
+    assert candidates[0].slash_command_trigger is not None
+    assert candidates[0].slash_command_trigger.comment_id == 123456
+    assert candidates[0].slash_command_trigger.force is False
+
+
+def test_discover_slash_command_candidates_detects_force(monkeypatch) -> None:
+    client = GitHubClient(viewer_login="Inkvi")
+    config = AppConfig(github_orgs=["polymerdao"], slash_command_enabled=True)
+
+    def fake_run_json(args):
+        if args[:3] == ["gh", "search", "issues"]:
+            return [
+                {
+                    "number": 64,
+                    "repository": {"nameWithOwner": "polymerdao/obul"},
+                    "url": "https://github.com/polymerdao/obul/issues/64",
+                    "title": "test pr",
+                    "author": {"login": "alice"},
+                    "updatedAt": "2026-03-05T10:00:00Z",
+                }
+            ]
+        if args[:3] == ["gh", "pr", "view"]:
+            return {
+                "number": 64,
+                "url": "https://github.com/polymerdao/obul/pull/64",
+                "title": "test pr",
+                "author": {"login": "alice"},
+                "baseRefName": "main",
+                "headRefOid": "deadbeef",
+                "updatedAt": "2026-03-05T10:00:00Z",
+                "additions": 20,
+                "deletions": 5,
+                "files": [{"path": "src/app.py"}],
+            }
+        raise AssertionError(f"unexpected args: {args}")
+
+    def fake_run_command(args, **_kwargs):
+        cmd_str = " ".join(str(a) for a in args)
+        if "comments" in cmd_str and "--jq" in cmd_str:
+            return subprocess.CompletedProcess(
+                args=args,
+                returncode=0,
+                stdout=(
+                    '{"id":123456,"user":"alice","created_at":'
+                    '"2026-03-05T10:05:00Z","body":"/review force"}\n'
+                ),
+                stderr="",
+            )
+        return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr("pr_reviewer.github.run_json", fake_run_json)
+    monkeypatch.setattr("pr_reviewer.github.run_command", fake_run_command)
+
+    store = StateStore(Path("/tmp/fake-state.json"))
+    store._data = {}
+
+    candidates = client.discover_slash_command_candidates(config, store)
+
+    assert len(candidates) == 1
+    assert candidates[0].slash_command_trigger is not None
+    assert candidates[0].slash_command_trigger.force is True
+
+
+def test_discover_slash_command_candidates_skips_already_processed(monkeypatch) -> None:
+    client = GitHubClient(viewer_login="Inkvi")
+    config = AppConfig(github_orgs=["polymerdao"], slash_command_enabled=True)
+
+    def fake_run_json(args):
+        if args[:3] == ["gh", "search", "issues"]:
+            return [
+                {
+                    "number": 64,
+                    "repository": {"nameWithOwner": "polymerdao/obul"},
+                    "url": "https://github.com/polymerdao/obul/issues/64",
+                    "title": "test pr",
+                    "author": {"login": "alice"},
+                    "updatedAt": "2026-03-05T10:00:00Z",
+                }
+            ]
+        raise AssertionError(f"unexpected args: {args}")
+
+    def fake_run_command(args, **_kwargs):
+        cmd_str = " ".join(str(a) for a in args)
+        if "comments" in cmd_str and "--jq" in cmd_str:
+            return subprocess.CompletedProcess(
+                args=args,
+                returncode=0,
+                stdout='{"id":123456,"user":"alice","created_at":"2026-03-05T10:05:00Z","body":"/review"}\n',
+                stderr="",
+            )
+        return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr("pr_reviewer.github.run_json", fake_run_json)
+    monkeypatch.setattr("pr_reviewer.github.run_command", fake_run_command)
+
+    store = StateStore(Path("/tmp/fake-state.json"))
+    store._data = {"polymerdao/obul#64": {"last_slash_command_id": 123456}}
+
+    candidates = client.discover_slash_command_candidates(config, store)
+
+    assert len(candidates) == 0
+
+
+def test_discover_slash_command_candidates_disabled(monkeypatch) -> None:
+    client = GitHubClient(viewer_login="Inkvi")
+    config = AppConfig(github_orgs=["polymerdao"], slash_command_enabled=False)
+
+    store = StateStore(Path("/tmp/fake-state.json"))
+    store._data = {}
+
+    candidates = client.discover_slash_command_candidates(config, store)
+    assert len(candidates) == 0

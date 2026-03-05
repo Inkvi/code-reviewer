@@ -1,15 +1,21 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 from urllib.parse import urlparse
 
 from pr_reviewer.config import AppConfig
 from pr_reviewer.logger import warn
-from pr_reviewer.models import PRCandidate
+from pr_reviewer.models import PRCandidate, SlashCommandTrigger
 from pr_reviewer.shell import run_command, run_json
+
+if TYPE_CHECKING:
+    from pr_reviewer.state import StateStore
+
+_REVIEW_CMD_RE = re.compile(r"^\s*/review(?:\s+(force))?\s*$", re.MULTILINE)
 
 
 @dataclass(slots=True)
@@ -344,6 +350,149 @@ class GitHubClient:
                 "--silent",
             ]
         )
+
+    def _is_slash_command_authorized(self, org: str, login: str, pr_author: str) -> bool:
+        if login.lower() == pr_author.lower():
+            return True
+        return self.check_org_membership(org, login)
+
+    def _find_latest_review_command(
+        self,
+        owner: str,
+        repo: str,
+        number: int,
+        pr_author: str,
+        last_processed_command_id: int | None,
+    ) -> SlashCommandTrigger | None:
+        proc = run_command(
+            [
+                "gh",
+                "api",
+                "--paginate",
+                f"repos/{owner}/{repo}/issues/{number}/comments",
+                "--jq",
+                '.[] | {id, user: .user.login, created_at, body} | @json',
+            ]
+        )
+
+        latest: SlashCommandTrigger | None = None
+        for line in proc.stdout.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                comment = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+
+            comment_id = comment.get("id")
+            if not isinstance(comment_id, int):
+                continue
+            if last_processed_command_id is not None and comment_id <= last_processed_command_id:
+                continue
+
+            body = comment.get("body", "")
+            match = _REVIEW_CMD_RE.search(body)
+            if not match:
+                continue
+
+            author = comment.get("user", "")
+            if not self._is_slash_command_authorized(owner, author, pr_author):
+                continue
+
+            force = match.group(1) is not None
+            latest = SlashCommandTrigger(
+                comment_id=comment_id,
+                comment_author=author,
+                comment_created_at=comment.get("created_at", ""),
+                force=force,
+            )
+
+        return latest
+
+    def discover_slash_command_candidates(
+        self, config: AppConfig, store: StateStore
+    ) -> list[PRCandidate]:
+        if not config.slash_command_enabled:
+            return []
+
+        candidates: list[PRCandidate] = []
+        for owner in config.github_owners:
+            try:
+                data = run_json(
+                    [
+                        "gh",
+                        "search",
+                        "issues",
+                        "--owner",
+                        owner,
+                        "--state",
+                        "open",
+                        "--type",
+                        "pr",
+                        "--json",
+                        "number,repository,url,title,author,updatedAt",
+                        "-L",
+                        "200",
+                        "--sort",
+                        "updated",
+                    ]
+                )
+            except Exception as exc:  # noqa: BLE001
+                warn(f"Failed to search slash commands for {owner}: {exc}")
+                continue
+
+            if not isinstance(data, list):
+                continue
+
+            for item in data:
+                repo_full = item.get("repository", {}).get("nameWithOwner", "")
+                if "/" not in repo_full:
+                    continue
+                item_owner, repo = repo_full.split("/", maxsplit=1)
+                if self._is_repo_excluded(config, item_owner, repo):
+                    continue
+
+                number = int(item["number"])
+                pr_author = (item.get("author") or {}).get("login", "")
+                pr_key = f"{item_owner}/{repo}#{number}"
+                state = store.get(pr_key)
+
+                trigger = self._find_latest_review_command(
+                    item_owner, repo, number, pr_author, state.last_slash_command_id
+                )
+                if trigger is None:
+                    continue
+
+                details = run_json(
+                    [
+                        "gh",
+                        "pr",
+                        "view",
+                        item["url"],
+                        "--json",
+                        "number,url,title,author,baseRefName,headRefOid,updatedAt,additions,deletions,files",
+                    ]
+                )
+                det_author = (details.get("author") or {}).get("login", "")
+                candidate = PRCandidate(
+                    owner=item_owner,
+                    repo=repo,
+                    number=number,
+                    url=details.get("url", item["url"]),
+                    title=details.get("title", item.get("title", "")),
+                    author_login=det_author or pr_author,
+                    base_ref=details.get("baseRefName", "main"),
+                    head_sha=details.get("headRefOid", ""),
+                    updated_at=details.get("updatedAt", item.get("updatedAt", "")),
+                    additions=int(details.get("additions", 0) or 0),
+                    deletions=int(details.get("deletions", 0) or 0),
+                    changed_file_paths=self._extract_changed_file_paths(details),
+                    slash_command_trigger=trigger,
+                )
+                candidates.append(candidate)
+
+        return candidates
 
     def post_pr_comment(self, pr: PRCandidate, body_file: str) -> None:
         run_command(["gh", "pr", "comment", pr.url, "--body-file", body_file])
