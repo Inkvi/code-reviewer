@@ -19,3 +19,6 @@ reviews/
 
 # Local config
 config.toml
+
+# Worktrees
+.worktrees/
