@@ -382,7 +382,7 @@ def test_discover_slash_command_candidates_finds_review_comment(monkeypatch) -> 
     config = AppConfig(github_orgs=["polymerdao"], slash_command_enabled=True)
 
     def fake_run_json(args):
-        if args[:3] == ["gh", "search", "issues"]:
+        if args[:3] == ["gh", "search", "prs"]:
             return [
                 {
                     "number": 64,
@@ -441,7 +441,7 @@ def test_discover_slash_command_candidates_detects_force(monkeypatch) -> None:
     config = AppConfig(github_orgs=["polymerdao"], slash_command_enabled=True)
 
     def fake_run_json(args):
-        if args[:3] == ["gh", "search", "issues"]:
+        if args[:3] == ["gh", "search", "prs"]:
             return [
                 {
                     "number": 64,
@@ -499,7 +499,7 @@ def test_discover_slash_command_candidates_skips_already_processed(monkeypatch) 
     config = AppConfig(github_orgs=["polymerdao"], slash_command_enabled=True)
 
     def fake_run_json(args):
-        if args[:3] == ["gh", "search", "issues"]:
+        if args[:3] == ["gh", "search", "prs"]:
             return [
                 {
                     "number": 64,
@@ -542,4 +542,52 @@ def test_discover_slash_command_candidates_disabled(monkeypatch) -> None:
     store._data = {}
 
     candidates = client.discover_slash_command_candidates(config, store)
+    assert len(candidates) == 0
+
+
+def test_discover_slash_command_candidates_rejects_unauthorized_user(monkeypatch) -> None:
+    """A non-org-member who is not the PR author should be ignored."""
+    client = GitHubClient(viewer_login="Inkvi")
+    config = AppConfig(github_orgs=["polymerdao"], slash_command_enabled=True)
+
+    def fake_run_json(args):  # noqa: ANN001
+        if args[:3] == ["gh", "search", "prs"]:
+            return [
+                {
+                    "number": 64,
+                    "repository": {"nameWithOwner": "polymerdao/obul"},
+                    "url": "https://github.com/polymerdao/obul/issues/64",
+                    "title": "test pr",
+                    "author": {"login": "alice"},
+                    "updatedAt": "2026-03-05T10:00:00Z",
+                }
+            ]
+        raise AssertionError(f"unexpected args: {args}")
+
+    def fake_run_command(args, **_kwargs):  # noqa: ANN001
+        cmd_str = " ".join(str(a) for a in args)
+        if "comments" in cmd_str and "--jq" in cmd_str:
+            # Comment from "outsider" who is neither PR author nor org member.
+            return subprocess.CompletedProcess(
+                args=args,
+                returncode=0,
+                stdout=(
+                    '{"id":999999,"user":"outsider",'
+                    '"created_at":"2026-03-05T10:05:00Z","body":"/review"}\n'
+                ),
+                stderr="",
+            )
+        if "members" in cmd_str:
+            # Not an org member.
+            raise RuntimeError("not a member")
+        return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr("pr_reviewer.github.run_json", fake_run_json)
+    monkeypatch.setattr("pr_reviewer.github.run_command", fake_run_command)
+
+    store = StateStore(Path("/tmp/fake-state.json"))
+    store._data = {}
+
+    candidates = client.discover_slash_command_candidates(config, store)
+
     assert len(candidates) == 0
