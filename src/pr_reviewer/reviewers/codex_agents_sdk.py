@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from pr_reviewer.models import PRCandidate, ReviewerOutput
+from pr_reviewer.models import PRCandidate, ReviewerOutput, TokenUsage
 
 
 def _load_agents_sdk() -> Any:
@@ -40,6 +40,17 @@ def _invoke_runner_sync(runner: Any, agent: Any, prompt: str) -> Any:
         return result
 
     raise RuntimeError("OpenAI Agents SDK Runner does not expose run/run_sync")
+
+
+def _extract_token_usage(result: Any) -> TokenUsage | None:
+    usage = getattr(result, "usage", None)
+    if usage is None:
+        return None
+    input_tokens = getattr(usage, "input_tokens", 0) or 0
+    output_tokens = getattr(usage, "output_tokens", 0) or 0
+    if not input_tokens and not output_tokens:
+        return None
+    return TokenUsage(input_tokens=input_tokens, output_tokens=output_tokens)
 
 
 def _extract_result_markdown(result: Any) -> str:
@@ -85,7 +96,7 @@ def _build_agent_model_settings(openai_agents: Any, reasoning_effort: str | None
 
 def _run_agents_codex_review_sync(
     pr: PRCandidate, workspace: Path, model: str, reasoning_effort: str | None
-) -> str:
+) -> tuple[str, TokenUsage | None]:
     openai_agents = _load_agents_sdk()
     if not hasattr(openai_agents, "Agent") or not hasattr(openai_agents, "Runner"):
         raise RuntimeError("OpenAI Agents SDK does not provide Agent/Runner")
@@ -119,9 +130,10 @@ def _run_agents_codex_review_sync(
     agent = openai_agents.Agent(**agent_kwargs)
     result = _invoke_runner_sync(openai_agents.Runner, agent, prompt)
     markdown = _extract_result_markdown(result)
+    token_usage = _extract_token_usage(result)
     if not markdown:
         raise RuntimeError("OpenAI Agents SDK returned an empty review")
-    return markdown
+    return markdown, token_usage
 
 
 async def run_codex_review_via_agents_sdk(
@@ -132,8 +144,9 @@ async def run_codex_review_via_agents_sdk(
     reasoning_effort: str | None = None,
 ) -> ReviewerOutput:
     started = datetime.now(UTC)
+    token_usage: TokenUsage | None = None
     try:
-        markdown = await asyncio.wait_for(
+        markdown, token_usage = await asyncio.wait_for(
             asyncio.to_thread(
                 _run_agents_codex_review_sync,
                 pr,
@@ -167,4 +180,5 @@ async def run_codex_review_via_agents_sdk(
         error=error,
         started_at=started,
         ended_at=ended,
+        token_usage=token_usage,
     )

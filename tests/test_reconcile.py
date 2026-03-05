@@ -59,7 +59,9 @@ async def test_reconcile_reviews_uses_codex_backend(monkeypatch, tmp_path: Path)
         reconciler_reasoning_effort="high",
     )
 
-    assert "No material findings" in result
+    text, usage = result
+    assert "No material findings" in text
+    assert usage is None
     assert captured["workspace"] == tmp_path
     assert captured["timeout_seconds"] == 30
     assert captured["model"] == "gpt-5.3-codex"
@@ -89,7 +91,9 @@ async def test_reconcile_reviews_uses_gemini_backend(monkeypatch, tmp_path: Path
         reconciler_reasoning_effort="high",
     )
 
-    assert "No material findings" in result
+    text, usage = result
+    assert "No material findings" in text
+    assert usage is None
     assert captured["workspace"] == tmp_path
     assert captured["timeout_seconds"] == 45
     assert captured["model"] == "gemini-3.1-pro-preview"

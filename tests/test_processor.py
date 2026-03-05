@@ -845,6 +845,7 @@ def test_process_candidate_reconcile_uses_enabled_reviewer_order(monkeypatch, tm
         pr_comments=None,
         reconciler_model=None,
         reconciler_reasoning_effort=None,
+        **_kwargs,
     ):
         nonlocal seen_reconciler_backend, seen_reconciler_model, seen_reconciler_reasoning_effort
         seen_reconciler_backend = reconciler_backend
@@ -852,7 +853,7 @@ def test_process_candidate_reconcile_uses_enabled_reviewer_order(monkeypatch, tm
         seen_comments.extend(pr_comments or [])
         seen_reconciler_model = reconciler_model
         seen_reconciler_reasoning_effort = reconciler_reasoning_effort
-        return "### Findings\n- No material findings.\n\n### Test Gaps\n- None noted."
+        return "### Findings\n- No material findings.\n\n### Test Gaps\n- None noted.", None
 
     monkeypatch.setattr("pr_reviewer.processor.run_codex_review", fake_codex)
     monkeypatch.setattr("pr_reviewer.processor.run_gemini_review", fake_gemini)
@@ -938,6 +939,7 @@ def test_process_candidate_reconcile_falls_back_to_claude_settings(monkeypatch, 
         pr_comments=None,
         reconciler_model=None,
         reconciler_reasoning_effort=None,
+        **_kwargs,
     ):
         nonlocal seen_reconciler_backend, seen_reconciler_model, seen_reconciler_reasoning_effort
         seen_reconciler_backend = reconciler_backend
@@ -945,7 +947,7 @@ def test_process_candidate_reconcile_falls_back_to_claude_settings(monkeypatch, 
         _ = pr_comments
         seen_reconciler_model = reconciler_model
         seen_reconciler_reasoning_effort = reconciler_reasoning_effort
-        return "### Findings\n- No material findings.\n\n### Test Gaps\n- None noted."
+        return "### Findings\n- No material findings.\n\n### Test Gaps\n- None noted.", None
 
     monkeypatch.setattr("pr_reviewer.processor.run_codex_review", fake_codex)
     monkeypatch.setattr("pr_reviewer.processor.run_gemini_review", fake_gemini)

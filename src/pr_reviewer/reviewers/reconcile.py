@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pr_reviewer.models import PRCandidate, ReviewerOutput
+from pr_reviewer.models import PRCandidate, ReviewerOutput, TokenUsage
 from pr_reviewer.reviewers.claude_sdk import _run_claude_prompt
 from pr_reviewer.reviewers.codex_cli import run_codex_prompt
 from pr_reviewer.reviewers.gemini_cli import run_gemini_prompt
@@ -33,7 +33,7 @@ async def reconcile_reviews(
     reconciler_reasoning_effort: str | None = None,
     max_findings: int = 10,
     max_test_gaps: int = 3,
-) -> str:
+) -> tuple[str, TokenUsage | None]:
     source_sections: list[str] = []
     for i, output in enumerate(reviewer_outputs):
         letter = chr(ord("A") + i)
@@ -102,18 +102,20 @@ Strict output rules:
             reasoning_effort=reconciler_reasoning_effort,
         )
     if reconciler_backend == "codex":
-        return await run_codex_prompt(
+        text = await run_codex_prompt(
             prompt,
             workspace,
             timeout_seconds,
             model=reconciler_model,
             reasoning_effort=reconciler_reasoning_effort,
         )
+        return text, None
     if reconciler_backend == "gemini":
-        return await run_gemini_prompt(
+        text = await run_gemini_prompt(
             prompt,
             workspace,
             timeout_seconds,
             model=reconciler_model,
         )
+        return text, None
     raise RuntimeError(f"Unsupported reconciler backend: {reconciler_backend}")

@@ -27,6 +27,23 @@ class PRCandidate:
 
 
 @dataclass(slots=True)
+class TokenUsage:
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cost_usd: float | None = None
+
+    def __add__(self, other: TokenUsage) -> TokenUsage:
+        cost: float | None = None
+        if self.cost_usd is not None or other.cost_usd is not None:
+            cost = (self.cost_usd or 0.0) + (other.cost_usd or 0.0)
+        return TokenUsage(
+            input_tokens=self.input_tokens + other.input_tokens,
+            output_tokens=self.output_tokens + other.output_tokens,
+            cost_usd=cost,
+        )
+
+
+@dataclass(slots=True)
 class ReviewerOutput:
     reviewer: str
     status: str
@@ -36,6 +53,7 @@ class ReviewerOutput:
     error: str | None
     started_at: datetime
     ended_at: datetime
+    token_usage: TokenUsage | None = None
 
     @property
     def duration_seconds(self) -> float:

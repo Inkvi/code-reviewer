@@ -6,7 +6,7 @@ from pathlib import Path
 from anyio import fail_after
 from claude_agent_sdk import AssistantMessage, ClaudeAgentOptions, ResultMessage, TextBlock, query
 
-from pr_reviewer.models import PRCandidate, ReviewerOutput
+from pr_reviewer.models import PRCandidate, ReviewerOutput, TokenUsage
 
 
 def _collect_text_from_assistant(message: AssistantMessage) -> str:
@@ -15,6 +15,18 @@ def _collect_text_from_assistant(message: AssistantMessage) -> str:
         if isinstance(block, TextBlock):
             chunks.append(block.text)
     return "\n".join(chunks)
+
+
+def _extract_token_usage(message: ResultMessage) -> TokenUsage | None:
+    usage = getattr(message, "usage", None)
+    if not isinstance(usage, dict):
+        return None
+    input_tokens = usage.get("input_tokens", 0) or 0
+    output_tokens = usage.get("output_tokens", 0) or 0
+    cost_usd = getattr(message, "total_cost_usd", None)
+    if not input_tokens and not output_tokens:
+        return None
+    return TokenUsage(input_tokens=input_tokens, output_tokens=output_tokens, cost_usd=cost_usd)
 
 
 async def _run_claude_prompt(
@@ -26,7 +38,7 @@ async def _run_claude_prompt(
     max_turns: int = 20,
     model: str | None = None,
     reasoning_effort: str | None = None,
-) -> str:
+) -> tuple[str, TokenUsage | None]:
     options = ClaudeAgentOptions(
         cwd=cwd,
         permission_mode="bypassPermissions",
@@ -38,6 +50,7 @@ async def _run_claude_prompt(
 
     parts: list[str] = []
     final_result: str | None = None
+    token_usage: TokenUsage | None = None
 
     with fail_after(timeout_seconds):
         async for message in query(prompt=prompt, options=options):
@@ -48,11 +61,12 @@ async def _run_claude_prompt(
             elif isinstance(message, ResultMessage):
                 if message.result:
                     final_result = message.result
+                token_usage = _extract_token_usage(message)
 
     merged = (final_result or "\n".join(parts)).strip()
     if not merged:
         raise RuntimeError("Claude returned an empty response")
-    return merged
+    return merged, token_usage
 
 
 async def run_claude_review(
@@ -64,9 +78,10 @@ async def run_claude_review(
     reasoning_effort: str | None = None,
 ) -> ReviewerOutput:
     started = datetime.now(UTC)
+    token_usage: TokenUsage | None = None
     try:
         prompt = f"/review {pr.url}"
-        markdown = await _run_claude_prompt(
+        markdown, token_usage = await _run_claude_prompt(
             prompt,
             workspace,
             timeout_seconds,
@@ -92,4 +107,5 @@ async def run_claude_review(
         error=error,
         started_at=started,
         ended_at=ended,
+        token_usage=token_usage,
     )
