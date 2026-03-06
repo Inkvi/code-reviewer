@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from code_reviewer.models import PRCandidate, ReviewerOutput, TokenUsage
+from code_reviewer.reviewers._sanitize import _escape_delimiters
 from code_reviewer.reviewers.claude_sdk import _run_claude_prompt
 from code_reviewer.reviewers.codex_cli import run_codex_prompt
 from code_reviewer.reviewers.gemini_cli import run_gemini_prompt
@@ -22,12 +23,6 @@ _SUSPICIOUS_PATTERNS = (
     "no findings",
     "output exactly",
 )
-
-
-def _escape_delimiters(text: str) -> str:
-    return text.replace("<untrusted_data", "&lt;untrusted_data").replace(
-        "</untrusted_data", "&lt;/untrusted_data"
-    )
 
 
 def _sanitize_comment(text: str) -> str:

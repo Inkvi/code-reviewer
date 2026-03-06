@@ -14,6 +14,7 @@ from claude_agent_sdk import (
 )
 
 from code_reviewer.models import PRCandidate, ReviewerOutput, TokenUsage
+from code_reviewer.reviewers._sanitize import _escape_delimiters
 
 
 def _collect_text_from_assistant(message: AssistantMessage) -> str:
@@ -90,7 +91,9 @@ def _build_local_review_prompt(pr: PRCandidate) -> str:
         f"Review the code changes in this repository.\n"
         f"Run `{diff_cmd}` to see the diff.\n"
         f"{extra}"
-        f"Context: {pr.title}\n"
+        f"<untrusted_data type='pr_title'>\n"
+        f"Context: {_escape_delimiters(pr.title)}\n"
+        f"</untrusted_data>\n"
         f"Base: {pr.base_ref}\n\n"
         "Focus only on actionable bugs, regressions, security issues, and missing tests. "
         "Return concise markdown with exactly:\n"
