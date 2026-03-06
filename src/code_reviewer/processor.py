@@ -29,6 +29,7 @@ from code_reviewer.reviewers import (
     run_lightweight_review,
     run_triage,
 )
+from code_reviewer.shell import CommandError
 from code_reviewer.state import StateStore
 from code_reviewer.workspace import PRWorkspace
 
@@ -216,16 +217,39 @@ def _publish_and_persist(
     if config.auto_submit_review_decision:
         decision = infer_review_decision(review_text_for_decision)
         info(f"submitting PR review decision={decision} {pr.url}")
-        client.submit_pr_review(pr, str(output_path), decision)
-        posted_at = ProcessedState.now_iso()
-        status = "approved" if decision == "approve" else "changes_requested"
-        info(f"submitted PR review ({status}) {pr.url}")
+        try:
+            client.submit_pr_review(pr, str(output_path), decision)
+            posted_at = ProcessedState.now_iso()
+            status = "approved" if decision == "approve" else "changes_requested"
+            info(f"submitted PR review ({status}) {pr.url}")
+        except CommandError as exc:
+            exc_str = str(exc)
+            if (
+                "Can not request changes on your own pull request" in exc_str
+                or "Can not approve your own pull request" in exc_str
+            ):
+                warn(f"cannot submit review on own PR, falling back to comment {pr.url}")
+                try:
+                    client.post_pr_comment(pr, str(output_path))
+                    posted_at = ProcessedState.now_iso()
+                    status = "posted"
+                    info(f"posted review as comment (fallback) {pr.url}")
+                except Exception as fallback_exc:  # noqa: BLE001
+                    warn(f"fallback comment also failed: {fallback_exc} {pr.url}")
+                    status = "submission_failed"
+            else:
+                warn(f"failed to submit review: {exc} {pr.url}")
+                status = "submission_failed"
     elif config.auto_post_review:
         info(f"posting review comment to GitHub {pr.url}")
-        client.post_pr_comment(pr, str(output_path))
-        posted_at = ProcessedState.now_iso()
-        status = "posted"
-        info(f"posted review comment {pr.url}")
+        try:
+            client.post_pr_comment(pr, str(output_path))
+            posted_at = ProcessedState.now_iso()
+            status = "posted"
+            info(f"posted review comment {pr.url}")
+        except Exception as exc:  # noqa: BLE001
+            warn(f"failed to post review comment: {exc} {pr.url}")
+            status = "submission_failed"
     else:
         info(
             f"auto_post_review and auto_submit_review_decision are disabled; "
@@ -705,6 +729,31 @@ async def process_candidate(
             output_file=str(saved_review_path.resolve()),
         )
 
+    # Auto-reuse: if we already generated a review for this exact head SHA but
+    # submission failed, reuse the saved review instead of re-running reviewers.
+    if (
+        previous.last_reviewed_head_sha == pr.head_sha
+        and previous.last_output_file
+        and previous.last_status == "submission_failed"
+    ):
+        saved_path = Path(previous.last_output_file)
+        if saved_path.exists():
+            info(f"reusing previously generated review (submission retry) {pr.url}")
+            review_text = saved_path.read_text(encoding="utf-8")
+            _publish_and_persist(
+                config, client, store, pr, saved_path,
+                review_text,
+                status_when_not_posted="reused_saved_review",
+                previous=previous,
+            )
+            info(f"processing complete (submission retry) {pr.url}")
+            return ProcessingResult(
+                processed=True, pr_url=pr.url, pr_key=pr.key,
+                status="reused_saved_review",
+                final_review=review_text,
+                output_file=str(saved_path.resolve()),
+            )
+
     if pr.slash_command_trigger is not None:
         trigger = pr.slash_command_trigger
 
@@ -771,6 +820,7 @@ async def process_candidate(
                 warn(f"{pr.key}: failed to post rerequest comment: {exc}")
 
     workdir: Path | None = None
+    output_path: Path | None = None
     restarts_remaining = config.max_mid_review_restarts
     try:
         info(f"preparing workspace {pr.url}")
@@ -977,6 +1027,10 @@ async def process_candidate(
         state = store.get(pr.key)
         state.last_status = f"error: {exc}"
         state.trigger_mode = config.trigger_mode
+        if output_path is not None and output_path.exists():
+            state.last_output_file = str(output_path.resolve())
+            state.last_reviewed_head_sha = pr.head_sha
+            state.last_processed_at = ProcessedState.now_iso()
         store.set(pr.key, state)
         store.save()
         return ProcessingResult(

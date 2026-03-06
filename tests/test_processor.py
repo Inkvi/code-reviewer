@@ -16,6 +16,7 @@ from code_reviewer.processor import (
     process_candidate,
 )
 from code_reviewer.reviewers.triage import TriageResult
+from code_reviewer.shell import CommandError
 
 
 def _sample_pr(
@@ -1312,3 +1313,160 @@ def test_process_candidate_lightweight_failure_falls_back_to_full(monkeypatch, t
 
     assert result.processed is True
     assert "lightweight" not in (store.state.last_status or "")
+
+
+def test_submit_own_pr_falls_back_to_comment(monkeypatch, tmp_path) -> None:
+    """When submit_pr_review fails with 'own PR' error, falls back to post_pr_comment."""
+    store = DummyStore()
+    workspace = DummyWorkspace(tmp_path)
+    client = GitHubClient(viewer_login="Inkvi")
+    monkeypatch.setattr(GitHubClient, "add_eyes_reaction", lambda _self, _pr: None)
+    _mock_triage_full_review(monkeypatch)
+
+    now = datetime.now(UTC)
+    ok_output = ReviewerOutput(
+        reviewer="codex",
+        status="ok",
+        markdown="### Findings\n- No material findings.\n\n### Test Gaps\n- None noted.",
+        stdout="",
+        stderr="",
+        error=None,
+        started_at=now,
+        ended_at=now,
+    )
+
+    async def fake_codex(_pr, _workdir, _timeout, *, model=None, reasoning_effort=None):
+        return ok_output
+
+    monkeypatch.setattr("code_reviewer.processor.run_codex_review", fake_codex)
+    monkeypatch.setattr(
+        "code_reviewer.processor.write_review_markdown",
+        lambda *_args, **_kwargs: tmp_path / "out.md",
+    )
+    monkeypatch.setattr(
+        "code_reviewer.processor.write_reviewer_sidecar_markdown",
+        lambda *_args, **_kwargs: tmp_path / "out.raw.md",
+    )
+
+    def raise_own_pr(*_args, **_kwargs):
+        raise CommandError(
+            ["gh", "pr", "review"], 1, "",
+            "failed to create review: GraphQL: Review Can not approve your own pull request",
+        )
+
+    monkeypatch.setattr(GitHubClient, "submit_pr_review", raise_own_pr)
+
+    posted_files: list[str] = []
+    monkeypatch.setattr(
+        GitHubClient, "post_pr_comment",
+        lambda _self, _pr, body_file: posted_files.append(body_file),
+    )
+
+    cfg = AppConfig(
+        github_orgs=["polymerdao"],
+        enabled_reviewers=["codex"],
+        auto_submit_review_decision=True,
+    )
+    result = asyncio.run(process_candidate(cfg, client, store, workspace, _sample_pr()))
+
+    assert result.processed is True
+    assert store.state.last_status == "posted"
+    assert len(posted_files) == 1
+
+
+def test_auto_reuse_saved_review_on_submission_failed(monkeypatch, tmp_path) -> None:
+    """When previous run failed submission but review file exists, reuse without re-reviewing."""
+    saved_review = tmp_path / "pr-64.md"
+    saved_review.write_text("### Findings\n- Saved.\n\n### Test Gaps\n- None.")
+
+    store = DummyStore(
+        ProcessedState(
+            last_processed_at="2026-03-03T00:00:00+00:00",
+            last_reviewed_head_sha="deadbeef",
+            last_output_file=str(saved_review),
+            last_status="submission_failed",
+            last_seen_rerequest_at="2026-03-02T00:00:00+00:00",
+        )
+    )
+    workspace = DummyWorkspace(tmp_path)
+    client = GitHubClient(viewer_login="Inkvi")
+    monkeypatch.setattr(GitHubClient, "add_eyes_reaction", lambda _self, _pr: None)
+
+    # These should NOT be called — if they are, the test fails
+    async def fail_triage(*args, **kwargs):
+        raise AssertionError("triage should not be called when reusing saved review")
+
+    monkeypatch.setattr("code_reviewer.processor.run_triage", fail_triage)
+
+    submitted_reviews: list[str] = []
+    monkeypatch.setattr(
+        GitHubClient, "submit_pr_review",
+        lambda _self, _pr, body_file, decision: submitted_reviews.append(decision),
+    )
+
+    cfg = AppConfig(
+        github_orgs=["polymerdao"],
+        enabled_reviewers=["codex"],
+        auto_submit_review_decision=True,
+    )
+    pr = _sample_pr()
+    result = asyncio.run(process_candidate(cfg, client, store, workspace, pr))
+
+    assert result.processed is True
+    assert result.status == "reused_saved_review"
+    assert "Saved." in result.final_review
+    assert len(submitted_reviews) == 1
+
+
+def test_error_handler_saves_output_file_when_exists(monkeypatch, tmp_path) -> None:
+    """When review is written but publish fails, error handler saves last_output_file."""
+    store = DummyStore()
+    workspace = DummyWorkspace(tmp_path)
+    client = GitHubClient(viewer_login="Inkvi")
+    monkeypatch.setattr(GitHubClient, "add_eyes_reaction", lambda _self, _pr: None)
+    _mock_triage_full_review(monkeypatch)
+
+    now = datetime.now(UTC)
+    ok_output = ReviewerOutput(
+        reviewer="codex",
+        status="ok",
+        markdown="### Findings\n- No material findings.\n\n### Test Gaps\n- None noted.",
+        stdout="",
+        stderr="",
+        error=None,
+        started_at=now,
+        ended_at=now,
+    )
+
+    async def fake_codex(_pr, _workdir, _timeout, *, model=None, reasoning_effort=None):
+        return ok_output
+
+    monkeypatch.setattr("code_reviewer.processor.run_codex_review", fake_codex)
+
+    out_file = tmp_path / "out.md"
+    out_file.write_text("review content")
+
+    monkeypatch.setattr(
+        "code_reviewer.processor.write_review_markdown",
+        lambda *_args, **_kwargs: out_file,
+    )
+    monkeypatch.setattr(
+        "code_reviewer.processor.write_reviewer_sidecar_markdown",
+        lambda *_args, **_kwargs: tmp_path / "out.raw.md",
+    )
+
+    # Make _publish_and_persist raise after the review is written
+    def exploding_publish(*_args, **_kwargs):
+        raise RuntimeError("network timeout")
+
+    monkeypatch.setattr("code_reviewer.processor._publish_and_persist", exploding_publish)
+
+    cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["codex"])
+    pr = _sample_pr()
+    result = asyncio.run(process_candidate(cfg, client, store, workspace, pr))
+
+    assert result.processed is False
+    assert result.status == "error"
+    assert store.state.last_output_file == str(out_file.resolve())
+    assert store.state.last_reviewed_head_sha == "deadbeef"
+    assert store.state.last_processed_at is not None
