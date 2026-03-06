@@ -69,6 +69,34 @@ async def _run_claude_prompt(
     return merged, token_usage
 
 
+def _build_local_review_prompt(pr: PRCandidate) -> str:
+    if pr.review_mode == "uncommitted":
+        diff_cmd = "git diff HEAD"
+        extra = "Also run `git ls-files --others --exclude-standard` to find untracked new files.\n"
+    else:
+        diff_cmd = f"git diff {pr.base_ref}...{pr.head_sha}"
+        extra = ""
+    return (
+        f"Review the code changes in this repository.\n"
+        f"Run `{diff_cmd}` to see the diff.\n"
+        f"{extra}"
+        f"Context: {pr.title}\n"
+        f"Base: {pr.base_ref}\n\n"
+        "Focus only on actionable bugs, regressions, security issues, and missing tests. "
+        "Return concise markdown with exactly:\n"
+        "### Findings\n"
+        "Severity: P0 = blocking / security vulnerability / data loss / breaks production, "
+        "P1 = urgent logic error / correctness issue, "
+        "P2 = non-trivial code quality issue / missing validation, "
+        "P3 = minor style / nit.\n"
+        "- [P0|P1|P2|P3] path[:line] - issue. Impact. Recommended fix.\n"
+        "### Test Gaps\n"
+        "- missing tests\n"
+        "If no findings, write '- No material findings.' under Findings and '- None noted.' "
+        "under Test Gaps."
+    )
+
+
 async def run_claude_review(
     pr: PRCandidate,
     workspace: Path,
@@ -80,7 +108,10 @@ async def run_claude_review(
     started = datetime.now(UTC)
     token_usage: TokenUsage | None = None
     try:
-        prompt = f"/review {pr.url}"
+        if pr.is_local:
+            prompt = _build_local_review_prompt(pr)
+        else:
+            prompt = f"/review {pr.url}"
         markdown, token_usage = await _run_claude_prompt(
             prompt,
             workspace,

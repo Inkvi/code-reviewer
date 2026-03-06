@@ -87,12 +87,12 @@ def _build_codex_review_command(
     reasoning_effort: str | None,
     json_mode: bool,
 ) -> list[str]:
-    args = [
-        "codex",
-        "review",
-        "--base",
-        f"origin/{pr.base_ref}",
-    ]
+    args = ["codex", "review"]
+    if pr.is_local and pr.review_mode == "uncommitted":
+        args.append("--uncommitted")
+    else:
+        base_ref = pr.base_ref if pr.is_local else f"origin/{pr.base_ref}"
+        args.extend(["--base", base_ref])
     if json_mode:
         args.append("--json")
     if model:

@@ -20,7 +20,7 @@ class TriageResult(Enum):
 _TRIAGE_PROMPT_TEMPLATE = """You are a PR triage classifier. Analyze this pull request and classify it as either "simple" or "full_review".
 
 PR:
-- URL: {url}
+- {url_label}: {url}
 - Title: {title}
 - Base: {base_ref}
 - Files changed: {changed_files}
@@ -40,7 +40,9 @@ Respond with ONLY a JSON object, no other text:
 
 def _build_triage_prompt(pr: PRCandidate) -> str:
     changed_files = ", ".join(pr.changed_file_paths) if pr.changed_file_paths else "unknown"
+    url_label = "Repository" if pr.is_local else "URL"
     return _TRIAGE_PROMPT_TEMPLATE.format(
+        url_label=url_label,
         url=pr.url,
         title=pr.title,
         base_ref=pr.base_ref,

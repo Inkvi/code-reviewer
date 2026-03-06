@@ -79,12 +79,14 @@ async def reconcile_reviews(
     count = len(reviewer_outputs)
     comments_text = _format_pr_comments(pr_comments)
 
-    prompt = f"""
-You are reconciling {count} PR reviews into one final markdown review that will be posted
-directly as a GitHub comment.
+    url_label = "Repository" if pr.is_local else "URL"
+    output_target = "saved to a local file" if pr.is_local else "posted\ndirectly as a GitHub comment"
 
-PR:
-- URL: {pr.url}
+    prompt = f"""
+You are reconciling {count} code reviews into one final markdown review that will be {output_target}.
+
+Review target:
+- {url_label}: {pr.url}
 <untrusted_data type='pr_title'>
 - Title: {_escape_delimiters(pr.title)}
 </untrusted_data>

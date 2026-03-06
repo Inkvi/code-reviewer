@@ -13,6 +13,20 @@ def _versioned_stem(pr: PRCandidate, now: datetime | None = None) -> str:
     return f"{timestamp}-{short_sha}"
 
 
+def _local_output_dirs(output_root: Path, pr: PRCandidate) -> tuple[Path, Path, str]:
+    target_dir = output_root / "local" / pr.repo
+    history_dir = target_dir / "history"
+    stable_name = "review"
+    return target_dir, history_dir, stable_name
+
+
+def _pr_output_dirs(output_root: Path, pr: PRCandidate) -> tuple[Path, Path, str]:
+    target_dir = output_root / pr.owner / pr.repo
+    history_dir = target_dir / f"pr-{pr.number}"
+    stable_name = f"pr-{pr.number}"
+    return target_dir, history_dir, stable_name
+
+
 def write_review_markdown(
     output_root: Path,
     pr: PRCandidate,
@@ -20,11 +34,13 @@ def write_review_markdown(
     *,
     version_label: str | None = None,
 ) -> Path:
-    target_dir = output_root / pr.owner / pr.repo
-    history_dir = target_dir / f"pr-{pr.number}"
+    if pr.is_local:
+        target_dir, history_dir, stable_name = _local_output_dirs(output_root, pr)
+    else:
+        target_dir, history_dir, stable_name = _pr_output_dirs(output_root, pr)
     target_dir.mkdir(parents=True, exist_ok=True)
     history_dir.mkdir(parents=True, exist_ok=True)
-    stable_path = target_dir / f"pr-{pr.number}.md"
+    stable_path = target_dir / f"{stable_name}.md"
     stem = version_label or _versioned_stem(pr)
     versioned_path = history_dir / f"{stem}.md"
 
@@ -85,11 +101,13 @@ def write_reviewer_sidecar_markdown(
     *,
     version_label: str | None = None,
 ) -> Path:
-    target_dir = output_root / pr.owner / pr.repo
-    history_dir = target_dir / f"pr-{pr.number}"
+    if pr.is_local:
+        target_dir, history_dir, stable_name = _local_output_dirs(output_root, pr)
+    else:
+        target_dir, history_dir, stable_name = _pr_output_dirs(output_root, pr)
     target_dir.mkdir(parents=True, exist_ok=True)
     history_dir.mkdir(parents=True, exist_ok=True)
-    stable_path = target_dir / f"pr-{pr.number}.raw.md"
+    stable_path = target_dir / f"{stable_name}.raw.md"
     stem = version_label or _versioned_stem(pr)
     versioned_path = history_dir / f"{stem}.raw.md"
 
@@ -102,9 +120,16 @@ def write_reviewer_sidecar_markdown(
     for name in ordered_names:
         sections.append(_render_reviewer_section(name, reviewer_outputs[name], include_stderr))
 
-    content = f"""### Reviewer Raw Outputs: {pr.owner}/{pr.repo}#{pr.number}
+    if pr.is_local:
+        header = f"### Reviewer Raw Outputs: {pr.repo} ({pr.title})"
+        url_line = f"- Repository: {pr.url}"
+    else:
+        header = f"### Reviewer Raw Outputs: {pr.owner}/{pr.repo}#{pr.number}"
+        url_line = f"- URL: {pr.url}"
 
-- URL: {pr.url}
+    content = f"""{header}
+
+{url_line}
 
 {"".join(sections)}"""
 
