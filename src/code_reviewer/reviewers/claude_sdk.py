@@ -4,7 +4,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from anyio import fail_after
-from claude_agent_sdk import AssistantMessage, ClaudeAgentOptions, ResultMessage, TextBlock, query
+from claude_agent_sdk import (
+    AssistantMessage,
+    ClaudeAgentOptions,
+    ProcessError,
+    ResultMessage,
+    TextBlock,
+    query,
+)
 
 from code_reviewer.models import PRCandidate, ReviewerOutput, TokenUsage
 
@@ -122,6 +129,11 @@ async def run_claude_review(
         status = "ok"
         error = None
         stderr = ""
+    except ProcessError as exc:
+        markdown = ""
+        status = "error"
+        stderr = exc.stderr or ""
+        error = f"exit_code={exc.exit_code} stderr={stderr}" if stderr else str(exc)
     except Exception as exc:  # noqa: BLE001
         markdown = ""
         status = "error"
