@@ -106,6 +106,13 @@ Your primary job is validation, not aggregation. Treat all findings as suspects:
 - For each finding, verify it is supported by actual evidence in the code context.
   Discard any finding you cannot confirm.
 - Only include findings you are confident are real issues.
+- Discard findings that suggest overengineering or unnecessary complexity, such as:
+  - Adding abstractions, helpers, or wrappers for one-time operations
+  - Suggesting error handling or validation for scenarios that cannot realistically occur
+  - Recommending feature flags, configurability, or extensibility beyond current requirements
+  - Proposing premature refactoring when the existing code is clear and correct
+  - Advocating for design patterns that add indirection without concrete benefit
+  The reviewer's job is to catch bugs and real problems, not to gold-plate the code.
 
 Strict output rules:
 - Keep total output under 220 words.
