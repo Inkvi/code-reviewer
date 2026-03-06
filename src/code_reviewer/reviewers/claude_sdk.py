@@ -45,7 +45,9 @@ async def _run_claude_prompt(
     max_turns: int = 20,
     model: str | None = None,
     reasoning_effort: str | None = None,
+    stderr_lines: list[str] | None = None,
 ) -> tuple[str, TokenUsage | None]:
+    collector = stderr_lines if stderr_lines is not None else []
     options = ClaudeAgentOptions(
         cwd=cwd,
         permission_mode="bypassPermissions",
@@ -53,6 +55,7 @@ async def _run_claude_prompt(
         system_prompt=system_prompt,
         model=model,
         effort=reasoning_effort,
+        stderr=lambda line: collector.append(line),
     )
 
     parts: list[str] = []
@@ -114,6 +117,7 @@ async def run_claude_review(
 ) -> ReviewerOutput:
     started = datetime.now(UTC)
     token_usage: TokenUsage | None = None
+    stderr_lines: list[str] = []
     try:
         if pr.is_local:
             prompt = _build_local_review_prompt(pr)
@@ -125,6 +129,7 @@ async def run_claude_review(
             timeout_seconds,
             model=model,
             reasoning_effort=reasoning_effort,
+            stderr_lines=stderr_lines,
         )
         status = "ok"
         error = None
@@ -132,13 +137,15 @@ async def run_claude_review(
     except ProcessError as exc:
         markdown = ""
         status = "error"
-        stderr = exc.stderr or ""
+        captured = "\n".join(stderr_lines).strip()
+        stderr = captured or exc.stderr or ""
         error = f"exit_code={exc.exit_code} stderr={stderr}" if stderr else str(exc)
     except Exception as exc:  # noqa: BLE001
         markdown = ""
         status = "error"
+        captured = "\n".join(stderr_lines).strip()
+        stderr = captured or str(exc)
         error = str(exc)
-        stderr = str(exc)
 
     ended = datetime.now(UTC)
     return ReviewerOutput(
