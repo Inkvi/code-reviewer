@@ -12,10 +12,17 @@ from rich.table import Table
 from pr_reviewer.config import AppConfig, load_config
 from pr_reviewer.daemon import run_cycle, start_daemon
 from pr_reviewer.github import GitHubClient
+from pr_reviewer.local_review import (
+    build_local_candidate,
+    gather_diff_metadata,
+    resolve_diff_refs,
+    resolve_head_sha,
+    validate_git_repo,
+)
 from pr_reviewer.logger import console, error, info, redirect_to_stderr
 from pr_reviewer.models import ProcessingResult
 from pr_reviewer.preflight import run_preflight
-from pr_reviewer.processor import process_candidate
+from pr_reviewer.processor import process_candidate, process_local_review
 from pr_reviewer.state import StateStore
 from pr_reviewer.workspace import PRWorkspace
 
@@ -632,3 +639,222 @@ def start_command(
         raise typer.Exit(code=1) from exc
     finally:
         store.release_lock()
+
+
+RepoOption = Annotated[
+    Path,
+    typer.Option(
+        "--repo",
+        help="Path to local git repository. Defaults to current directory.",
+    ),
+]
+BaseOption = Annotated[
+    str | None,
+    typer.Option(
+        "--base",
+        help="Base branch or ref to diff against (required for branch mode).",
+    ),
+]
+BranchOption = Annotated[
+    str | None,
+    typer.Option(
+        "--branch",
+        help="Head branch to review. Defaults to current branch when --base is provided.",
+    ),
+]
+UncommittedOption = Annotated[
+    bool,
+    typer.Option(
+        "--uncommitted",
+        help="Review uncommitted changes (staged + unstaged) against HEAD.",
+    ),
+]
+CommitOption = Annotated[
+    str | None,
+    typer.Option(
+        "--commit",
+        help="Review a specific commit (diffs against its parent).",
+    ),
+]
+
+
+def _load_config_with_reviewer_overrides(
+    config_path: Path,
+    enabled_reviewer: list[str] | None,
+    codex_backend: str | None,
+    claude_model: str | None,
+    claude_reasoning_effort: str | None,
+    reconciler_backend: str | None,
+    reconciler_model: str | None,
+    reconciler_reasoning_effort: str | None,
+    codex_model: str | None,
+    codex_reasoning_effort: str | None,
+    gemini_model: str | None,
+    triage_backend: str | None,
+    triage_model: str | None,
+    lightweight_review_backend: str | None,
+    lightweight_review_model: str | None,
+    lightweight_review_reasoning_effort: str | None,
+) -> AppConfig:
+    cfg = load_config(config_path)
+    cfg = _apply_enabled_reviewer_override(cfg, enabled_reviewer)
+    cfg = _apply_codex_backend_override(cfg, codex_backend)
+    cfg = _apply_field_override(cfg, "claude_model", claude_model, "--claude-model")
+    cfg = _apply_field_override(
+        cfg, "claude_reasoning_effort", claude_reasoning_effort, "--claude-reasoning-effort",
+    )
+    cfg = _apply_field_override(
+        cfg, "reconciler_backend", reconciler_backend, "--reconciler-backend",
+    )
+    cfg = _apply_field_override(cfg, "reconciler_model", reconciler_model, "--reconciler-model")
+    cfg = _apply_field_override(
+        cfg, "reconciler_reasoning_effort", reconciler_reasoning_effort,
+        "--reconciler-reasoning-effort",
+    )
+    cfg = _apply_field_override(cfg, "codex_model", codex_model, "--codex-model")
+    cfg = _apply_field_override(
+        cfg, "codex_reasoning_effort", codex_reasoning_effort, "--codex-reasoning-effort",
+    )
+    cfg = _apply_field_override(cfg, "gemini_model", gemini_model, "--gemini-model")
+    cfg = _apply_field_override(cfg, "triage_backend", triage_backend, "--triage-backend")
+    cfg = _apply_field_override(cfg, "triage_model", triage_model, "--triage-model")
+    cfg = _apply_field_override(
+        cfg, "lightweight_review_backend", lightweight_review_backend,
+        "--lightweight-review-backend",
+    )
+    cfg = _apply_field_override(
+        cfg, "lightweight_review_model", lightweight_review_model, "--lightweight-review-model",
+    )
+    cfg = _apply_field_override(
+        cfg, "lightweight_review_reasoning_effort", lightweight_review_reasoning_effort,
+        "--lightweight-review-reasoning-effort",
+    )
+    return cfg
+
+
+@app.command("review")
+def review_command(
+    config: ConfigOption = Path("config.toml"),
+    repo: RepoOption = Path("."),
+    base: BaseOption = None,
+    branch: BranchOption = None,
+    uncommitted: UncommittedOption = False,
+    commit: CommitOption = None,
+    output_format: OutputFormatOption = "text",
+    enabled_reviewer: EnabledReviewerOption = None,
+    codex_backend: CodexBackendOption = None,
+    claude_model: ClaudeModelOption = None,
+    claude_reasoning_effort: ClaudeReasoningEffortOption = None,
+    reconciler_backend: ReconcilerBackendOption = None,
+    reconciler_model: ReconcilerModelOption = None,
+    reconciler_reasoning_effort: ReconcilerReasoningEffortOption = None,
+    codex_model: CodexModelOption = None,
+    codex_reasoning_effort: CodexReasoningEffortOption = None,
+    gemini_model: GeminiModelOption = None,
+    triage_backend: TriageBackendOption = None,
+    triage_model: TriageModelOption = None,
+    lightweight_review_backend: LightweightReviewBackendOption = None,
+    lightweight_review_model: LightweightReviewModelOption = None,
+    lightweight_review_reasoning_effort: LightweightReviewReasoningEffortOption = None,
+) -> None:
+    """Review local changes: branch vs branch, uncommitted changes, or a specific commit."""
+    if output_format not in ("text", "json"):
+        raise typer.BadParameter(
+            f"Invalid --output-format: {output_format}. Use 'text' or 'json'."
+        )
+
+    # Determine review mode
+    mode_count = sum([
+        base is not None or branch is not None,
+        uncommitted,
+        commit is not None,
+    ])
+    if mode_count == 0:
+        raise typer.BadParameter(
+            "Specify a review mode: --base/--branch (branch comparison), "
+            "--uncommitted, or --commit SHA."
+        )
+    branch_only = base is not None and branch is not None and not uncommitted and commit is None
+    if mode_count > 1 and not branch_only:
+        raise typer.BadParameter(
+            "--uncommitted and --commit are mutually exclusive with each other "
+            "and with --base/--branch."
+        )
+
+    if uncommitted:
+        mode = "uncommitted"
+    elif commit is not None:
+        mode = "commit"
+    else:
+        mode = "branch"
+        if base is None:
+            raise typer.BadParameter("--base is required for branch comparison mode.")
+
+    if output_format == "json":
+        redirect_to_stderr()
+
+    repo_path = repo.resolve()
+    try:
+        validate_git_repo(repo_path)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    cfg = _load_config_with_reviewer_overrides(
+        config, enabled_reviewer, codex_backend,
+        claude_model, claude_reasoning_effort,
+        reconciler_backend, reconciler_model, reconciler_reasoning_effort,
+        codex_model, codex_reasoning_effort, gemini_model,
+        triage_backend, triage_model,
+        lightweight_review_backend, lightweight_review_model,
+        lightweight_review_reasoning_effort,
+    )
+
+    try:
+        base_ref, head_ref = resolve_diff_refs(
+            repo_path, mode=mode, base=base, branch=branch, commit=commit,
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    if head_ref == "WORKING_TREE":
+        head_sha = resolve_head_sha(repo_path, "HEAD")
+    else:
+        head_sha = resolve_head_sha(repo_path, head_ref)
+
+    additions, deletions, changed_files = gather_diff_metadata(
+        repo_path, base_ref, head_ref,
+    )
+
+    if not changed_files and not uncommitted:
+        info("No changes detected between the specified refs.")
+        if output_format == "json":
+            print(json.dumps({"processed": False, "status": "no_changes"}, indent=2))
+        return
+
+    candidate = build_local_candidate(
+        repo_path,
+        mode=mode,
+        base_ref=base_ref,
+        head_ref=head_ref,
+        head_sha=head_sha,
+        additions=additions,
+        deletions=deletions,
+        changed_file_paths=changed_files,
+    )
+
+    info(
+        f"Reviewing {candidate.title} "
+        f"({additions}+/{deletions}- across {len(changed_files)} file(s))"
+    )
+
+    result = asyncio.run(process_local_review(cfg, candidate, repo_path))
+
+    if output_format == "json":
+        print(json.dumps(result.to_dict(), indent=2))
+    elif result.processed:
+        info(f"Review complete. Output: {result.output_file}")
+        if result.final_review:
+            console.print()
+            console.print(result.final_review)
+    else:
+        error(f"Review failed: {result.error or result.status}")

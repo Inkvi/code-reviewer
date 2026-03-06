@@ -107,10 +107,16 @@ def _run_agents_codex_review_sync(
     if not hasattr(openai_agents, "Agent") or not hasattr(openai_agents, "Runner"):
         raise RuntimeError("OpenAI Agents SDK does not provide Agent/Runner")
 
+    if pr.is_local:
+        review_subject = f"Review the code changes in repository at {workspace}."
+        base_branch = pr.base_ref
+    else:
+        review_subject = f"Review pull request {pr.url}."
+        base_branch = f"origin/{pr.base_ref}"
     prompt = (
-        f"Review pull request {pr.url}.\n"
+        f"{review_subject}\n"
         f"Repository workspace: {workspace}\n"
-        f"Base branch: origin/{pr.base_ref}\n\n"
+        f"Base branch: {base_branch}\n\n"
         "Focus only on actionable bugs, regressions, and missing tests. "
         "Return concise markdown with exactly:\n"
         "### Findings\n"

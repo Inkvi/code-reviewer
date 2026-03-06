@@ -11,7 +11,7 @@ from pr_reviewer.reviewers.gemini_cli import run_gemini_prompt
 _LIGHTWEIGHT_REVIEW_PROMPT_TEMPLATE = """You are reviewing a simple configuration or infrastructure pull request. Perform a focused checklist review.
 
 PR:
-- URL: {url}
+- {url_label}: {url}
 - Title: {title}
 - Base: {base_ref}
 - Head SHA: {head_sha}
@@ -45,7 +45,9 @@ Strict output rules:
 
 def _build_lightweight_prompt(pr: PRCandidate) -> str:
     changed_files = ", ".join(pr.changed_file_paths) if pr.changed_file_paths else "unknown"
+    url_label = "Repository" if pr.is_local else "URL"
     return _LIGHTWEIGHT_REVIEW_PROMPT_TEMPLATE.format(
+        url_label=url_label,
         url=pr.url,
         title=pr.title,
         base_ref=pr.base_ref,

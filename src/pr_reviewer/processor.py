@@ -458,6 +458,196 @@ def _compute_total_token_usage(
     return total
 
 
+async def _run_local_reviewers(
+    config: AppConfig,
+    pr: PRCandidate,
+    workdir: Path,
+) -> dict[str, ReviewerOutput]:
+    """Launch reviewers without commit monitoring (for local reviews)."""
+    enabled_reviewers = list(config.enabled_reviewers)
+    enabled_reviewer_set = set(enabled_reviewers)
+    pending_tasks: dict[str, asyncio.Task] = {}
+
+    if "claude" in enabled_reviewer_set:
+        info(
+            f"starting Claude review "
+            f"(model={config.claude_model or 'default'}, "
+            f"effort={config.claude_reasoning_effort or 'default'})"
+        )
+        pending_tasks["claude"] = asyncio.create_task(
+            run_claude_review(
+                pr,
+                workdir,
+                config.claude_timeout_seconds,
+                model=config.claude_model,
+                reasoning_effort=config.claude_reasoning_effort,
+            )
+        )
+
+    if "codex" in enabled_reviewer_set:
+        info(
+            f"starting Codex review "
+            f"(backend={config.codex_backend}, model={config.codex_model})"
+        )
+        pending_tasks["codex"] = _start_codex_review_task(config, pr, workdir)
+
+    if "gemini" in enabled_reviewer_set:
+        info(f"starting Gemini review (model={config.gemini_model or 'default'})")
+        pending_tasks["gemini"] = asyncio.create_task(
+            run_gemini_review(
+                pr,
+                workdir,
+                config.gemini_timeout_seconds,
+                model=config.gemini_model,
+            )
+        )
+
+    reviewer_outputs: dict[str, ReviewerOutput] = {}
+    while pending_tasks:
+        done, _ = await asyncio.wait(
+            pending_tasks.values(),
+            timeout=20,
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        if not done:
+            running = ", ".join(pending_tasks.keys())
+            info(f"reviewers still running ({running})")
+            continue
+        for reviewer_name, task in list(pending_tasks.items()):
+            if task in done:
+                output = await task
+                reviewer_outputs[reviewer_name] = output
+                info(
+                    f"{reviewer_name} finished "
+                    f"status={output.status} duration={output.duration_seconds:.1f}s"
+                )
+                if output.status != "ok" and output.error:
+                    warn(f"{reviewer_name} error: {output.error}")
+                pending_tasks.pop(reviewer_name)
+
+    return reviewer_outputs
+
+
+async def process_local_review(
+    config: AppConfig,
+    pr: PRCandidate,
+    workdir: Path,
+) -> ProcessingResult:
+    """Run review pipeline on a local repo without GitHub interactions."""
+    info(f"processing local review: {pr.title}")
+
+    try:
+        # Triage
+        triage_result = await run_triage(
+            pr,
+            workdir,
+            config.triage_timeout_seconds,
+            backend=config.triage_backend,
+            model=config.triage_model,
+        )
+
+        if triage_result == TriageResult.SIMPLE:
+            try:
+                lightweight_text, lightweight_usage = await run_lightweight_review(
+                    pr,
+                    workdir,
+                    config.lightweight_review_timeout_seconds,
+                    backend=config.lightweight_review_backend,
+                    model=config.lightweight_review_model,
+                    reasoning_effort=config.lightweight_review_reasoning_effort,
+                )
+            except Exception as exc:  # noqa: BLE001
+                warn(f"lightweight review failed, falling back to full review: {exc}")
+                triage_result = TriageResult.FULL_REVIEW
+
+        if triage_result == TriageResult.SIMPLE:
+            lightweight_text = _validate_review_format(lightweight_text)
+
+            info("writing lightweight review output")
+            version_label = _output_version_label(pr)
+            output_path = write_review_markdown(
+                Path(config.output_dir), pr, lightweight_text, version_label=version_label,
+            )
+            info(f"Lightweight review ready: {output_path.resolve()}")
+            return ProcessingResult(
+                processed=True, pr_url=pr.url, pr_key=pr.key,
+                status="lightweight_generated",
+                final_review=lightweight_text,
+                output_file=str(output_path.resolve()),
+                triage_result="simple",
+                total_token_usage=lightweight_usage,
+            )
+
+        # Full review path
+        reviewer_outputs = await _run_local_reviewers(config, pr, workdir)
+        enabled_reviewers = list(config.enabled_reviewers)
+        active_outputs = {
+            name: reviewer_outputs.get(name, _disabled_output(name))
+            for name in enabled_reviewers
+        }
+
+        if len(enabled_reviewers) >= 2:
+            (
+                reconciler_backend,
+                reconciler_timeout_seconds,
+                reconciler_model,
+                reconciler_reasoning_effort,
+            ) = _resolve_reconciler_settings(config)
+            info(f"reconciling outputs (backend={reconciler_backend})")
+            final_review, reconciler_usage = await reconcile_reviews(
+                pr,
+                workdir,
+                list(active_outputs.values()),
+                reconciler_timeout_seconds,
+                reconciler_backend=reconciler_backend,
+                reconciler_model=reconciler_model,
+                reconciler_reasoning_effort=reconciler_reasoning_effort,
+                max_findings=config.max_findings,
+                max_test_gaps=config.max_test_gaps,
+            )
+            final_review = _validate_review_format(final_review)
+        elif len(enabled_reviewers) == 1:
+            sole_reviewer = enabled_reviewers[0]
+            info(f"single reviewer mode ({sole_reviewer})")
+            final_review = _validate_review_format(
+                _single_reviewer_final_review(active_outputs[sole_reviewer])
+            )
+            reconciler_usage = None
+        else:
+            raise RuntimeError("No enabled reviewers configured")
+
+        _log_token_usage(active_outputs, reconciler_usage, pr.url)
+        info("writing final markdown output")
+        version_label = _output_version_label(pr)
+        output_path = write_review_markdown(
+            Path(config.output_dir), pr, final_review, version_label=version_label,
+        )
+        raw_output_path = write_reviewer_sidecar_markdown(
+            Path(config.output_dir), pr, active_outputs,
+            include_stderr=config.include_reviewer_stderr, version_label=version_label,
+        )
+        info(f"Final review ready: {output_path.resolve()}")
+        info(f"Raw reviewer outputs: {raw_output_path.resolve()}")
+
+        review_decision = infer_review_decision(final_review) if final_review else None
+        return ProcessingResult(
+            processed=True, pr_url=pr.url, pr_key=pr.key,
+            status="generated",
+            final_review=final_review,
+            output_file=str(output_path.resolve()),
+            triage_result="full_review",
+            review_decision=review_decision,
+            reviewer_outputs=_make_reviewer_summaries(active_outputs),
+            total_token_usage=_compute_total_token_usage(active_outputs, reconciler_usage),
+        )
+    except Exception as exc:  # noqa: BLE001
+        warn(f"failed processing local review: {exc}")
+        return ProcessingResult(
+            processed=False, pr_url=pr.url, pr_key=pr.key,
+            status="error", error=str(exc),
+        )
+
+
 async def process_candidate(
     config: AppConfig,
     client: GitHubClient,
