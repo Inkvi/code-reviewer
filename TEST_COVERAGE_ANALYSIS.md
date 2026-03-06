@@ -1,9 +1,9 @@
 # Test Coverage Analysis
 
 **Date:** 2026-03-06
-**Overall coverage:** 68% (741 of 2337 statements missed)
-**Total tests:** 185 across 16 test files
-**Failing tests:** 6 (pre-existing — config defaults, reconcile backends, CLI output format)
+**Overall coverage:** 77% (541 of 2337 statements missed) — up from 68%
+**Total tests:** 291 across 22 test files — up from 185 across 16
+**Failing tests:** 0 (6 pre-existing failures fixed)
 
 ---
 

@@ -279,7 +279,7 @@ def test_load_config_triage_defaults(tmp_path: Path) -> None:
     path.write_text('github_orgs=["Inkvi"]\n', encoding="utf-8")
     cfg = load_config(path)
     assert cfg.triage_backend == "gemini"
-    assert cfg.triage_model is None
+    assert cfg.triage_model == "gemini-3-flash-preview"
     assert cfg.triage_timeout_seconds == 60
 
 
@@ -287,8 +287,8 @@ def test_load_config_lightweight_review_defaults(tmp_path: Path) -> None:
     path = tmp_path / "config.toml"
     path.write_text('github_orgs=["Inkvi"]\n', encoding="utf-8")
     cfg = load_config(path)
-    assert cfg.lightweight_review_backend == "claude"
-    assert cfg.lightweight_review_model is None
+    assert cfg.lightweight_review_backend == "gemini"
+    assert cfg.lightweight_review_model == "gemini-3-flash-preview"
     assert cfg.lightweight_review_reasoning_effort is None
     assert cfg.lightweight_review_timeout_seconds == 300
 

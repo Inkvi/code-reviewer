@@ -199,9 +199,11 @@ def test_apply_field_override_gemini_model() -> None:
     assert out.gemini_model == "gemini-3.1-pro-preview"
 
 
-def test_output_format_json_requires_pr_url() -> None:
+def test_output_format_json_requires_pr_url(tmp_path) -> None:
+    cfg_path = tmp_path / "config.toml"
+    cfg_path.write_text('github_orgs=["Inkvi"]\n', encoding="utf-8")
     runner = CliRunner()
-    result = runner.invoke(app, ["run-once", "--output-format", "json"])
+    result = runner.invoke(app, ["run-once", "--config", str(cfg_path), "--output-format", "json"])
 
     assert result.exit_code != 0
     assert "requires" in result.output.lower() or "pr-url" in result.output.lower()
