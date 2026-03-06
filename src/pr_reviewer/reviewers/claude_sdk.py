@@ -70,13 +70,16 @@ async def _run_claude_prompt(
 
 
 def _build_local_review_prompt(pr: PRCandidate) -> str:
-    if pr.base_ref == "HEAD":
+    if pr.review_mode == "uncommitted":
         diff_cmd = "git diff HEAD"
+        extra = "Also run `git ls-files --others --exclude-standard` to find untracked new files.\n"
     else:
         diff_cmd = f"git diff {pr.base_ref}...{pr.head_sha}"
+        extra = ""
     return (
         f"Review the code changes in this repository.\n"
         f"Run `{diff_cmd}` to see the diff.\n"
+        f"{extra}"
         f"Context: {pr.title}\n"
         f"Base: {pr.base_ref}\n\n"
         "Focus only on actionable bugs, regressions, security issues, and missing tests. "

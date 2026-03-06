@@ -825,7 +825,7 @@ def review_command(
         repo_path, base_ref, head_ref,
     )
 
-    if not changed_files and not uncommitted:
+    if not changed_files:
         info("No changes detected between the specified refs.")
         if output_format == "json":
             print(json.dumps({"processed": False, "status": "no_changes"}, indent=2))

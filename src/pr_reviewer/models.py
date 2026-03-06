@@ -30,6 +30,7 @@ class PRCandidate:
     changed_file_paths: list[str] = field(default_factory=list)
     slash_command_trigger: SlashCommandTrigger | None = None
     is_local: bool = False
+    review_mode: str | None = None
 
     @property
     def key(self) -> str:

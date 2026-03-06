@@ -195,7 +195,7 @@ def test_build_local_candidate_branch(tmp_path: Path) -> None:
     )
     assert candidate.is_local is True
     assert candidate.owner == "local"
-    assert candidate.repo == "myrepo"
+    assert candidate.repo.startswith("myrepo-")
     assert candidate.number == 0
     assert candidate.base_ref == "main"
     assert candidate.head_sha == "abc123def456"
@@ -352,3 +352,112 @@ def test_process_local_review_lightweight_path(
     assert result.processed is True
     assert result.status == "lightweight_generated"
     assert result.triage_result == "simple"
+
+
+def test_gather_diff_metadata_uncommitted_includes_untracked(tmp_path: Path) -> None:
+    """Verify untracked files are included in uncommitted diff metadata."""
+    repo = _init_git_repo(tmp_path)
+    # Create an untracked file (not staged or committed)
+    (repo / "newfile.py").write_text("line1\nline2\nline3\n")
+
+    adds, dels, files = gather_diff_metadata(repo, "HEAD", "WORKING_TREE")
+    assert "newfile.py" in files
+    assert adds >= 3  # 3 lines in the untracked file
+
+
+def test_process_local_review_reconciler_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify process_local_review runs reconciler when 2+ reviewers enabled."""
+    repo = _init_git_repo(tmp_path)
+
+    config = _make_config(
+        enabled_reviewers=["claude", "gemini"],
+        output_dir=str(tmp_path / "reviews"),
+    )
+
+    candidate = build_local_candidate(
+        repo,
+        mode="branch",
+        base_ref="main",
+        head_ref="feature",
+        head_sha="deadbeef1234" * 4,
+        additions=1,
+        deletions=0,
+        changed_file_paths=["app.py"],
+    )
+
+    from pr_reviewer.reviewers import triage
+
+    async def mock_triage(*args, **kwargs):  # noqa: ANN002, ANN003
+        return triage.TriageResult.FULL_REVIEW
+
+    monkeypatch.setattr("pr_reviewer.processor.run_triage", mock_triage)
+
+    async def mock_claude_review(*args, **kwargs):  # noqa: ANN002, ANN003
+        return _ok_reviewer_output("claude")
+
+    async def mock_gemini_review(*args, **kwargs):  # noqa: ANN002, ANN003
+        return _ok_reviewer_output("gemini")
+
+    async def mock_reconcile(*args, **kwargs):  # noqa: ANN002, ANN003
+        return "### Findings\n- No material findings.\n\n### Test Gaps\n- None noted.", None
+
+    monkeypatch.setattr("pr_reviewer.processor.run_claude_review", mock_claude_review)
+    monkeypatch.setattr("pr_reviewer.processor.run_gemini_review", mock_gemini_review)
+    monkeypatch.setattr("pr_reviewer.processor.reconcile_reviews", mock_reconcile)
+
+    result = asyncio.run(process_local_review(config, candidate, repo))
+    assert result.processed is True
+    assert result.status == "generated"
+    assert result.triage_result == "full_review"
+
+
+def test_process_local_review_error_handling(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify process_local_review returns error result on exception."""
+    repo = _init_git_repo(tmp_path)
+
+    config = _make_config(
+        enabled_reviewers=["claude"],
+        output_dir=str(tmp_path / "reviews"),
+    )
+
+    candidate = build_local_candidate(
+        repo,
+        mode="branch",
+        base_ref="main",
+        head_ref="feature",
+        head_sha="deadbeef1234" * 4,
+        additions=1,
+        deletions=0,
+        changed_file_paths=["app.py"],
+    )
+
+    async def mock_triage(*args, **kwargs):  # noqa: ANN002, ANN003
+        raise RuntimeError("triage exploded")
+
+    monkeypatch.setattr("pr_reviewer.processor.run_triage", mock_triage)
+
+    result = asyncio.run(process_local_review(config, candidate, repo))
+    assert result.processed is False
+    assert result.status == "error"
+    assert "triage exploded" in result.error
+
+
+def test_build_local_candidate_sets_review_mode(tmp_path: Path) -> None:
+    """Verify build_local_candidate stores review_mode on the candidate."""
+    repo = tmp_path / "myrepo"
+    repo.mkdir()
+    candidate = build_local_candidate(
+        repo,
+        mode="uncommitted",
+        base_ref="HEAD",
+        head_ref="WORKING_TREE",
+        head_sha="deadbeef1234",
+        additions=1,
+        deletions=0,
+        changed_file_paths=["file.py"],
+    )
+    assert candidate.review_mode == "uncommitted"
