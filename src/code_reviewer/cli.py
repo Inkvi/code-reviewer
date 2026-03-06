@@ -171,6 +171,13 @@ LightweightReviewReasoningEffortOption = Annotated[
         ),
     ),
 ]
+ReviewOwnOption = Annotated[
+    bool,
+    typer.Option(
+        "--review-own",
+        help="Review your own PRs (overrides skip_own_prs config).",
+    ),
+]
 UseSavedReviewOption = Annotated[
     bool,
     typer.Option(
@@ -515,6 +522,7 @@ def run_once_command(
     lightweight_review_model: LightweightReviewModelOption = None,
     lightweight_review_reasoning_effort: LightweightReviewReasoningEffortOption = None,
     pr_url: PrUrlOption = None,
+    review_own: ReviewOwnOption = False,
     use_saved_review: UseSavedReviewOption = False,
     output_format: OutputFormatOption = "text",
 ) -> None:
@@ -551,6 +559,8 @@ def run_once_command(
         lightweight_review_model,
         lightweight_review_reasoning_effort,
     )
+    if review_own:
+        cfg = _apply_bool_override(cfg, "skip_own_prs", False, "--review-own")
     results: list[ProcessingResult] = []
     try:
         preflight = run_preflight(cfg)
