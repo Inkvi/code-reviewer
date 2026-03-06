@@ -13,8 +13,9 @@ from code_reviewer.local_review import (
     resolve_head_sha,
     validate_git_repo,
 )
-from code_reviewer.models import ReviewerOutput
+from code_reviewer.models import PRCandidate, ReviewerOutput
 from code_reviewer.processor import process_local_review
+from code_reviewer.reviewers.claude_sdk import run_claude_review
 
 
 def _init_git_repo(tmp_path: Path) -> Path:
@@ -461,3 +462,42 @@ def test_build_local_candidate_sets_review_mode(tmp_path: Path) -> None:
         changed_file_paths=["file.py"],
     )
     assert candidate.review_mode == "uncommitted"
+
+
+def test_run_claude_review_local_passes_system_prompt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify local Claude reviews include an untrusted-content system prompt."""
+    captured_kwargs: dict = {}
+
+    async def fake_run_claude_prompt(prompt, cwd, timeout, **kwargs):  # noqa: ANN001
+        captured_kwargs.update(kwargs)
+        return "### Findings\n- No material findings.\n\n### Test Gaps\n- None noted.", None
+
+    monkeypatch.setattr(
+        "code_reviewer.reviewers.claude_sdk._run_claude_prompt", fake_run_claude_prompt,
+    )
+
+    pr = PRCandidate(
+        owner="local",
+        repo="test-repo",
+        number=0,
+        url=str(tmp_path),
+        title="branch vs main",
+        author_login="test",
+        base_ref="main",
+        head_sha="deadbeef",
+        updated_at="2026-03-06T00:00:00Z",
+        additions=1,
+        deletions=0,
+        changed_file_paths=["app.py"],
+        is_local=True,
+        review_mode="branch",
+    )
+
+    result = asyncio.run(run_claude_review(pr, tmp_path, timeout_seconds=60))
+    assert result.status == "ok"
+
+    sys_prompt = captured_kwargs.get("system_prompt", "")
+    assert "untrusted" in sys_prompt.lower()
+    assert "<untrusted_data>" in sys_prompt or "untrusted_data" in sys_prompt
