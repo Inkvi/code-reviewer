@@ -6,7 +6,7 @@ from pathlib import Path
 from anyio import fail_after
 from claude_agent_sdk import AssistantMessage, ClaudeAgentOptions, ResultMessage, TextBlock, query
 
-from pr_reviewer.models import PRCandidate, ReviewerOutput, TokenUsage
+from code_reviewer.models import PRCandidate, ReviewerOutput, TokenUsage
 
 
 def _collect_text_from_assistant(message: AssistantMessage) -> str:

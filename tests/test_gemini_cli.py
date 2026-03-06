@@ -1,5 +1,5 @@
-from pr_reviewer.models import PRCandidate
-from pr_reviewer.reviewers.gemini_cli import (
+from code_reviewer.models import PRCandidate
+from code_reviewer.reviewers.gemini_cli import (
     _build_gemini_prompt_command,
     _build_gemini_review_command,
     _extract_gemini_review_text,

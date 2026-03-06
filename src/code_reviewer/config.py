@@ -27,7 +27,7 @@ class AppConfig(BaseModel):
     include_reviewer_stderr: bool = True
     post_mode: str = "pr_comment"
     output_dir: str = "./reviews"
-    state_file: str = "./.state/pr-reviewer-state.json"
+    state_file: str = "./.state/code-reviewer-state.json"
     clone_root: str = "./.tmp/workspaces"
     claude_timeout_seconds: int = Field(default=900, ge=30)
     codex_timeout_seconds: int = Field(default=900, ge=30)

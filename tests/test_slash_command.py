@@ -2,10 +2,10 @@ import asyncio
 from datetime import UTC, datetime
 from pathlib import Path
 
-from pr_reviewer.config import AppConfig
-from pr_reviewer.github import GitHubClient
-from pr_reviewer.models import PRCandidate, ProcessedState, ReviewerOutput, SlashCommandTrigger
-from pr_reviewer.processor import process_candidate
+from code_reviewer.config import AppConfig
+from code_reviewer.github import GitHubClient
+from code_reviewer.models import PRCandidate, ProcessedState, ReviewerOutput, SlashCommandTrigger
+from code_reviewer.processor import process_candidate
 
 
 def test_slash_command_trigger_defaults() -> None:
@@ -142,13 +142,13 @@ def test_slash_command_triggers_review(monkeypatch, tmp_path) -> None:
     async def fake_codex(_pr, _workdir, _timeout, *, model=None, reasoning_effort=None):
         return ok_output
 
-    monkeypatch.setattr("pr_reviewer.processor.run_codex_review", fake_codex)
+    monkeypatch.setattr("code_reviewer.processor.run_codex_review", fake_codex)
     monkeypatch.setattr(
-        "pr_reviewer.processor.write_review_markdown",
+        "code_reviewer.processor.write_review_markdown",
         lambda *_args, **_kwargs: tmp_path / "out.md",
     )
     monkeypatch.setattr(
-        "pr_reviewer.processor.write_reviewer_sidecar_markdown",
+        "code_reviewer.processor.write_reviewer_sidecar_markdown",
         lambda *_args, **_kwargs: tmp_path / "out.raw.md",
     )
 
@@ -234,13 +234,13 @@ def test_slash_command_force_reviews_even_when_already_reviewed(monkeypatch, tmp
     async def fake_codex(_pr, _workdir, _timeout, *, model=None, reasoning_effort=None):
         return ok_output
 
-    monkeypatch.setattr("pr_reviewer.processor.run_codex_review", fake_codex)
+    monkeypatch.setattr("code_reviewer.processor.run_codex_review", fake_codex)
     monkeypatch.setattr(
-        "pr_reviewer.processor.write_review_markdown",
+        "code_reviewer.processor.write_review_markdown",
         lambda *_args, **_kwargs: tmp_path / "out.md",
     )
     monkeypatch.setattr(
-        "pr_reviewer.processor.write_reviewer_sidecar_markdown",
+        "code_reviewer.processor.write_reviewer_sidecar_markdown",
         lambda *_args, **_kwargs: tmp_path / "out.raw.md",
     )
 
@@ -307,13 +307,13 @@ def test_slash_command_full_flow_react_reply_review_post(monkeypatch, tmp_path) 
         api_calls.append("run_reviewer:codex")
         return ok_output
 
-    monkeypatch.setattr("pr_reviewer.processor.run_codex_review", fake_codex)
+    monkeypatch.setattr("code_reviewer.processor.run_codex_review", fake_codex)
     monkeypatch.setattr(
-        "pr_reviewer.processor.write_review_markdown",
+        "code_reviewer.processor.write_review_markdown",
         lambda *_args, **_kwargs: tmp_path / "out.md",
     )
     monkeypatch.setattr(
-        "pr_reviewer.processor.write_reviewer_sidecar_markdown",
+        "code_reviewer.processor.write_reviewer_sidecar_markdown",
         lambda *_args, **_kwargs: tmp_path / "out.raw.md",
     )
 

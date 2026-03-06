@@ -1,5 +1,5 @@
-from pr_reviewer.models import PRCandidate
-from pr_reviewer.reviewers.codex_cli import (
+from code_reviewer.models import PRCandidate
+from code_reviewer.reviewers.codex_cli import (
     _build_codex_exec_command,
     _build_codex_review_command,
     _codex_review_json_unsupported,

@@ -2,7 +2,7 @@ import pytest
 import typer
 from typer.testing import CliRunner
 
-from pr_reviewer.cli import (
+from code_reviewer.cli import (
     _apply_bool_override,
     _apply_codex_backend_override,
     _apply_enabled_reviewer_override,
@@ -10,7 +10,7 @@ from pr_reviewer.cli import (
     _target_pr_urls_for_run_once,
     app,
 )
-from pr_reviewer.config import AppConfig
+from code_reviewer.config import AppConfig
 
 
 def test_apply_enabled_reviewer_override_none_keeps_config() -> None:

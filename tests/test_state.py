@@ -3,8 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from pr_reviewer.models import ProcessedState
-from pr_reviewer.state import StateStore
+from code_reviewer.models import ProcessedState
+from code_reviewer.state import StateStore
 
 
 def test_state_round_trip(tmp_path: Path) -> None:

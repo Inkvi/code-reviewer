@@ -9,24 +9,24 @@ import typer
 from pydantic import ValidationError
 from rich.table import Table
 
-from pr_reviewer.config import AppConfig, load_config
-from pr_reviewer.daemon import run_cycle, start_daemon
-from pr_reviewer.github import GitHubClient
-from pr_reviewer.local_review import (
+from code_reviewer.config import AppConfig, load_config
+from code_reviewer.daemon import run_cycle, start_daemon
+from code_reviewer.github import GitHubClient
+from code_reviewer.local_review import (
     build_local_candidate,
     gather_diff_metadata,
     resolve_diff_refs,
     resolve_head_sha,
     validate_git_repo,
 )
-from pr_reviewer.logger import console, error, info, redirect_to_stderr
-from pr_reviewer.models import ProcessingResult
-from pr_reviewer.preflight import run_preflight
-from pr_reviewer.processor import process_candidate, process_local_review
-from pr_reviewer.state import StateStore
-from pr_reviewer.workspace import PRWorkspace
+from code_reviewer.logger import console, error, info, redirect_to_stderr
+from code_reviewer.models import ProcessingResult
+from code_reviewer.preflight import run_preflight
+from code_reviewer.processor import process_candidate, process_local_review
+from code_reviewer.state import StateStore
+from code_reviewer.workspace import PRWorkspace
 
-app = typer.Typer(add_completion=False, help="PR review daemon")
+app = typer.Typer(add_completion=False, help="AI code review tool")
 ConfigOption = Annotated[
     Path,
     typer.Option(
@@ -452,7 +452,7 @@ def check_command(
     )
     preflight = run_preflight(cfg)
 
-    table = Table(title="pr-reviewer check")
+    table = Table(title="code-reviewer check")
     table.add_column("Item")
     table.add_column("Value")
     table.add_row("GitHub owners", ", ".join(cfg.github_owners))

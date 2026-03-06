@@ -1,8 +1,8 @@
 from datetime import UTC, datetime
 from pathlib import Path
 
-from pr_reviewer.models import PRCandidate, ReviewerOutput
-from pr_reviewer.output import write_review_markdown, write_reviewer_sidecar_markdown
+from code_reviewer.models import PRCandidate, ReviewerOutput
+from code_reviewer.output import write_review_markdown, write_reviewer_sidecar_markdown
 
 
 def test_write_review_markdown(tmp_path: Path) -> None:

@@ -1,10 +1,10 @@
 import subprocess
 from pathlib import Path
 
-from pr_reviewer.config import AppConfig
-from pr_reviewer.github import GitHubClient
-from pr_reviewer.models import PRCandidate
-from pr_reviewer.state import StateStore
+from code_reviewer.config import AppConfig
+from code_reviewer.github import GitHubClient
+from code_reviewer.models import PRCandidate
+from code_reviewer.state import StateStore
 
 
 def test_discover_pr_candidates_skips_excluded_repo_and_sets_latest_rerequest(monkeypatch) -> None:
@@ -62,8 +62,8 @@ def test_discover_pr_candidates_skips_excluded_repo_and_sets_latest_rerequest(mo
             stderr="",
         )
 
-    monkeypatch.setattr("pr_reviewer.github.run_json", fake_run_json)
-    monkeypatch.setattr("pr_reviewer.github.run_command", fake_run_command)
+    monkeypatch.setattr("code_reviewer.github.run_json", fake_run_json)
+    monkeypatch.setattr("code_reviewer.github.run_command", fake_run_command)
 
     candidates = client.discover_pr_candidates(config)
 
@@ -110,9 +110,9 @@ def test_discover_pr_candidates_warns_and_continues_when_events_fail(monkeypatch
     def fake_run_command(*_args, **_kwargs):  # noqa: ANN001
         raise RuntimeError("events API unavailable")
 
-    monkeypatch.setattr("pr_reviewer.github.run_json", fake_run_json)
-    monkeypatch.setattr("pr_reviewer.github.run_command", fake_run_command)
-    monkeypatch.setattr("pr_reviewer.github.warn", warnings.append)
+    monkeypatch.setattr("code_reviewer.github.run_json", fake_run_json)
+    monkeypatch.setattr("code_reviewer.github.run_command", fake_run_command)
+    monkeypatch.setattr("code_reviewer.github.warn", warnings.append)
 
     candidates = client.discover_pr_candidates(config)
 
@@ -177,8 +177,8 @@ def test_discover_pr_candidates_queries_all_configured_owners(monkeypatch) -> No
             stderr="",
         )
 
-    monkeypatch.setattr("pr_reviewer.github.run_json", fake_run_json)
-    monkeypatch.setattr("pr_reviewer.github.run_command", fake_run_command)
+    monkeypatch.setattr("code_reviewer.github.run_json", fake_run_json)
+    monkeypatch.setattr("code_reviewer.github.run_command", fake_run_command)
 
     candidates = client.discover_pr_candidates(config)
 
@@ -242,8 +242,8 @@ def test_get_pr_candidate_sets_latest_direct_rerequest(monkeypatch) -> None:
             stderr="",
         )
 
-    monkeypatch.setattr("pr_reviewer.github.run_json", fake_run_json)
-    monkeypatch.setattr("pr_reviewer.github.run_command", fake_run_command)
+    monkeypatch.setattr("code_reviewer.github.run_json", fake_run_json)
+    monkeypatch.setattr("code_reviewer.github.run_command", fake_run_command)
 
     pr = client.get_pr_candidate("https://github.com/polymerdao/obul/pull/64")
 
@@ -291,7 +291,7 @@ def test_get_pr_issue_comments_formats_and_limits(monkeypatch) -> None:
             stderr="",
         )
 
-    monkeypatch.setattr("pr_reviewer.github.run_command", fake_run_command)
+    monkeypatch.setattr("code_reviewer.github.run_command", fake_run_command)
 
     comments = client.get_pr_issue_comments(pr, max_comments=2, per_comment_chars=50)
 
@@ -321,7 +321,7 @@ def test_add_eyes_reaction_calls_gh_api(monkeypatch) -> None:
         captured_args.append(args)
         return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
 
-    monkeypatch.setattr("pr_reviewer.github.run_command", fake_run_command)
+    monkeypatch.setattr("code_reviewer.github.run_command", fake_run_command)
 
     client.add_eyes_reaction(pr)
 
@@ -343,7 +343,7 @@ def test_check_org_membership_returns_true_for_member(monkeypatch) -> None:
         assert "orgs/polymerdao/members/alice" in args[2]
         return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
 
-    monkeypatch.setattr("pr_reviewer.github.run_command", fake_run_command)
+    monkeypatch.setattr("code_reviewer.github.run_command", fake_run_command)
 
     assert client.check_org_membership("polymerdao", "alice") is True
 
@@ -354,7 +354,7 @@ def test_check_org_membership_returns_false_on_error(monkeypatch) -> None:
     def fake_run_command(args, **_kwargs):
         raise RuntimeError("not a member")
 
-    monkeypatch.setattr("pr_reviewer.github.run_command", fake_run_command)
+    monkeypatch.setattr("code_reviewer.github.run_command", fake_run_command)
 
     assert client.check_org_membership("polymerdao", "alice") is False
 
@@ -368,7 +368,7 @@ def test_add_reaction_to_comment_calls_gh_api(monkeypatch) -> None:
         captured_args.append(args)
         return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
 
-    monkeypatch.setattr("pr_reviewer.github.run_command", fake_run_command)
+    monkeypatch.setattr("code_reviewer.github.run_command", fake_run_command)
 
     client.add_reaction_to_comment("polymerdao", "obul", 123456, "eyes")
 
@@ -421,8 +421,8 @@ def test_discover_slash_command_candidates_finds_review_comment(monkeypatch) -> 
             return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
         return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
 
-    monkeypatch.setattr("pr_reviewer.github.run_json", fake_run_json)
-    monkeypatch.setattr("pr_reviewer.github.run_command", fake_run_command)
+    monkeypatch.setattr("code_reviewer.github.run_json", fake_run_json)
+    monkeypatch.setattr("code_reviewer.github.run_command", fake_run_command)
 
     store = StateStore(Path("/tmp/fake-state.json"))
     store._data = {}
@@ -481,8 +481,8 @@ def test_discover_slash_command_candidates_detects_force(monkeypatch) -> None:
             )
         return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
 
-    monkeypatch.setattr("pr_reviewer.github.run_json", fake_run_json)
-    monkeypatch.setattr("pr_reviewer.github.run_command", fake_run_command)
+    monkeypatch.setattr("code_reviewer.github.run_json", fake_run_json)
+    monkeypatch.setattr("code_reviewer.github.run_command", fake_run_command)
 
     store = StateStore(Path("/tmp/fake-state.json"))
     store._data = {}
@@ -523,8 +523,8 @@ def test_discover_slash_command_candidates_skips_already_processed(monkeypatch) 
             )
         return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
 
-    monkeypatch.setattr("pr_reviewer.github.run_json", fake_run_json)
-    monkeypatch.setattr("pr_reviewer.github.run_command", fake_run_command)
+    monkeypatch.setattr("code_reviewer.github.run_json", fake_run_json)
+    monkeypatch.setattr("code_reviewer.github.run_command", fake_run_command)
 
     store = StateStore(Path("/tmp/fake-state.json"))
     store._data = {"polymerdao/obul#64": {"last_slash_command_id": 123456}}
@@ -582,8 +582,8 @@ def test_discover_slash_command_candidates_rejects_unauthorized_user(monkeypatch
             raise RuntimeError("not a member")
         return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
 
-    monkeypatch.setattr("pr_reviewer.github.run_json", fake_run_json)
-    monkeypatch.setattr("pr_reviewer.github.run_command", fake_run_command)
+    monkeypatch.setattr("code_reviewer.github.run_json", fake_run_json)
+    monkeypatch.setattr("code_reviewer.github.run_command", fake_run_command)
 
     store = StateStore(Path("/tmp/fake-state.json"))
     store._data = {}

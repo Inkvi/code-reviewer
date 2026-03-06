@@ -2,10 +2,10 @@ import asyncio
 from datetime import UTC, datetime
 from pathlib import Path
 
-from pr_reviewer.config import AppConfig
-from pr_reviewer.github import GitHubClient
-from pr_reviewer.models import PRCandidate, ProcessedState, ReviewerOutput
-from pr_reviewer.processor import (
+from code_reviewer.config import AppConfig
+from code_reviewer.github import GitHubClient
+from code_reviewer.models import PRCandidate, ProcessedState, ReviewerOutput
+from code_reviewer.processor import (
     _check_pr_head_changed,
     _compute_processing_decision,
     _NewCommitDetected,
@@ -15,7 +15,7 @@ from pr_reviewer.processor import (
     _start_codex_review_task,
     process_candidate,
 )
-from pr_reviewer.reviewers.triage import TriageResult
+from code_reviewer.reviewers.triage import TriageResult
 
 
 def _sample_pr(
@@ -136,8 +136,10 @@ def test_start_codex_review_task_uses_cli_backend(monkeypatch) -> None:
     async def fake_codex_agents(*_args, **_kwargs):  # noqa: ANN001
         raise AssertionError("agents backend should not be called")
 
-    monkeypatch.setattr("pr_reviewer.processor.run_codex_review", fake_codex_cli)
-    monkeypatch.setattr("pr_reviewer.processor.run_codex_review_via_agents_sdk", fake_codex_agents)
+    monkeypatch.setattr("code_reviewer.processor.run_codex_review", fake_codex_cli)
+    monkeypatch.setattr(
+        "code_reviewer.processor.run_codex_review_via_agents_sdk", fake_codex_agents,
+    )
 
     cfg = AppConfig(
         github_orgs=["polymerdao"],
@@ -171,8 +173,10 @@ def test_start_codex_review_task_uses_agents_backend(monkeypatch) -> None:
         assert reasoning_effort == "medium"
         return await _ok_output("codex")
 
-    monkeypatch.setattr("pr_reviewer.processor.run_codex_review", fake_codex_cli)
-    monkeypatch.setattr("pr_reviewer.processor.run_codex_review_via_agents_sdk", fake_codex_agents)
+    monkeypatch.setattr("code_reviewer.processor.run_codex_review", fake_codex_cli)
+    monkeypatch.setattr(
+        "code_reviewer.processor.run_codex_review_via_agents_sdk", fake_codex_agents,
+    )
 
     cfg = AppConfig(
         github_orgs=["polymerdao"],
@@ -271,7 +275,7 @@ def _mock_triage_full_review(monkeypatch) -> None:
     """Add run_triage mock that returns FULL_REVIEW to a test."""
     async def fake_triage(*args, **kwargs):
         return TriageResult.FULL_REVIEW
-    monkeypatch.setattr("pr_reviewer.processor.run_triage", fake_triage)
+    monkeypatch.setattr("code_reviewer.processor.run_triage", fake_triage)
 
 
 def test_processes_on_bootstrap_when_state_missing(monkeypatch, tmp_path) -> None:
@@ -296,13 +300,13 @@ def test_processes_on_bootstrap_when_state_missing(monkeypatch, tmp_path) -> Non
     async def fake_codex(_pr, _workdir, _timeout, *, model=None, reasoning_effort=None):  # noqa: ANN001
         return ok_output
 
-    monkeypatch.setattr("pr_reviewer.processor.run_codex_review", fake_codex)
+    monkeypatch.setattr("code_reviewer.processor.run_codex_review", fake_codex)
     monkeypatch.setattr(
-        "pr_reviewer.processor.write_review_markdown",
+        "code_reviewer.processor.write_review_markdown",
         lambda *_args, **_kwargs: tmp_path / "out.md",
     )
     monkeypatch.setattr(
-        "pr_reviewer.processor.write_reviewer_sidecar_markdown",
+        "code_reviewer.processor.write_reviewer_sidecar_markdown",
         lambda *_args, **_kwargs: tmp_path / "out.raw.md",
     )
 
@@ -344,13 +348,13 @@ def test_process_candidate_adds_eyes_reaction(monkeypatch, tmp_path) -> None:
     async def fake_codex(_pr, _workdir, _timeout, *, model=None, reasoning_effort=None):  # noqa: ANN001
         return ok_output
 
-    monkeypatch.setattr("pr_reviewer.processor.run_codex_review", fake_codex)
+    monkeypatch.setattr("code_reviewer.processor.run_codex_review", fake_codex)
     monkeypatch.setattr(
-        "pr_reviewer.processor.write_review_markdown",
+        "code_reviewer.processor.write_review_markdown",
         lambda *_args, **_kwargs: tmp_path / "out.md",
     )
     monkeypatch.setattr(
-        "pr_reviewer.processor.write_reviewer_sidecar_markdown",
+        "code_reviewer.processor.write_reviewer_sidecar_markdown",
         lambda *_args, **_kwargs: tmp_path / "out.raw.md",
     )
 
@@ -372,7 +376,7 @@ def test_skips_without_new_rerequest_after_processed(monkeypatch, tmp_path) -> N
     client = GitHubClient(viewer_login="Inkvi")
 
     monkeypatch.setattr(
-        "pr_reviewer.processor.run_codex_review",
+        "code_reviewer.processor.run_codex_review",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(
             AssertionError("reviewer should not run when no new trigger exists")
         ),
@@ -422,13 +426,13 @@ def test_processes_on_newer_direct_rerequest(monkeypatch, tmp_path) -> None:
     async def fake_codex(_pr, _workdir, _timeout, *, model=None, reasoning_effort=None):  # noqa: ANN001
         return ok_output
 
-    monkeypatch.setattr("pr_reviewer.processor.run_codex_review", fake_codex)
+    monkeypatch.setattr("code_reviewer.processor.run_codex_review", fake_codex)
     monkeypatch.setattr(
-        "pr_reviewer.processor.write_review_markdown",
+        "code_reviewer.processor.write_review_markdown",
         lambda *_args, **_kwargs: tmp_path / "out.md",
     )
     monkeypatch.setattr(
-        "pr_reviewer.processor.write_reviewer_sidecar_markdown",
+        "code_reviewer.processor.write_reviewer_sidecar_markdown",
         lambda *_args, **_kwargs: tmp_path / "out.raw.md",
     )
 
@@ -482,13 +486,13 @@ def test_rerequest_posts_starting_review_comment(monkeypatch, tmp_path) -> None:
     async def fake_codex(_pr, _workdir, _timeout, *, model=None, reasoning_effort=None):  # noqa: ANN001
         return ok_output
 
-    monkeypatch.setattr("pr_reviewer.processor.run_codex_review", fake_codex)
+    monkeypatch.setattr("code_reviewer.processor.run_codex_review", fake_codex)
     monkeypatch.setattr(
-        "pr_reviewer.processor.write_review_markdown",
+        "code_reviewer.processor.write_review_markdown",
         lambda *_args, **_kwargs: tmp_path / "out.md",
     )
     monkeypatch.setattr(
-        "pr_reviewer.processor.write_reviewer_sidecar_markdown",
+        "code_reviewer.processor.write_reviewer_sidecar_markdown",
         lambda *_args, **_kwargs: tmp_path / "out.raw.md",
     )
 
@@ -538,13 +542,13 @@ def test_bootstrap_does_not_post_rerequest_comment(monkeypatch, tmp_path) -> Non
     async def fake_codex(_pr, _workdir, _timeout, *, model=None, reasoning_effort=None):  # noqa: ANN001
         return ok_output
 
-    monkeypatch.setattr("pr_reviewer.processor.run_codex_review", fake_codex)
+    monkeypatch.setattr("code_reviewer.processor.run_codex_review", fake_codex)
     monkeypatch.setattr(
-        "pr_reviewer.processor.write_review_markdown",
+        "code_reviewer.processor.write_review_markdown",
         lambda *_args, **_kwargs: tmp_path / "out.md",
     )
     monkeypatch.setattr(
-        "pr_reviewer.processor.write_reviewer_sidecar_markdown",
+        "code_reviewer.processor.write_reviewer_sidecar_markdown",
         lambda *_args, **_kwargs: tmp_path / "out.raw.md",
     )
 
@@ -588,13 +592,13 @@ def test_rerequest_comment_disabled_by_config(monkeypatch, tmp_path) -> None:
     async def fake_codex(_pr, _workdir, _timeout, *, model=None, reasoning_effort=None):  # noqa: ANN001
         return ok_output
 
-    monkeypatch.setattr("pr_reviewer.processor.run_codex_review", fake_codex)
+    monkeypatch.setattr("code_reviewer.processor.run_codex_review", fake_codex)
     monkeypatch.setattr(
-        "pr_reviewer.processor.write_review_markdown",
+        "code_reviewer.processor.write_review_markdown",
         lambda *_args, **_kwargs: tmp_path / "out.md",
     )
     monkeypatch.setattr(
-        "pr_reviewer.processor.write_reviewer_sidecar_markdown",
+        "code_reviewer.processor.write_reviewer_sidecar_markdown",
         lambda *_args, **_kwargs: tmp_path / "out.raw.md",
     )
 
@@ -632,7 +636,7 @@ def test_does_not_advance_trigger_checkpoint_on_failure(monkeypatch, tmp_path) -
     async def fake_codex(_pr, _workdir, _timeout, *, model=None, reasoning_effort=None):  # noqa: ANN001
         raise RuntimeError("codex boom")
 
-    monkeypatch.setattr("pr_reviewer.processor.run_codex_review", fake_codex)
+    monkeypatch.setattr("code_reviewer.processor.run_codex_review", fake_codex)
 
     cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["codex"])
     result = asyncio.run(
@@ -674,7 +678,7 @@ def test_use_saved_review_still_bypasses_generation(monkeypatch, tmp_path) -> No
         lambda _self, _pr, body_file: posted.append(body_file),
     )
     monkeypatch.setattr(
-        "pr_reviewer.processor.run_codex_review",
+        "code_reviewer.processor.run_codex_review",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(
             AssertionError("reviewer should not run when using saved review")
         ),
@@ -730,13 +734,13 @@ def test_saved_review_existing_does_not_skip_normal_flow(monkeypatch, tmp_path) 
     async def fake_codex(_pr, _workdir, _timeout, *, model=None, reasoning_effort=None):  # noqa: ANN001
         return ok_output
 
-    monkeypatch.setattr("pr_reviewer.processor.run_codex_review", fake_codex)
+    monkeypatch.setattr("code_reviewer.processor.run_codex_review", fake_codex)
     monkeypatch.setattr(
-        "pr_reviewer.processor.write_review_markdown",
+        "code_reviewer.processor.write_review_markdown",
         lambda *_args, **_kwargs: tmp_path / "out.md",
     )
     monkeypatch.setattr(
-        "pr_reviewer.processor.write_reviewer_sidecar_markdown",
+        "code_reviewer.processor.write_reviewer_sidecar_markdown",
         lambda *_args, **_kwargs: tmp_path / "out.raw.md",
     )
 
@@ -812,20 +816,20 @@ def test_process_candidate_reconcile_uses_enabled_reviewer_order(monkeypatch, tm
         seen_reconciler_reasoning_effort = reconciler_reasoning_effort
         return "### Findings\n- No material findings.\n\n### Test Gaps\n- None noted.", None
 
-    monkeypatch.setattr("pr_reviewer.processor.run_codex_review", fake_codex)
-    monkeypatch.setattr("pr_reviewer.processor.run_gemini_review", fake_gemini)
+    monkeypatch.setattr("code_reviewer.processor.run_codex_review", fake_codex)
+    monkeypatch.setattr("code_reviewer.processor.run_gemini_review", fake_gemini)
     monkeypatch.setattr(
         GitHubClient,
         "get_pr_issue_comments",
         lambda _self, _pr: ["@alice (2026-03-03T00:00:00Z): please verify x"],
     )
-    monkeypatch.setattr("pr_reviewer.processor.reconcile_reviews", fake_reconcile)
+    monkeypatch.setattr("code_reviewer.processor.reconcile_reviews", fake_reconcile)
     monkeypatch.setattr(
-        "pr_reviewer.processor.write_review_markdown",
+        "code_reviewer.processor.write_review_markdown",
         lambda *_args, **_kwargs: tmp_path / "out.md",
     )
     monkeypatch.setattr(
-        "pr_reviewer.processor.write_reviewer_sidecar_markdown",
+        "code_reviewer.processor.write_reviewer_sidecar_markdown",
         lambda *_args, **_kwargs: tmp_path / "out.raw.md",
     )
 
@@ -907,16 +911,16 @@ def test_process_candidate_reconcile_falls_back_to_claude_settings(monkeypatch, 
         seen_reconciler_reasoning_effort = reconciler_reasoning_effort
         return "### Findings\n- No material findings.\n\n### Test Gaps\n- None noted.", None
 
-    monkeypatch.setattr("pr_reviewer.processor.run_codex_review", fake_codex)
-    monkeypatch.setattr("pr_reviewer.processor.run_gemini_review", fake_gemini)
+    monkeypatch.setattr("code_reviewer.processor.run_codex_review", fake_codex)
+    monkeypatch.setattr("code_reviewer.processor.run_gemini_review", fake_gemini)
     monkeypatch.setattr(GitHubClient, "get_pr_issue_comments", lambda _self, _pr: [])
-    monkeypatch.setattr("pr_reviewer.processor.reconcile_reviews", fake_reconcile)
+    monkeypatch.setattr("code_reviewer.processor.reconcile_reviews", fake_reconcile)
     monkeypatch.setattr(
-        "pr_reviewer.processor.write_review_markdown",
+        "code_reviewer.processor.write_review_markdown",
         lambda *_args, **_kwargs: tmp_path / "out.md",
     )
     monkeypatch.setattr(
-        "pr_reviewer.processor.write_reviewer_sidecar_markdown",
+        "code_reviewer.processor.write_reviewer_sidecar_markdown",
         lambda *_args, **_kwargs: tmp_path / "out.raw.md",
     )
 
@@ -1006,13 +1010,13 @@ def test_process_candidate_restarts_on_new_commit(monkeypatch, tmp_path) -> None
             return "newcommitsha1"
         return "newcommitsha1"
 
-    monkeypatch.setattr("pr_reviewer.processor.run_codex_review", fake_codex)
+    monkeypatch.setattr("code_reviewer.processor.run_codex_review", fake_codex)
     monkeypatch.setattr(
-        "pr_reviewer.processor.write_review_markdown",
+        "code_reviewer.processor.write_review_markdown",
         lambda *_args, **_kwargs: tmp_path / "out.md",
     )
     monkeypatch.setattr(
-        "pr_reviewer.processor.write_reviewer_sidecar_markdown",
+        "code_reviewer.processor.write_reviewer_sidecar_markdown",
         lambda *_args, **_kwargs: tmp_path / "out.raw.md",
     )
 
@@ -1028,7 +1032,9 @@ def test_process_candidate_restarts_on_new_commit(monkeypatch, tmp_path) -> None
             raise _NewCommitDetected("newcommitsha1")
         return await original_run_reviewers(config, client, pr, workdir)
 
-    monkeypatch.setattr("pr_reviewer.processor._run_reviewers_with_monitoring", patched_run_reviewers)
+    monkeypatch.setattr(
+        "code_reviewer.processor._run_reviewers_with_monitoring", patched_run_reviewers,
+    )
     cfg = AppConfig(
         github_orgs=["polymerdao"],
         enabled_reviewers=["codex"],
@@ -1053,13 +1059,15 @@ def test_process_candidate_exhausts_restarts(monkeypatch, tmp_path) -> None:
     async def patched_run_reviewers(_config, _client, _pr, _workdir):  # noqa: ANN001
         raise _NewCommitDetected("newersha")
 
-    monkeypatch.setattr("pr_reviewer.processor._run_reviewers_with_monitoring", patched_run_reviewers)
     monkeypatch.setattr(
-        "pr_reviewer.processor.write_review_markdown",
+        "code_reviewer.processor._run_reviewers_with_monitoring", patched_run_reviewers,
+    )
+    monkeypatch.setattr(
+        "code_reviewer.processor.write_review_markdown",
         lambda *_args, **_kwargs: tmp_path / "out.md",
     )
     monkeypatch.setattr(
-        "pr_reviewer.processor.write_reviewer_sidecar_markdown",
+        "code_reviewer.processor.write_reviewer_sidecar_markdown",
         lambda *_args, **_kwargs: tmp_path / "out.raw.md",
     )
 
@@ -1105,14 +1113,14 @@ def test_process_candidate_no_restart_when_disabled(monkeypatch, tmp_path) -> No
         sha_checked = True
         return "newsha"
 
-    monkeypatch.setattr("pr_reviewer.processor.run_codex_review", fake_codex)
+    monkeypatch.setattr("code_reviewer.processor.run_codex_review", fake_codex)
     monkeypatch.setattr(GitHubClient, "get_pr_head_sha", fake_get_head_sha)
     monkeypatch.setattr(
-        "pr_reviewer.processor.write_review_markdown",
+        "code_reviewer.processor.write_review_markdown",
         lambda *_args, **_kwargs: tmp_path / "out.md",
     )
     monkeypatch.setattr(
-        "pr_reviewer.processor.write_reviewer_sidecar_markdown",
+        "code_reviewer.processor.write_reviewer_sidecar_markdown",
         lambda *_args, **_kwargs: tmp_path / "out.raw.md",
     )
 
@@ -1139,7 +1147,7 @@ def test_process_candidate_triage_simple_runs_lightweight(monkeypatch, tmp_path)
     async def fake_triage(*args, **kwargs):
         return TriageResult.SIMPLE
 
-    monkeypatch.setattr("pr_reviewer.processor.run_triage", fake_triage)
+    monkeypatch.setattr("code_reviewer.processor.run_triage", fake_triage)
 
     # Mock lightweight review
     async def fake_lightweight(*args, **kwargs):
@@ -1148,7 +1156,7 @@ def test_process_candidate_triage_simple_runs_lightweight(monkeypatch, tmp_path)
             None,
         )
 
-    monkeypatch.setattr("pr_reviewer.processor.run_lightweight_review", fake_lightweight)
+    monkeypatch.setattr("code_reviewer.processor.run_lightweight_review", fake_lightweight)
 
     # Full reviewers should NOT be called
     async def _boom_claude(*a, **kw):
@@ -1157,10 +1165,10 @@ def test_process_candidate_triage_simple_runs_lightweight(monkeypatch, tmp_path)
     async def _boom_codex(*a, **kw):
         raise AssertionError("should not run")
 
-    monkeypatch.setattr("pr_reviewer.processor.run_claude_review", _boom_claude)
-    monkeypatch.setattr("pr_reviewer.processor.run_codex_review", _boom_codex)
+    monkeypatch.setattr("code_reviewer.processor.run_claude_review", _boom_claude)
+    monkeypatch.setattr("code_reviewer.processor.run_codex_review", _boom_codex)
     monkeypatch.setattr(
-        "pr_reviewer.processor.write_review_markdown",
+        "code_reviewer.processor.write_review_markdown",
         lambda *_args, **_kwargs: tmp_path / "out.md",
     )
 
@@ -1183,7 +1191,7 @@ def test_process_candidate_triage_full_runs_normal_pipeline(monkeypatch, tmp_pat
     async def fake_triage(*args, **kwargs):
         return TriageResult.FULL_REVIEW
 
-    monkeypatch.setattr("pr_reviewer.processor.run_triage", fake_triage)
+    monkeypatch.setattr("code_reviewer.processor.run_triage", fake_triage)
 
     # Mock the normal reviewers
     async def fake_claude(*args, **kwargs):
@@ -1192,20 +1200,20 @@ def test_process_candidate_triage_full_runs_normal_pipeline(monkeypatch, tmp_pat
     async def fake_codex(*args, **kwargs):
         return await _ok_output("codex")
 
-    monkeypatch.setattr("pr_reviewer.processor.run_claude_review", fake_claude)
-    monkeypatch.setattr("pr_reviewer.processor.run_codex_review", fake_codex)
+    monkeypatch.setattr("code_reviewer.processor.run_claude_review", fake_claude)
+    monkeypatch.setattr("code_reviewer.processor.run_codex_review", fake_codex)
 
     async def fake_reconcile(*args, **kwargs):
         return "### Findings\n- No material findings.\n\n### Test Gaps\n- None noted.", None
 
-    monkeypatch.setattr("pr_reviewer.processor.reconcile_reviews", fake_reconcile)
+    monkeypatch.setattr("code_reviewer.processor.reconcile_reviews", fake_reconcile)
     monkeypatch.setattr(GitHubClient, "get_pr_issue_comments", lambda _self, _pr: [])
     monkeypatch.setattr(
-        "pr_reviewer.processor.write_review_markdown",
+        "code_reviewer.processor.write_review_markdown",
         lambda *_args, **_kwargs: tmp_path / "out.md",
     )
     monkeypatch.setattr(
-        "pr_reviewer.processor.write_reviewer_sidecar_markdown",
+        "code_reviewer.processor.write_reviewer_sidecar_markdown",
         lambda *_args, **_kwargs: tmp_path / "out.raw.md",
     )
 
@@ -1228,7 +1236,7 @@ def test_process_candidate_triage_failure_falls_through_to_full(monkeypatch, tmp
     async def fake_triage(*args, **kwargs):
         return TriageResult.FULL_REVIEW
 
-    monkeypatch.setattr("pr_reviewer.processor.run_triage", fake_triage)
+    monkeypatch.setattr("code_reviewer.processor.run_triage", fake_triage)
 
     async def fake_claude(*args, **kwargs):
         return await _ok_output("claude")
@@ -1236,20 +1244,20 @@ def test_process_candidate_triage_failure_falls_through_to_full(monkeypatch, tmp
     async def fake_codex(*args, **kwargs):
         return await _ok_output("codex")
 
-    monkeypatch.setattr("pr_reviewer.processor.run_claude_review", fake_claude)
-    monkeypatch.setattr("pr_reviewer.processor.run_codex_review", fake_codex)
+    monkeypatch.setattr("code_reviewer.processor.run_claude_review", fake_claude)
+    monkeypatch.setattr("code_reviewer.processor.run_codex_review", fake_codex)
 
     async def fake_reconcile(*args, **kwargs):
         return "### Findings\n- No material findings.\n\n### Test Gaps\n- None noted.", None
 
-    monkeypatch.setattr("pr_reviewer.processor.reconcile_reviews", fake_reconcile)
+    monkeypatch.setattr("code_reviewer.processor.reconcile_reviews", fake_reconcile)
     monkeypatch.setattr(GitHubClient, "get_pr_issue_comments", lambda _self, _pr: [])
     monkeypatch.setattr(
-        "pr_reviewer.processor.write_review_markdown",
+        "code_reviewer.processor.write_review_markdown",
         lambda *_args, **_kwargs: tmp_path / "out.md",
     )
     monkeypatch.setattr(
-        "pr_reviewer.processor.write_reviewer_sidecar_markdown",
+        "code_reviewer.processor.write_reviewer_sidecar_markdown",
         lambda *_args, **_kwargs: tmp_path / "out.raw.md",
     )
 
@@ -1271,29 +1279,29 @@ def test_process_candidate_lightweight_failure_falls_back_to_full(monkeypatch, t
     async def fake_triage(*args, **kwargs):
         return TriageResult.SIMPLE
 
-    monkeypatch.setattr("pr_reviewer.processor.run_triage", fake_triage)
+    monkeypatch.setattr("code_reviewer.processor.run_triage", fake_triage)
 
     async def fake_lightweight(*args, **kwargs):
         raise RuntimeError("lightweight backend timeout")
 
-    monkeypatch.setattr("pr_reviewer.processor.run_lightweight_review", fake_lightweight)
+    monkeypatch.setattr("code_reviewer.processor.run_lightweight_review", fake_lightweight)
 
     async def fake_codex(*args, **kwargs):
         return await _ok_output("codex")
 
-    monkeypatch.setattr("pr_reviewer.processor.run_codex_review", fake_codex)
+    monkeypatch.setattr("code_reviewer.processor.run_codex_review", fake_codex)
 
     async def fake_reconcile(*args, **kwargs):
         return "### Findings\n- No material findings.\n\n### Test Gaps\n- None noted.", None
 
-    monkeypatch.setattr("pr_reviewer.processor.reconcile_reviews", fake_reconcile)
+    monkeypatch.setattr("code_reviewer.processor.reconcile_reviews", fake_reconcile)
     monkeypatch.setattr(GitHubClient, "get_pr_issue_comments", lambda _self, _pr: [])
     monkeypatch.setattr(
-        "pr_reviewer.processor.write_review_markdown",
+        "code_reviewer.processor.write_review_markdown",
         lambda *_args, **_kwargs: tmp_path / "out.md",
     )
     monkeypatch.setattr(
-        "pr_reviewer.processor.write_reviewer_sidecar_markdown",
+        "code_reviewer.processor.write_reviewer_sidecar_markdown",
         lambda *_args, **_kwargs: tmp_path / "out.raw.md",
     )
 

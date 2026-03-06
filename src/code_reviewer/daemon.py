@@ -3,14 +3,14 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-from pr_reviewer.config import AppConfig
-from pr_reviewer.github import GitHubClient
-from pr_reviewer.logger import info, warn
-from pr_reviewer.models import PRCandidate
-from pr_reviewer.preflight import PreflightResult
-from pr_reviewer.processor import process_candidate
-from pr_reviewer.state import StateStore
-from pr_reviewer.workspace import PRWorkspace
+from code_reviewer.config import AppConfig
+from code_reviewer.github import GitHubClient
+from code_reviewer.logger import info, warn
+from code_reviewer.models import PRCandidate
+from code_reviewer.preflight import PreflightResult
+from code_reviewer.processor import process_candidate
+from code_reviewer.state import StateStore
+from code_reviewer.workspace import PRWorkspace
 
 
 async def run_cycle(

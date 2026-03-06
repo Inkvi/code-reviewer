@@ -3,8 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from pr_reviewer.models import PRCandidate, ReviewerOutput
-from pr_reviewer.reviewers.reconcile import reconcile_reviews
+from code_reviewer.models import PRCandidate, ReviewerOutput
+from code_reviewer.reviewers.reconcile import reconcile_reviews
 
 
 def _sample_pr() -> PRCandidate:
@@ -47,7 +47,7 @@ async def test_reconcile_reviews_uses_codex_backend(monkeypatch, tmp_path: Path)
         captured["reasoning_effort"] = reasoning_effort
         return "### Findings\n- No material findings.\n\n### Test Gaps\n- None noted."
 
-    monkeypatch.setattr("pr_reviewer.reviewers.reconcile.run_codex_prompt", fake_codex_prompt)
+    monkeypatch.setattr("code_reviewer.reviewers.reconcile.run_codex_prompt", fake_codex_prompt)
 
     result = await reconcile_reviews(
         _sample_pr(),
@@ -79,7 +79,7 @@ async def test_reconcile_reviews_uses_gemini_backend(monkeypatch, tmp_path: Path
         captured["model"] = model
         return "### Findings\n- No material findings.\n\n### Test Gaps\n- None noted."
 
-    monkeypatch.setattr("pr_reviewer.reviewers.reconcile.run_gemini_prompt", fake_gemini_prompt)
+    monkeypatch.setattr("code_reviewer.reviewers.reconcile.run_gemini_prompt", fake_gemini_prompt)
 
     result = await reconcile_reviews(
         _sample_pr(),

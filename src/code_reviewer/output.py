@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
-from pr_reviewer.models import PRCandidate, ReviewerOutput
+from code_reviewer.models import PRCandidate, ReviewerOutput
 
 
 def _versioned_stem(pr: PRCandidate, now: datetime | None = None) -> str:

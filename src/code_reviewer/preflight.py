@@ -4,8 +4,8 @@ import os
 import shutil
 from dataclasses import dataclass
 
-from pr_reviewer.config import AppConfig
-from pr_reviewer.shell import CommandError, run_command
+from code_reviewer.config import AppConfig
+from code_reviewer.shell import CommandError, run_command
 
 _GEMINI_CODE_REVIEW_EXTENSION = "code-review"
 

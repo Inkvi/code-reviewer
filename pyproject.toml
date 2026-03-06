@@ -1,7 +1,7 @@
 [project]
-name = "pr-reviewer"
+name = "code-reviewer"
 version = "0.1.0"
-description = "Daemon that reviews GitHub PRs with Claude Agent SDK and Codex"
+description = "AI code review daemon powered by Claude, Codex, and Gemini"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -20,7 +20,7 @@ dev = [
 ]
 
 [project.scripts]
-pr-reviewer = "pr_reviewer.cli:app"
+code-reviewer = "code_reviewer.cli:app"
 
 [build-system]
 requires = ["hatchling>=1.25.0"]
@@ -35,13 +35,13 @@ select = ["E", "F", "I", "UP", "B", "W"]
 
 [tool.ruff.lint.per-file-ignores]
 # Prompt template strings contain long lines by design.
-"src/pr_reviewer/reviewers/reconcile.py" = ["E501"]
-"src/pr_reviewer/reviewers/triage.py" = ["E501"]
-"src/pr_reviewer/reviewers/lightweight.py" = ["E501"]
+"src/code_reviewer/reviewers/reconcile.py" = ["E501"]
+"src/code_reviewer/reviewers/triage.py" = ["E501"]
+"src/code_reviewer/reviewers/lightweight.py" = ["E501"]
 
 [tool.pytest.ini_options]
 addopts = "-q"
 testpaths = ["tests"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/pr_reviewer"]
+packages = ["src/code_reviewer"]

@@ -1,4 +1,4 @@
-# pr-reviewer Project
+# code-reviewer Project
 
 ## Environment
 - Use `python3` not `python` (system has no `python` alias)
@@ -6,7 +6,7 @@
 - 4 pre-existing E501 violations in processor.py and test_processor.py — ignore these
 
 ## Project Structure
-- Source: `src/pr_reviewer/`
+- Source: `src/code_reviewer/`
 - Tests: `tests/`
 - Config: `pyproject.toml`, `config.example.toml`
 - All model interactions go through CLI/SDK runners (`_run_claude_prompt`, `run_codex_prompt`, `run_gemini_prompt`) — no direct API calls

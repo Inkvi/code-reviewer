@@ -4,8 +4,8 @@ import shutil
 from pathlib import Path
 from uuid import uuid4
 
-from pr_reviewer.models import PRCandidate
-from pr_reviewer.shell import run_command
+from code_reviewer.models import PRCandidate
+from code_reviewer.shell import run_command
 
 
 class PRWorkspace:

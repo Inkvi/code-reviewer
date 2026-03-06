@@ -5,11 +5,11 @@ import re
 from enum import Enum
 from pathlib import Path
 
-from pr_reviewer.logger import info, warn
-from pr_reviewer.models import PRCandidate
-from pr_reviewer.reviewers.claude_sdk import _run_claude_prompt
-from pr_reviewer.reviewers.codex_cli import run_codex_prompt
-from pr_reviewer.reviewers.gemini_cli import run_gemini_prompt
+from code_reviewer.logger import info, warn
+from code_reviewer.models import PRCandidate
+from code_reviewer.reviewers.claude_sdk import _run_claude_prompt
+from code_reviewer.reviewers.codex_cli import run_codex_prompt
+from code_reviewer.reviewers.gemini_cli import run_gemini_prompt
 
 
 class TriageResult(Enum):

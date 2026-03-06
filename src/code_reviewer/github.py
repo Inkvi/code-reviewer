@@ -7,13 +7,13 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Literal
 from urllib.parse import urlparse
 
-from pr_reviewer.config import AppConfig
-from pr_reviewer.logger import warn
-from pr_reviewer.models import PRCandidate, SlashCommandTrigger
-from pr_reviewer.shell import run_command, run_json
+from code_reviewer.config import AppConfig
+from code_reviewer.logger import warn
+from code_reviewer.models import PRCandidate, SlashCommandTrigger
+from code_reviewer.shell import run_command, run_json
 
 if TYPE_CHECKING:
-    from pr_reviewer.state import StateStore
+    from code_reviewer.state import StateStore
 
 _REVIEW_CMD_RE = re.compile(r"^\s*/review(?:\s+(force))?\s*$", re.MULTILINE)
 

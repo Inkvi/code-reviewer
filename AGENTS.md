@@ -2,19 +2,19 @@
 
 ## Project Structure & Module Organization
 This repository uses a `src/` layout.
-- `src/pr_reviewer/`: core application logic (CLI, daemon loop, GitHub integration, config/state, output).
-- `src/pr_reviewer/reviewers/`: reviewer backends and reconciliation helpers (`claude_sdk`, `codex_cli`, `codex_agents_sdk`).
+- `src/code_reviewer/`: core application logic (CLI, daemon loop, GitHub integration, config/state, output).
+- `src/code_reviewer/reviewers/`: reviewer backends and reconciliation helpers (`claude_sdk`, `codex_cli`, `codex_agents_sdk`).
 - `tests/`: pytest suite, generally mirrored by module name (for example, `test_processor.py` for `processor.py`).
 - `reviews/<org>/<repo>/`: latest review artifacts (`pr-<number>.md` and `pr-<number>.raw.md`) plus versioned history under `pr-<number>/`.
 - `config.example.toml`: baseline config template for local setup.
 
 ## Build, Test, and Development Commands
 - `uv sync --extra dev`: install runtime + dev dependencies.
-- `uv run pr-reviewer check`: run preflight checks and print runtime config summary.
-- `uv run pr-reviewer run-once`: execute one polling/review cycle.
-- `uv run pr-reviewer run-once --pr-url <PR_URL>`: review specific PR URL(s) directly.
-- `uv run pr-reviewer run-once --pr-url <PR_URL> --use-saved-review`: reuse existing saved review markdown and continue to posting/submission.
-- `uv run pr-reviewer start`: run the daemon continuously.
+- `uv run code-reviewer check`: run preflight checks and print runtime config summary.
+- `uv run code-reviewer run-once`: execute one polling/review cycle.
+- `uv run code-reviewer run-once --pr-url <PR_URL>`: review specific PR URL(s) directly.
+- `uv run code-reviewer run-once --pr-url <PR_URL> --use-saved-review`: reuse existing saved review markdown and continue to posting/submission.
+- `uv run code-reviewer start`: run the daemon continuously.
 - `uv run ruff check .`: lint.
 - `uv run ruff format .`: format code.
 - `uv run pytest`: run tests (`-q` is configured in `pyproject.toml`).

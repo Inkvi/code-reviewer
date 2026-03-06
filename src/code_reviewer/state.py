@@ -4,7 +4,7 @@ import json
 import os
 from pathlib import Path
 
-from pr_reviewer.models import ProcessedState
+from code_reviewer.models import ProcessedState
 
 
 class StateStore:

@@ -1,4 +1,4 @@
-# pr-reviewer
+# code-reviewer
 
 A Python daemon that monitors GitHub pull requests and generates reconciled reviews using:
 - Claude Agent SDK (`/review <PR_URL>`)
@@ -52,8 +52,8 @@ enabled_reviewers = ["claude", "codex"]
 Or override from CLI without editing config:
 
 ```bash
-uv run pr-reviewer run-once --enabled-reviewer codex
-uv run pr-reviewer start --enabled-reviewer claude --enabled-reviewer codex
+uv run code-reviewer run-once --enabled-reviewer codex
+uv run code-reviewer start --enabled-reviewer claude --enabled-reviewer codex
 ```
 
 Choose Codex backend:
@@ -95,16 +95,16 @@ trigger_mode = "rerequest_only"  # rerequest_only|rerequest_or_commit
 Or override backend from CLI:
 
 ```bash
-uv run pr-reviewer run-once --enabled-reviewer codex --codex-backend cli
-uv run pr-reviewer run-once --enabled-reviewer codex --codex-backend agents_sdk
-uv run pr-reviewer run-once --codex-model gpt-5.3-codex --codex-reasoning-effort high
-uv run pr-reviewer run-once --claude-model claude-sonnet-4-5 --claude-reasoning-effort medium
-uv run pr-reviewer run-once --reconciler-backend codex --reconciler-model gpt-5.3-codex
-uv run pr-reviewer run-once --reconciler-backend gemini --reconciler-model gemini-3.1-pro-preview
-uv run pr-reviewer run-once --reconciler-model claude-opus-4-1 --reconciler-reasoning-effort high
-uv run pr-reviewer run-once --pr-url https://github.com/<org>/<repo>/pull/<number> --auto-post-review
-uv run pr-reviewer run-once --pr-url https://github.com/<org>/<repo>/pull/<number> --use-saved-review --auto-post-review
-uv run pr-reviewer run-once --no-auto-post-review
+uv run code-reviewer run-once --enabled-reviewer codex --codex-backend cli
+uv run code-reviewer run-once --enabled-reviewer codex --codex-backend agents_sdk
+uv run code-reviewer run-once --codex-model gpt-5.3-codex --codex-reasoning-effort high
+uv run code-reviewer run-once --claude-model claude-sonnet-4-5 --claude-reasoning-effort medium
+uv run code-reviewer run-once --reconciler-backend codex --reconciler-model gpt-5.3-codex
+uv run code-reviewer run-once --reconciler-backend gemini --reconciler-model gemini-3.1-pro-preview
+uv run code-reviewer run-once --reconciler-model claude-opus-4-1 --reconciler-reasoning-effort high
+uv run code-reviewer run-once --pr-url https://github.com/<org>/<repo>/pull/<number> --auto-post-review
+uv run code-reviewer run-once --pr-url https://github.com/<org>/<repo>/pull/<number> --use-saved-review --auto-post-review
+uv run code-reviewer run-once --no-auto-post-review
 ```
 
 Optional auto submission:
@@ -125,10 +125,10 @@ include_reviewer_stderr = true
 ## Commands
 
 ```bash
-uv run pr-reviewer check
-uv run pr-reviewer run-once
-uv run pr-reviewer start
-uv run pr-reviewer run-once --pr-url https://github.com/<org>/<repo>/pull/<number>
+uv run code-reviewer check
+uv run code-reviewer run-once
+uv run code-reviewer start
+uv run code-reviewer run-once --pr-url https://github.com/<org>/<repo>/pull/<number>
 ```
 
 ## Behavior
@@ -188,8 +188,8 @@ slash_command_enabled = true
 **CLI override:**
 
 ```bash
-uv run pr-reviewer start --slash-command-enabled
-uv run pr-reviewer start --no-slash-command-enabled
+uv run code-reviewer start --slash-command-enabled
+uv run code-reviewer start --no-slash-command-enabled
 ```
 
 ## Lint and test

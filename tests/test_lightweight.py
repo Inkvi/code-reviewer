@@ -2,8 +2,8 @@ import asyncio
 from pathlib import Path
 from unittest.mock import patch
 
-from pr_reviewer.models import PRCandidate, TokenUsage
-from pr_reviewer.reviewers.lightweight import run_lightweight_review
+from code_reviewer.models import PRCandidate, TokenUsage
+from code_reviewer.reviewers.lightweight import run_lightweight_review
 
 
 def _sample_pr() -> PRCandidate:
@@ -31,7 +31,7 @@ def test_lightweight_review_claude_returns_formatted_output(tmp_path: Path) -> N
         return review_text, token_usage
 
     with patch(
-        "pr_reviewer.reviewers.lightweight._run_claude_prompt",
+        "code_reviewer.reviewers.lightweight._run_claude_prompt",
         side_effect=fake_claude_prompt,
     ):
         text, usage = asyncio.run(
@@ -52,7 +52,7 @@ def test_lightweight_review_gemini_backend(tmp_path: Path) -> None:
         return review_text
 
     with patch(
-        "pr_reviewer.reviewers.lightweight.run_gemini_prompt",
+        "code_reviewer.reviewers.lightweight.run_gemini_prompt",
         side_effect=fake_gemini_prompt,
     ):
         text, usage = asyncio.run(
@@ -72,7 +72,7 @@ def test_lightweight_review_codex_backend(tmp_path: Path) -> None:
         return review_text
 
     with patch(
-        "pr_reviewer.reviewers.lightweight.run_codex_prompt",
+        "code_reviewer.reviewers.lightweight.run_codex_prompt",
         side_effect=fake_codex_prompt,
     ):
         text, usage = asyncio.run(
@@ -93,7 +93,7 @@ def test_lightweight_review_prompt_contains_checklist_items(tmp_path: Path) -> N
         return "### Findings\n- No material findings.\n\n### Test Gaps\n- None noted.", None
 
     with patch(
-        "pr_reviewer.reviewers.lightweight._run_claude_prompt",
+        "code_reviewer.reviewers.lightweight._run_claude_prompt",
         side_effect=fake_claude_prompt,
     ):
         asyncio.run(

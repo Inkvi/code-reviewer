@@ -2,12 +2,12 @@ import asyncio
 
 import pytest
 
-from pr_reviewer.config import AppConfig
-from pr_reviewer.daemon import run_cycle, start_daemon
-from pr_reviewer.github import GitHubClient
-from pr_reviewer.models import PRCandidate, ProcessingResult, SlashCommandTrigger
-from pr_reviewer.preflight import PreflightResult
-from pr_reviewer.state import StateStore
+from code_reviewer.config import AppConfig
+from code_reviewer.daemon import run_cycle, start_daemon
+from code_reviewer.github import GitHubClient
+from code_reviewer.models import PRCandidate, ProcessingResult, SlashCommandTrigger
+from code_reviewer.preflight import PreflightResult
+from code_reviewer.state import StateStore
 
 
 def _sample_pr(number: int) -> PRCandidate:
@@ -32,9 +32,9 @@ def test_run_cycle_quiet_mode_suppresses_per_pr_logs(monkeypatch) -> None:
     logs: list[str] = []
     verbose_args: list[bool] = []
 
-    monkeypatch.setattr("pr_reviewer.daemon.info", logs.append)
+    monkeypatch.setattr("code_reviewer.daemon.info", logs.append)
     monkeypatch.setattr(
-        "pr_reviewer.daemon.GitHubClient.discover_pr_candidates",
+        "code_reviewer.daemon.GitHubClient.discover_pr_candidates",
         lambda _self, _config: [pr],
     )
 
@@ -53,7 +53,7 @@ def test_run_cycle_quiet_mode_suppresses_per_pr_logs(monkeypatch) -> None:
             processed=False, pr_url=_pr.url, pr_key=_pr.key, status="skipped",
         )
 
-    monkeypatch.setattr("pr_reviewer.daemon.process_candidate", fake_process_candidate)
+    monkeypatch.setattr("code_reviewer.daemon.process_candidate", fake_process_candidate)
 
     processed = asyncio.run(run_cycle(config, preflight, object(), verbose=False))
 
@@ -74,8 +74,8 @@ def test_start_daemon_uses_quiet_run_cycle(monkeypatch) -> None:
     async def fake_sleep(_seconds: int) -> None:
         raise RuntimeError("stop daemon loop")
 
-    monkeypatch.setattr("pr_reviewer.daemon.run_cycle", fake_run_cycle)
-    monkeypatch.setattr("pr_reviewer.daemon.asyncio.sleep", fake_sleep)
+    monkeypatch.setattr("code_reviewer.daemon.run_cycle", fake_run_cycle)
+    monkeypatch.setattr("code_reviewer.daemon.asyncio.sleep", fake_sleep)
 
     with pytest.raises(RuntimeError, match="stop daemon loop"):
         asyncio.run(start_daemon(config, preflight, object()))
@@ -145,7 +145,7 @@ def test_run_cycle_merges_slash_command_candidates(monkeypatch, tmp_path) -> Non
             processed=True, pr_url=pr.url, pr_key=pr.key, status="generated",
         )
 
-    monkeypatch.setattr("pr_reviewer.daemon.process_candidate", fake_process)
+    monkeypatch.setattr("code_reviewer.daemon.process_candidate", fake_process)
 
     processed = asyncio.run(run_cycle(config, preflight, store))
 
@@ -217,7 +217,7 @@ def test_run_cycle_slash_command_replaces_existing_candidate(monkeypatch, tmp_pa
             processed=True, pr_url=pr.url, pr_key=pr.key, status="generated",
         )
 
-    monkeypatch.setattr("pr_reviewer.daemon.process_candidate", fake_process)
+    monkeypatch.setattr("code_reviewer.daemon.process_candidate", fake_process)
 
     asyncio.run(run_cycle(config, preflight, store))
 

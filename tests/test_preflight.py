@@ -4,8 +4,8 @@ import types
 
 import pytest
 
-from pr_reviewer.config import AppConfig
-from pr_reviewer.preflight import run_preflight
+from code_reviewer.config import AppConfig
+from code_reviewer.preflight import run_preflight
 
 
 def test_run_preflight_requires_claude_for_multi_reviewer_without_claude_enabled(
@@ -18,7 +18,7 @@ def test_run_preflight_requires_claude_for_multi_reviewer_without_claude_enabled
             return None
         return f"/usr/bin/{cmd}"
 
-    monkeypatch.setattr("pr_reviewer.preflight.shutil.which", fake_which)
+    monkeypatch.setattr("code_reviewer.preflight.shutil.which", fake_which)
 
     with pytest.raises(RuntimeError, match=r"Missing required commands: claude"):
         run_preflight(cfg)
@@ -44,8 +44,8 @@ def test_run_preflight_does_not_require_claude_for_single_gemini_reviewer(monkey
             stdout = ""
         return subprocess.CompletedProcess(args=args, returncode=0, stdout=stdout, stderr="")
 
-    monkeypatch.setattr("pr_reviewer.preflight.shutil.which", fake_which)
-    monkeypatch.setattr("pr_reviewer.preflight.run_command", fake_run_command)
+    monkeypatch.setattr("code_reviewer.preflight.shutil.which", fake_which)
+    monkeypatch.setattr("code_reviewer.preflight.run_command", fake_run_command)
 
     result = run_preflight(cfg)
 
@@ -71,8 +71,8 @@ def test_run_preflight_rejects_missing_gemini_code_review_extension(monkeypatch)
             stdout = ""
         return subprocess.CompletedProcess(args=args, returncode=0, stdout=stdout, stderr="")
 
-    monkeypatch.setattr("pr_reviewer.preflight.shutil.which", fake_which)
-    monkeypatch.setattr("pr_reviewer.preflight.run_command", fake_run_command)
+    monkeypatch.setattr("code_reviewer.preflight.shutil.which", fake_which)
+    monkeypatch.setattr("code_reviewer.preflight.run_command", fake_run_command)
 
     with pytest.raises(RuntimeError, match=r"requires the `code-review` extension"):
         run_preflight(cfg)
@@ -102,8 +102,8 @@ def test_run_preflight_does_not_require_claude_for_codex_reconciler(monkeypatch)
             stdout = ""
         return subprocess.CompletedProcess(args=args, returncode=0, stdout=stdout, stderr="")
 
-    monkeypatch.setattr("pr_reviewer.preflight.shutil.which", fake_which)
-    monkeypatch.setattr("pr_reviewer.preflight.run_command", fake_run_command)
+    monkeypatch.setattr("code_reviewer.preflight.shutil.which", fake_which)
+    monkeypatch.setattr("code_reviewer.preflight.run_command", fake_run_command)
 
     result = run_preflight(cfg)
 
@@ -135,8 +135,8 @@ def test_run_preflight_gemini_reconciler_does_not_require_extension_when_not_rev
             stdout = ""
         return subprocess.CompletedProcess(args=args, returncode=0, stdout=stdout, stderr="")
 
-    monkeypatch.setattr("pr_reviewer.preflight.shutil.which", fake_which)
-    monkeypatch.setattr("pr_reviewer.preflight.run_command", fake_run_command)
+    monkeypatch.setattr("code_reviewer.preflight.shutil.which", fake_which)
+    monkeypatch.setattr("code_reviewer.preflight.run_command", fake_run_command)
     fake_module = types.ModuleType("claude_agent_sdk")
     fake_module.query = object()
     monkeypatch.setitem(sys.modules, "claude_agent_sdk", fake_module)

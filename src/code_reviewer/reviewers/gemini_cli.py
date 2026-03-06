@@ -4,8 +4,8 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
-from pr_reviewer.models import PRCandidate, ReviewerOutput
-from pr_reviewer.shell import run_command_async
+from code_reviewer.models import PRCandidate, ReviewerOutput
+from code_reviewer.shell import run_command_async
 
 _CODE_REVIEW_PROMPT = "/code-review"
 _CODE_REVIEW_EXTENSION = "code-review"

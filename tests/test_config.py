@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from pr_reviewer.config import load_config
+from code_reviewer.config import load_config
 
 
 def test_load_config_success(tmp_path: Path) -> None:

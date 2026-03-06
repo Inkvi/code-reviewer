@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from pr_reviewer.local_review import (
+from code_reviewer.local_review import (
     build_local_candidate,
     current_branch,
     gather_diff_metadata,
@@ -13,8 +13,8 @@ from pr_reviewer.local_review import (
     resolve_head_sha,
     validate_git_repo,
 )
-from pr_reviewer.models import ReviewerOutput
-from pr_reviewer.processor import process_local_review
+from code_reviewer.models import ReviewerOutput
+from code_reviewer.processor import process_local_review
 
 
 def _init_git_repo(tmp_path: Path) -> Path:
@@ -245,7 +245,7 @@ def test_build_local_candidate_commit(tmp_path: Path) -> None:
 
 def _make_config(**overrides: object) -> object:
     """Build a minimal AppConfig-like object for testing."""
-    from pr_reviewer.config import AppConfig
+    from code_reviewer.config import AppConfig
 
     defaults = {
         "github_orgs": ["test-org"],
@@ -294,18 +294,18 @@ def test_process_local_review_runs_pipeline(
     )
 
     # Mock triage to return FULL_REVIEW
-    from pr_reviewer.reviewers import triage
+    from code_reviewer.reviewers import triage
 
     async def mock_triage(*args, **kwargs):  # noqa: ANN002, ANN003
         return triage.TriageResult.FULL_REVIEW
 
-    monkeypatch.setattr("pr_reviewer.processor.run_triage", mock_triage)
+    monkeypatch.setattr("code_reviewer.processor.run_triage", mock_triage)
 
     # Mock Claude review
     async def mock_claude_review(*args, **kwargs):  # noqa: ANN002, ANN003
         return _ok_reviewer_output("claude")
 
-    monkeypatch.setattr("pr_reviewer.processor.run_claude_review", mock_claude_review)
+    monkeypatch.setattr("code_reviewer.processor.run_claude_review", mock_claude_review)
 
     result = asyncio.run(process_local_review(config, candidate, repo))
     assert result.processed is True
@@ -336,17 +336,17 @@ def test_process_local_review_lightweight_path(
         changed_file_paths=["config.yaml"],
     )
 
-    from pr_reviewer.reviewers import triage
+    from code_reviewer.reviewers import triage
 
     async def mock_triage(*args, **kwargs):  # noqa: ANN002, ANN003
         return triage.TriageResult.SIMPLE
 
-    monkeypatch.setattr("pr_reviewer.processor.run_triage", mock_triage)
+    monkeypatch.setattr("code_reviewer.processor.run_triage", mock_triage)
 
     async def mock_lightweight(*args, **kwargs):  # noqa: ANN002, ANN003
         return "### Findings\n- No material findings.\n\n### Test Gaps\n- None noted.", None
 
-    monkeypatch.setattr("pr_reviewer.processor.run_lightweight_review", mock_lightweight)
+    monkeypatch.setattr("code_reviewer.processor.run_lightweight_review", mock_lightweight)
 
     result = asyncio.run(process_local_review(config, candidate, repo))
     assert result.processed is True
@@ -387,12 +387,12 @@ def test_process_local_review_reconciler_path(
         changed_file_paths=["app.py"],
     )
 
-    from pr_reviewer.reviewers import triage
+    from code_reviewer.reviewers import triage
 
     async def mock_triage(*args, **kwargs):  # noqa: ANN002, ANN003
         return triage.TriageResult.FULL_REVIEW
 
-    monkeypatch.setattr("pr_reviewer.processor.run_triage", mock_triage)
+    monkeypatch.setattr("code_reviewer.processor.run_triage", mock_triage)
 
     async def mock_claude_review(*args, **kwargs):  # noqa: ANN002, ANN003
         return _ok_reviewer_output("claude")
@@ -403,9 +403,9 @@ def test_process_local_review_reconciler_path(
     async def mock_reconcile(*args, **kwargs):  # noqa: ANN002, ANN003
         return "### Findings\n- No material findings.\n\n### Test Gaps\n- None noted.", None
 
-    monkeypatch.setattr("pr_reviewer.processor.run_claude_review", mock_claude_review)
-    monkeypatch.setattr("pr_reviewer.processor.run_gemini_review", mock_gemini_review)
-    monkeypatch.setattr("pr_reviewer.processor.reconcile_reviews", mock_reconcile)
+    monkeypatch.setattr("code_reviewer.processor.run_claude_review", mock_claude_review)
+    monkeypatch.setattr("code_reviewer.processor.run_gemini_review", mock_gemini_review)
+    monkeypatch.setattr("code_reviewer.processor.reconcile_reviews", mock_reconcile)
 
     result = asyncio.run(process_local_review(config, candidate, repo))
     assert result.processed is True
@@ -438,7 +438,7 @@ def test_process_local_review_error_handling(
     async def mock_triage(*args, **kwargs):  # noqa: ANN002, ANN003
         raise RuntimeError("triage exploded")
 
-    monkeypatch.setattr("pr_reviewer.processor.run_triage", mock_triage)
+    monkeypatch.setattr("code_reviewer.processor.run_triage", mock_triage)
 
     result = asyncio.run(process_local_review(config, candidate, repo))
     assert result.processed is False

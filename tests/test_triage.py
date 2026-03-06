@@ -2,8 +2,8 @@ import asyncio
 from pathlib import Path
 from unittest.mock import patch
 
-from pr_reviewer.models import PRCandidate
-from pr_reviewer.reviewers.triage import TriageResult, _parse_triage_response, run_triage
+from code_reviewer.models import PRCandidate
+from code_reviewer.reviewers.triage import TriageResult, _parse_triage_response, run_triage
 
 
 def _sample_pr() -> PRCandidate:
@@ -27,7 +27,7 @@ def test_triage_returns_simple_when_model_says_simple(tmp_path: Path) -> None:
     async def fake_claude_prompt(prompt, cwd, timeout, **kwargs):
         return '{"classification": "simple"}', None
 
-    with patch("pr_reviewer.reviewers.triage._run_claude_prompt", side_effect=fake_claude_prompt):
+    with patch("code_reviewer.reviewers.triage._run_claude_prompt", side_effect=fake_claude_prompt):
         result = asyncio.run(
             run_triage(_sample_pr(), tmp_path, timeout_seconds=60, backend="claude")
         )
@@ -38,7 +38,7 @@ def test_triage_returns_full_review_when_model_says_full(tmp_path: Path) -> None
     async def fake_claude_prompt(prompt, cwd, timeout, **kwargs):
         return '{"classification": "full_review"}', None
 
-    with patch("pr_reviewer.reviewers.triage._run_claude_prompt", side_effect=fake_claude_prompt):
+    with patch("code_reviewer.reviewers.triage._run_claude_prompt", side_effect=fake_claude_prompt):
         result = asyncio.run(
             run_triage(_sample_pr(), tmp_path, timeout_seconds=60, backend="claude")
         )
@@ -49,7 +49,7 @@ def test_triage_falls_back_to_full_review_on_parse_error(tmp_path: Path) -> None
     async def fake_claude_prompt(prompt, cwd, timeout, **kwargs):
         return "not valid json", None
 
-    with patch("pr_reviewer.reviewers.triage._run_claude_prompt", side_effect=fake_claude_prompt):
+    with patch("code_reviewer.reviewers.triage._run_claude_prompt", side_effect=fake_claude_prompt):
         result = asyncio.run(
             run_triage(_sample_pr(), tmp_path, timeout_seconds=60, backend="claude")
         )
@@ -60,7 +60,7 @@ def test_triage_falls_back_to_full_review_on_exception(tmp_path: Path) -> None:
     async def fake_claude_prompt(prompt, cwd, timeout, **kwargs):
         raise RuntimeError("timeout")
 
-    with patch("pr_reviewer.reviewers.triage._run_claude_prompt", side_effect=fake_claude_prompt):
+    with patch("code_reviewer.reviewers.triage._run_claude_prompt", side_effect=fake_claude_prompt):
         result = asyncio.run(
             run_triage(_sample_pr(), tmp_path, timeout_seconds=60, backend="claude")
         )
@@ -71,7 +71,7 @@ def test_triage_gemini_backend(tmp_path: Path) -> None:
     async def fake_gemini_prompt(prompt, cwd, timeout, **kwargs):
         return '{"classification": "simple"}'
 
-    with patch("pr_reviewer.reviewers.triage.run_gemini_prompt", side_effect=fake_gemini_prompt):
+    with patch("code_reviewer.reviewers.triage.run_gemini_prompt", side_effect=fake_gemini_prompt):
         result = asyncio.run(
             run_triage(_sample_pr(), tmp_path, timeout_seconds=60, backend="gemini")
         )
@@ -82,7 +82,7 @@ def test_triage_codex_backend(tmp_path: Path) -> None:
     async def fake_codex_prompt(prompt, cwd, timeout, **kwargs):
         return '{"classification": "simple"}'
 
-    with patch("pr_reviewer.reviewers.triage.run_codex_prompt", side_effect=fake_codex_prompt):
+    with patch("code_reviewer.reviewers.triage.run_codex_prompt", side_effect=fake_codex_prompt):
         result = asyncio.run(
             run_triage(_sample_pr(), tmp_path, timeout_seconds=60, backend="codex")
         )
@@ -105,7 +105,7 @@ def test_triage_extracts_json_from_markdown_code_block(tmp_path: Path) -> None:
     async def fake_claude_prompt(prompt, cwd, timeout, **kwargs):
         return '```json\n{"classification": "simple"}\n```', None
 
-    with patch("pr_reviewer.reviewers.triage._run_claude_prompt", side_effect=fake_claude_prompt):
+    with patch("code_reviewer.reviewers.triage._run_claude_prompt", side_effect=fake_claude_prompt):
         result = asyncio.run(
             run_triage(_sample_pr(), tmp_path, timeout_seconds=60, backend="claude")
         )

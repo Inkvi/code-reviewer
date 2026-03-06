@@ -1,4 +1,4 @@
-from pr_reviewer.review_decision import infer_review_decision
+from code_reviewer.review_decision import infer_review_decision
 
 
 def test_infer_review_decision_requests_changes_for_p0_or_p1() -> None:

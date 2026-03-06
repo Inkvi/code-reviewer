@@ -4,7 +4,7 @@ import hashlib
 import subprocess
 from pathlib import Path
 
-from pr_reviewer.models import PRCandidate
+from code_reviewer.models import PRCandidate
 
 
 def _run_git(repo: Path, *args: str) -> str:

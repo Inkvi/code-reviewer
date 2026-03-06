@@ -137,6 +137,38 @@ wheels = [
 ]
 
 [[package]]
+name = "code-reviewer"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "anyio" },
+    { name = "claude-agent-sdk" },
+    { name = "pydantic" },
+    { name = "rich" },
+    { name = "typer" },
+]
+
+[package.optional-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "ruff" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "anyio", specifier = ">=4.0.0" },
+    { name = "claude-agent-sdk", specifier = ">=0.1.44" },
+    { name = "pydantic", specifier = ">=2.8.0" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3.0" },
+    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.23.0" },
+    { name = "rich", specifier = ">=13.7.0" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.12.7" },
+    { name = "typer", specifier = ">=0.12.3" },
+]
+provides-extras = ["dev"]
+
+[[package]]
 name = "colorama"
 version = "0.4.6"
 source = { registry = "https://pypi.org/simple" }
@@ -352,38 +384,6 @@ sdist = { url = "https://files.pythonhosted.org/packages/f9/e2/3e91f31a7d2b083fe
 wheels = [
     { url = "https://files.pythonhosted.org/packages/54/20/4d324d65cc6d9205fabedc306948156824eb9f0ee1633355a8f7ec5c66bf/pluggy-1.6.0-py3-none-any.whl", hash = "sha256:e920276dd6813095e9377c0bc5566d94c932c33b27a3e3945d8389c374dd4746", size = 20538 },
 ]
-
-[[package]]
-name = "pr-reviewer"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "anyio" },
-    { name = "claude-agent-sdk" },
-    { name = "pydantic" },
-    { name = "rich" },
-    { name = "typer" },
-]
-
-[package.optional-dependencies]
-dev = [
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "ruff" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "anyio", specifier = ">=4.0.0" },
-    { name = "claude-agent-sdk", specifier = ">=0.1.44" },
-    { name = "pydantic", specifier = ">=2.8.0" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3.0" },
-    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.23.0" },
-    { name = "rich", specifier = ">=13.7.0" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.12.7" },
-    { name = "typer", specifier = ">=0.12.3" },
-]
-provides-extras = ["dev"]
 
 [[package]]
 name = "pycparser"

@@ -1,4 +1,4 @@
-"""pr-reviewer package."""
+"""code-reviewer package."""
 
 __all__ = ["__version__"]
 

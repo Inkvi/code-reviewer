@@ -6,10 +6,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
-from pr_reviewer.config import AppConfig
-from pr_reviewer.github import GitHubClient
-from pr_reviewer.logger import info, warn
-from pr_reviewer.models import (
+from code_reviewer.config import AppConfig
+from code_reviewer.github import GitHubClient
+from code_reviewer.logger import info, warn
+from code_reviewer.models import (
     PRCandidate,
     ProcessedState,
     ProcessingResult,
@@ -17,9 +17,9 @@ from pr_reviewer.models import (
     ReviewerOutputSummary,
     TokenUsage,
 )
-from pr_reviewer.output import write_review_markdown, write_reviewer_sidecar_markdown
-from pr_reviewer.review_decision import infer_review_decision
-from pr_reviewer.reviewers import (
+from code_reviewer.output import write_review_markdown, write_reviewer_sidecar_markdown
+from code_reviewer.review_decision import infer_review_decision
+from code_reviewer.reviewers import (
     TriageResult,
     reconcile_reviews,
     run_claude_review,
@@ -29,8 +29,8 @@ from pr_reviewer.reviewers import (
     run_lightweight_review,
     run_triage,
 )
-from pr_reviewer.state import StateStore
-from pr_reviewer.workspace import PRWorkspace
+from code_reviewer.state import StateStore
+from code_reviewer.workspace import PRWorkspace
 
 DecisionReason = Literal[
     "bootstrap_missing_state",
