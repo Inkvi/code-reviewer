@@ -35,13 +35,14 @@
 
 ## Commands
 - `uv sync --extra dev`: install runtime + dev dependencies
-- `uv run code-reviewer check`: preflight checks and runtime config summary
-- `uv run code-reviewer run-once`: one polling/review cycle
-- `uv run code-reviewer run-once --pr-url <URL>`: review specific PR(s)
-- `uv run code-reviewer review --uncommitted`: review local uncommitted changes
-- `uv run code-reviewer review --base main`: compare branches locally
-- `uv run code-reviewer start`: run daemon continuously
+- `uv run code-reviewer check`: preflight checks and runtime config summary (requires config)
+- `uv run code-reviewer run-once`: one polling/review cycle (requires config with `github_orgs`)
+- `uv run code-reviewer run-once --pr-url <URL>`: review specific PR(s) (config optional)
+- `uv run code-reviewer review --uncommitted`: review local uncommitted changes (config optional)
+- `uv run code-reviewer review --base main`: compare branches locally (config optional)
+- `uv run code-reviewer start`: run daemon continuously (requires config with `github_orgs`)
 - `uv tool install --reinstall --editable .`: reinstall global CLI after source changes (editable mode avoids future reinstalls)
+- Config-optional commands try `./config.toml` first, fall back to built-in defaults if missing
 
 ## Commits & PRs
 - Imperative commit subjects; Conventional Commit prefixes (`feat:`, `fix:`, `docs:`)

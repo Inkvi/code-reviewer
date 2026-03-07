@@ -9,7 +9,7 @@ import typer
 from pydantic import ValidationError
 from rich.table import Table
 
-from code_reviewer.config import AppConfig, load_config
+from code_reviewer.config import AppConfig, default_config, load_config
 from code_reviewer.daemon import run_cycle, start_daemon
 from code_reviewer.github import GitHubClient
 from code_reviewer.local_review import (
@@ -39,25 +39,30 @@ ConfigOption = Annotated[
         help="Path to TOML config file.",
     ),
 ]
+OptionalConfigOption = Annotated[
+    Path | None,
+    typer.Option(
+        "--config",
+        "-c",
+        dir_okay=False,
+        file_okay=True,
+        readable=True,
+        help="Path to TOML config file. Uses defaults when not provided.",
+    ),
+]
 EnabledReviewerOption = Annotated[
     list[str] | None,
     typer.Option(
         "--enabled-reviewer",
         "-r",
-        help=(
-            "Override enabled_reviewers from config. "
-            "Repeat flag to enable multiple reviewers."
-        ),
+        help=("Override enabled_reviewers from config. Repeat flag to enable multiple reviewers."),
     ),
 ]
 CodexBackendOption = Annotated[
     str | None,
     typer.Option(
         "--codex-backend",
-        help=(
-            "Override codex_backend from config. "
-            "Allowed: cli, agents_sdk."
-        ),
+        help=("Override codex_backend from config. Allowed: cli, agents_sdk."),
     ),
 ]
 ClaudeModelOption = Annotated[
@@ -85,10 +90,7 @@ ReconcilerReasoningEffortOption = Annotated[
     str | None,
     typer.Option(
         "--reconciler-reasoning-effort",
-        help=(
-            "Override reconciler_reasoning_effort from config. "
-            "Allowed: low, medium, high, max."
-        ),
+        help=("Override reconciler_reasoning_effort from config. Allowed: low, medium, high, max."),
     ),
 ]
 ReconcilerBackendOption = Annotated[
@@ -204,6 +206,32 @@ OutputFormatOption = Annotated[
 ]
 
 
+def _load_config_or_default(config_path: Path | None) -> AppConfig:
+    """Load config from file, or return defaults if no path given.
+
+    When config_path is None, tries ./config.toml and falls back to defaults.
+    When config_path is explicitly provided, raises BadParameter if missing.
+    """
+    if config_path is None:
+        fallback = Path("config.toml")
+        if fallback.exists():
+            return load_config(fallback)
+        return default_config()
+    try:
+        return load_config(config_path)
+    except FileNotFoundError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+
+def _require_github_orgs(config: AppConfig) -> None:
+    """Raise if github_orgs is empty (required for polling commands)."""
+    if not config.github_orgs:
+        raise typer.BadParameter(
+            "github_orgs must be set with at least one owner. "
+            "Provide a config file with --config or set github_orgs in config.toml."
+        )
+
+
 def _apply_enabled_reviewer_override(
     config: AppConfig, enabled_reviewer: list[str] | None
 ) -> AppConfig:
@@ -274,7 +302,7 @@ def _resolve_reconciler_settings(config: AppConfig) -> tuple[str, str | None, st
 
 
 def _load_runtime(
-    config_path: Path,
+    config_path: Path | None,
     enabled_reviewer: list[str] | None,
     codex_backend: str | None,
     claude_model: str | None,
@@ -293,7 +321,7 @@ def _load_runtime(
     lightweight_review_model: str | None,
     lightweight_review_reasoning_effort: str | None,
 ) -> tuple[AppConfig, StateStore]:
-    config = load_config(config_path)
+    config = _load_config_or_default(config_path)
     config = _apply_enabled_reviewer_override(config, enabled_reviewer)
     config = _apply_codex_backend_override(config, codex_backend)
     config = _apply_field_override(config, "claude_model", claude_model, "--claude-model")
@@ -398,6 +426,7 @@ def check_command(
 ) -> None:
     """Run preflight checks and print runtime summary."""
     cfg = load_config(config)
+    _require_github_orgs(cfg)
     cfg = _apply_enabled_reviewer_override(cfg, enabled_reviewer)
     cfg = _apply_codex_backend_override(cfg, codex_backend)
     cfg = _apply_field_override(cfg, "claude_model", claude_model, "--claude-model")
@@ -475,9 +504,7 @@ def check_command(
         _resolve_reconciler_settings(cfg)
     )
     reconciler_effort_display = (
-        reconciler_effort_value or "default"
-        if reconciler_backend_value != "gemini"
-        else "n/a"
+        reconciler_effort_value or "default" if reconciler_backend_value != "gemini" else "n/a"
     )
     table.add_row("Reconciler backend", reconciler_backend_value)
     table.add_row("Reconciler model", reconciler_model_value or "default")
@@ -503,7 +530,7 @@ def check_command(
 
 @app.command("run-once")
 def run_once_command(
-    config: ConfigOption = Path("config.toml"),
+    config: OptionalConfigOption = None,
     enabled_reviewer: EnabledReviewerOption = None,
     codex_backend: CodexBackendOption = None,
     claude_model: ClaudeModelOption = None,
@@ -528,9 +555,7 @@ def run_once_command(
 ) -> None:
     """Run one polling cycle."""
     if output_format not in ("text", "json"):
-        raise typer.BadParameter(
-            f"Invalid --output-format: {output_format}. Use 'text' or 'json'."
-        )
+        raise typer.BadParameter(f"Invalid --output-format: {output_format}. Use 'text' or 'json'.")
     if output_format == "json" and not pr_url:
         raise typer.BadParameter("--output-format json requires at least one --pr-url.")
     if output_format == "json":
@@ -587,6 +612,7 @@ def run_once_command(
             results = asyncio.run(_run_targeted())
             processed = sum(1 for r in results if r.processed)
         else:
+            _require_github_orgs(cfg)
             processed = asyncio.run(run_cycle(cfg, preflight, store))
 
         if output_format == "json":
@@ -639,6 +665,7 @@ def start_command(
         lightweight_review_model,
         lightweight_review_reasoning_effort,
     )
+    _require_github_orgs(cfg)
     try:
         preflight = run_preflight(cfg)
         asyncio.run(start_daemon(cfg, preflight, store))
@@ -689,7 +716,7 @@ CommitOption = Annotated[
 
 
 def _load_config_with_reviewer_overrides(
-    config_path: Path,
+    config_path: Path | None,
     enabled_reviewer: list[str] | None,
     codex_backend: str | None,
     claude_model: str | None,
@@ -706,37 +733,55 @@ def _load_config_with_reviewer_overrides(
     lightweight_review_model: str | None,
     lightweight_review_reasoning_effort: str | None,
 ) -> AppConfig:
-    cfg = load_config(config_path)
+    cfg = _load_config_or_default(config_path)
     cfg = _apply_enabled_reviewer_override(cfg, enabled_reviewer)
     cfg = _apply_codex_backend_override(cfg, codex_backend)
     cfg = _apply_field_override(cfg, "claude_model", claude_model, "--claude-model")
     cfg = _apply_field_override(
-        cfg, "claude_reasoning_effort", claude_reasoning_effort, "--claude-reasoning-effort",
+        cfg,
+        "claude_reasoning_effort",
+        claude_reasoning_effort,
+        "--claude-reasoning-effort",
     )
     cfg = _apply_field_override(
-        cfg, "reconciler_backend", reconciler_backend, "--reconciler-backend",
+        cfg,
+        "reconciler_backend",
+        reconciler_backend,
+        "--reconciler-backend",
     )
     cfg = _apply_field_override(cfg, "reconciler_model", reconciler_model, "--reconciler-model")
     cfg = _apply_field_override(
-        cfg, "reconciler_reasoning_effort", reconciler_reasoning_effort,
+        cfg,
+        "reconciler_reasoning_effort",
+        reconciler_reasoning_effort,
         "--reconciler-reasoning-effort",
     )
     cfg = _apply_field_override(cfg, "codex_model", codex_model, "--codex-model")
     cfg = _apply_field_override(
-        cfg, "codex_reasoning_effort", codex_reasoning_effort, "--codex-reasoning-effort",
+        cfg,
+        "codex_reasoning_effort",
+        codex_reasoning_effort,
+        "--codex-reasoning-effort",
     )
     cfg = _apply_field_override(cfg, "gemini_model", gemini_model, "--gemini-model")
     cfg = _apply_field_override(cfg, "triage_backend", triage_backend, "--triage-backend")
     cfg = _apply_field_override(cfg, "triage_model", triage_model, "--triage-model")
     cfg = _apply_field_override(
-        cfg, "lightweight_review_backend", lightweight_review_backend,
+        cfg,
+        "lightweight_review_backend",
+        lightweight_review_backend,
         "--lightweight-review-backend",
     )
     cfg = _apply_field_override(
-        cfg, "lightweight_review_model", lightweight_review_model, "--lightweight-review-model",
+        cfg,
+        "lightweight_review_model",
+        lightweight_review_model,
+        "--lightweight-review-model",
     )
     cfg = _apply_field_override(
-        cfg, "lightweight_review_reasoning_effort", lightweight_review_reasoning_effort,
+        cfg,
+        "lightweight_review_reasoning_effort",
+        lightweight_review_reasoning_effort,
         "--lightweight-review-reasoning-effort",
     )
     return cfg
@@ -744,7 +789,7 @@ def _load_config_with_reviewer_overrides(
 
 @app.command("review")
 def review_command(
-    config: ConfigOption = Path("config.toml"),
+    config: OptionalConfigOption = None,
     repo: RepoOption = Path("."),
     base: BaseOption = None,
     branch: BranchOption = None,
@@ -769,16 +814,16 @@ def review_command(
 ) -> None:
     """Review local changes: branch vs branch, uncommitted changes, or a specific commit."""
     if output_format not in ("text", "json"):
-        raise typer.BadParameter(
-            f"Invalid --output-format: {output_format}. Use 'text' or 'json'."
-        )
+        raise typer.BadParameter(f"Invalid --output-format: {output_format}. Use 'text' or 'json'.")
 
     # Determine review mode
-    mode_count = sum([
-        base is not None or branch is not None,
-        uncommitted,
-        commit is not None,
-    ])
+    mode_count = sum(
+        [
+            base is not None or branch is not None,
+            uncommitted,
+            commit is not None,
+        ]
+    )
     if mode_count == 0:
         raise typer.BadParameter(
             "Specify a review mode: --base/--branch (branch comparison), "
@@ -810,18 +855,31 @@ def review_command(
         raise typer.BadParameter(str(exc)) from exc
 
     cfg = _load_config_with_reviewer_overrides(
-        config, enabled_reviewer, codex_backend,
-        claude_model, claude_reasoning_effort,
-        reconciler_backend, reconciler_model, reconciler_reasoning_effort,
-        codex_model, codex_reasoning_effort, gemini_model,
-        triage_backend, triage_model,
-        lightweight_review_backend, lightweight_review_model,
+        config,
+        enabled_reviewer,
+        codex_backend,
+        claude_model,
+        claude_reasoning_effort,
+        reconciler_backend,
+        reconciler_model,
+        reconciler_reasoning_effort,
+        codex_model,
+        codex_reasoning_effort,
+        gemini_model,
+        triage_backend,
+        triage_model,
+        lightweight_review_backend,
+        lightweight_review_model,
         lightweight_review_reasoning_effort,
     )
 
     try:
         base_ref, head_ref = resolve_diff_refs(
-            repo_path, mode=mode, base=base, branch=branch, commit=commit,
+            repo_path,
+            mode=mode,
+            base=base,
+            branch=branch,
+            commit=commit,
         )
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
@@ -832,7 +890,9 @@ def review_command(
         head_sha = resolve_head_sha(repo_path, head_ref)
 
     additions, deletions, changed_files = gather_diff_metadata(
-        repo_path, base_ref, head_ref,
+        repo_path,
+        base_ref,
+        head_ref,
     )
 
     if not changed_files:

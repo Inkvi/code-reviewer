@@ -251,9 +251,6 @@ class AppConfig(BaseModel):
             seen.add(key)
             owners.append(owner)
 
-        if not owners:
-            raise ValueError("must set github_orgs with at least one owner")
-
         self.github_orgs = owners
         return self
 
@@ -277,6 +274,11 @@ class AppConfig(BaseModel):
                 "when lightweight_review_backend=codex"
             )
         return self
+
+
+def default_config() -> AppConfig:
+    """Return an AppConfig with all default values (no config file needed)."""
+    return AppConfig()
 
 
 def load_config(path: Path) -> AppConfig:

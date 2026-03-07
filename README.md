@@ -17,17 +17,20 @@ AI code review tool powered by Claude, Codex, and Gemini. Works as a GitHub PR d
 
 ```bash
 uv sync --extra dev
-cp config.example.toml config.toml
+cp config.example.toml config.toml   # optional for run-once/review; required for check/start
 ```
 
 ## Commands
 
 ```bash
-uv run code-reviewer check                  # preflight checks + runtime summary
-uv run code-reviewer run-once               # one polling cycle
-uv run code-reviewer start                  # daemon mode
-uv run code-reviewer review --uncommitted   # review local uncommitted changes
+uv run code-reviewer check                  # preflight checks + runtime summary (requires config)
+uv run code-reviewer run-once               # one polling cycle (requires config with github_orgs)
+uv run code-reviewer start                  # daemon mode (requires config with github_orgs)
+uv run code-reviewer review --uncommitted   # review local uncommitted changes (config optional)
 ```
+
+> **Note:** `run-once --pr-url` and `review` work without a config file — sensible defaults are used.
+> If `./config.toml` exists it is loaded automatically; pass `--config path.toml` to use a different file.
 
 ## Local Review
 
