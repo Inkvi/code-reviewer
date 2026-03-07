@@ -22,6 +22,7 @@
 - Prompt template files (`triage.py`, `lightweight.py`, `reconcile.py`) have E501 ignored via pyproject.toml per-file-ignores
 - Config fields use Pydantic field validators; cross-field validation uses model validators
 - CLI overrides follow `_apply_field_override` pattern in `cli.py`
+- `_run_claude_prompt` passes `env={"CLAUDECODE": ""}` to `ClaudeAgentOptions` so the Agent SDK works when invoked from inside Claude Code (avoids nested execution block)
 - Backend functions support claude/codex/gemini with graceful fallback on errors
 - Keep CLI orchestration in `cli.py`; isolate reusable logic in testable modules
 
@@ -40,6 +41,7 @@
 - `uv run code-reviewer review --uncommitted`: review local uncommitted changes
 - `uv run code-reviewer review --base main`: compare branches locally
 - `uv run code-reviewer start`: run daemon continuously
+- `uv tool install --reinstall --editable .`: reinstall global CLI after source changes (editable mode avoids future reinstalls)
 
 ## Commits & PRs
 - Imperative commit subjects; Conventional Commit prefixes (`feat:`, `fix:`, `docs:`)
