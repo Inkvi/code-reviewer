@@ -86,7 +86,6 @@ The daemon monitors PR comments for `/review` commands:
 
 **Behavior:**
 - Reacts with 👀 to the triggering comment
-- Replies "Starting review of the latest changes…"
 - If already reviewed at the current commit: replies with a skip message (unless `force` is used)
 - Runs the full review pipeline and posts results
 

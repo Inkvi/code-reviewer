@@ -786,10 +786,6 @@ async def process_candidate(
                 status="skipped_already_reviewed",
             )
 
-        try:
-            client.post_pr_comment_inline(pr, "Starting review of the latest changes…")
-        except Exception as exc:  # noqa: BLE001
-            warn(f"{pr.key}: failed to post starting-review comment: {exc}")
     else:
         decision = _compute_processing_decision(previous, pr, config.trigger_mode)
         if decision.should_process:

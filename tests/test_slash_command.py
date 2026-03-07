@@ -160,7 +160,7 @@ def test_slash_command_triggers_review(monkeypatch, tmp_path) -> None:
     assert result.processed is True
     assert store.state.last_slash_command_id == 123456
     assert ("polymerdao", "obul", 123456, "eyes") in reactions
-    assert any("starting review" in c.lower() for c in posted_comments)
+    assert not any("starting review" in c.lower() for c in posted_comments)
 
 
 def test_slash_command_skips_when_already_reviewed_at_head(monkeypatch, tmp_path) -> None:
@@ -254,8 +254,8 @@ def test_slash_command_force_reviews_even_when_already_reviewed(monkeypatch, tmp
     assert store.state.last_slash_command_id == 123456
 
 
-def test_slash_command_full_flow_react_reply_review_post(monkeypatch, tmp_path) -> None:
-    """Integration test: /review comment → react → reply → run review → post → persist state."""
+def test_slash_command_full_flow_react_review_post(monkeypatch, tmp_path) -> None:
+    """Integration test: /review comment → react → run review → post → persist state."""
     store = DummyStore()
     workspace = DummyWorkspace(tmp_path)
     client = GitHubClient(viewer_login="Inkvi")
@@ -329,8 +329,6 @@ def test_slash_command_full_flow_react_reply_review_post(monkeypatch, tmp_path) 
     # Verify the full flow happened in order.
     assert result.processed is True
     assert api_calls[0] == "react:polymerdao/obul#123456:eyes"
-    assert api_calls[1] == "comment:polymerdao/obul#64"
-    assert "starting review" in posted_comments[0].lower()
     assert "run_reviewer:codex" in api_calls
     assert any(call.startswith("post_review:") for call in api_calls)
 
