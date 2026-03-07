@@ -233,10 +233,21 @@ def test_removed_skip_flags_are_rejected(flag: str) -> None:
     assert "No such option" in result.output
 
 
-def test_load_config_or_default_none_returns_defaults() -> None:
+def test_load_config_or_default_none_returns_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(Path("/tmp"))  # directory without config.toml
     cfg = _load_config_or_default(None)
     assert cfg.github_orgs == []
     assert cfg.enabled_reviewers == ["claude", "codex"]
+
+
+def test_load_config_or_default_none_loads_local_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config_file = tmp_path / "config.toml"
+    config_file.write_text('github_orgs=["localorg"]\n', encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    cfg = _load_config_or_default(None)
+    assert cfg.github_orgs == ["localorg"]
 
 
 def test_load_config_or_default_with_path(tmp_path: Path) -> None:
@@ -244,6 +255,11 @@ def test_load_config_or_default_with_path(tmp_path: Path) -> None:
     path.write_text('github_orgs=["myorg"]\n', encoding="utf-8")
     cfg = _load_config_or_default(path)
     assert cfg.github_orgs == ["myorg"]
+
+
+def test_load_config_or_default_explicit_missing_raises_bad_parameter() -> None:
+    with pytest.raises(typer.BadParameter, match="Config file not found"):
+        _load_config_or_default(Path("/nonexistent/config.toml"))
 
 
 def test_require_github_orgs_raises_on_empty() -> None:

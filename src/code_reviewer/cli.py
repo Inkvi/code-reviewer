@@ -207,10 +207,20 @@ OutputFormatOption = Annotated[
 
 
 def _load_config_or_default(config_path: Path | None) -> AppConfig:
-    """Load config from file, or return defaults if no path given."""
+    """Load config from file, or return defaults if no path given.
+
+    When config_path is None, tries ./config.toml and falls back to defaults.
+    When config_path is explicitly provided, raises BadParameter if missing.
+    """
     if config_path is None:
+        fallback = Path("config.toml")
+        if fallback.exists():
+            return load_config(fallback)
         return default_config()
-    return load_config(config_path)
+    try:
+        return load_config(config_path)
+    except FileNotFoundError as exc:
+        raise typer.BadParameter(str(exc)) from exc
 
 
 def _require_github_orgs(config: AppConfig) -> None:
