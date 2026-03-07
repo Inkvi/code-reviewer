@@ -56,6 +56,7 @@ async def _run_claude_prompt(
         system_prompt=system_prompt,
         model=model,
         effort=reasoning_effort,
+        env={"CLAUDECODE": ""},
         stderr=lambda line: collector.append(line),
     )
 
