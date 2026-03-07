@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 import typer
 from typer.testing import CliRunner
@@ -7,6 +9,8 @@ from code_reviewer.cli import (
     _apply_codex_backend_override,
     _apply_enabled_reviewer_override,
     _apply_field_override,
+    _load_config_or_default,
+    _require_github_orgs,
     _target_pr_urls_for_run_once,
     app,
 )
@@ -192,9 +196,7 @@ def test_apply_enabled_reviewer_override_gemini_only() -> None:
 def test_apply_field_override_gemini_model() -> None:
     cfg = AppConfig(github_orgs=["polymerdao"])
 
-    out = _apply_field_override(
-        cfg, "gemini_model", "gemini-3.1-pro-preview", "--gemini-model"
-    )
+    out = _apply_field_override(cfg, "gemini_model", "gemini-3.1-pro-preview", "--gemini-model")
 
     assert out.gemini_model == "gemini-3.1-pro-preview"
 
@@ -229,3 +231,27 @@ def test_removed_skip_flags_are_rejected(flag: str) -> None:
 
     assert result.exit_code != 0
     assert "No such option" in result.output
+
+
+def test_load_config_or_default_none_returns_defaults() -> None:
+    cfg = _load_config_or_default(None)
+    assert cfg.github_orgs == []
+    assert cfg.enabled_reviewers == ["claude", "codex"]
+
+
+def test_load_config_or_default_with_path(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text('github_orgs=["myorg"]\n', encoding="utf-8")
+    cfg = _load_config_or_default(path)
+    assert cfg.github_orgs == ["myorg"]
+
+
+def test_require_github_orgs_raises_on_empty() -> None:
+    cfg = AppConfig()
+    with pytest.raises(typer.BadParameter, match="github_orgs"):
+        _require_github_orgs(cfg)
+
+
+def test_require_github_orgs_passes_with_orgs() -> None:
+    cfg = AppConfig(github_orgs=["myorg"])
+    _require_github_orgs(cfg)  # should not raise

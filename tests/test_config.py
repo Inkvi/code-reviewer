@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from code_reviewer.config import load_config
+from code_reviewer.config import default_config, load_config
 
 
 def test_load_config_success(tmp_path: Path) -> None:
@@ -63,12 +63,13 @@ def test_load_config_normalizes_and_dedupes_github_orgs(tmp_path: Path) -> None:
     assert cfg.github_owners == ["polymerdao", "Inkvi"]
 
 
-def test_load_config_requires_github_owner_scope(tmp_path: Path) -> None:
+def test_load_config_allows_empty_github_orgs(tmp_path: Path) -> None:
     path = tmp_path / "config.toml"
     path.write_text('excluded_repos = ["infra"]\n', encoding="utf-8")
 
-    with pytest.raises(ValueError):
-        load_config(path)
+    cfg = load_config(path)
+    assert cfg.github_orgs == []
+    assert cfg.excluded_repos == ["infra"]
 
 
 def test_load_config_rejects_legacy_github_org_key(tmp_path: Path) -> None:
@@ -94,8 +95,7 @@ def test_load_config_normalizes_excluded_repos(tmp_path: Path) -> None:
 def test_load_config_normalizes_enabled_reviewers(tmp_path: Path) -> None:
     path = tmp_path / "config.toml"
     path.write_text(
-        'github_orgs=["polymerdao"]\n'
-        'enabled_reviewers = [" codex ", "claude", "CODEX", ""]\n',
+        'github_orgs=["polymerdao"]\nenabled_reviewers = [" codex ", "claude", "CODEX", ""]\n',
         encoding="utf-8",
     )
 
@@ -106,8 +106,7 @@ def test_load_config_normalizes_enabled_reviewers(tmp_path: Path) -> None:
 def test_load_config_rejects_invalid_enabled_reviewers(tmp_path: Path) -> None:
     path = tmp_path / "config.toml"
     path.write_text(
-        'github_orgs=["polymerdao"]\n'
-        'enabled_reviewers = ["unknown"]\n',
+        'github_orgs=["polymerdao"]\nenabled_reviewers = ["unknown"]\n',
         encoding="utf-8",
     )
 
@@ -118,8 +117,7 @@ def test_load_config_rejects_invalid_enabled_reviewers(tmp_path: Path) -> None:
 def test_load_config_rejects_empty_enabled_reviewers(tmp_path: Path) -> None:
     path = tmp_path / "config.toml"
     path.write_text(
-        'github_orgs=["polymerdao"]\n'
-        "enabled_reviewers = []\n",
+        'github_orgs=["polymerdao"]\nenabled_reviewers = []\n',
         encoding="utf-8",
     )
 
@@ -130,8 +128,7 @@ def test_load_config_rejects_empty_enabled_reviewers(tmp_path: Path) -> None:
 def test_load_config_rejects_invalid_codex_backend(tmp_path: Path) -> None:
     path = tmp_path / "config.toml"
     path.write_text(
-        'github_orgs=["polymerdao"]\n'
-        'codex_backend = "invalid"\n',
+        'github_orgs=["polymerdao"]\ncodex_backend = "invalid"\n',
         encoding="utf-8",
     )
 
@@ -142,8 +139,7 @@ def test_load_config_rejects_invalid_codex_backend(tmp_path: Path) -> None:
 def test_load_config_rejects_invalid_reconciler_backend(tmp_path: Path) -> None:
     path = tmp_path / "config.toml"
     path.write_text(
-        'github_orgs=["polymerdao"]\n'
-        'reconciler_backend = "invalid"\n',
+        'github_orgs=["polymerdao"]\nreconciler_backend = "invalid"\n',
         encoding="utf-8",
     )
 
@@ -154,8 +150,7 @@ def test_load_config_rejects_invalid_reconciler_backend(tmp_path: Path) -> None:
 def test_load_config_rejects_invalid_claude_reasoning_effort(tmp_path: Path) -> None:
     path = tmp_path / "config.toml"
     path.write_text(
-        'github_orgs=["polymerdao"]\n'
-        'claude_reasoning_effort = "invalid"\n',
+        'github_orgs=["polymerdao"]\nclaude_reasoning_effort = "invalid"\n',
         encoding="utf-8",
     )
 
@@ -166,8 +161,7 @@ def test_load_config_rejects_invalid_claude_reasoning_effort(tmp_path: Path) -> 
 def test_load_config_rejects_invalid_codex_reasoning_effort(tmp_path: Path) -> None:
     path = tmp_path / "config.toml"
     path.write_text(
-        'github_orgs=["polymerdao"]\n'
-        'codex_reasoning_effort = "max"\n',
+        'github_orgs=["polymerdao"]\ncodex_reasoning_effort = "max"\n',
         encoding="utf-8",
     )
 
@@ -178,8 +172,7 @@ def test_load_config_rejects_invalid_codex_reasoning_effort(tmp_path: Path) -> N
 def test_load_config_rejects_invalid_reconciler_reasoning_effort(tmp_path: Path) -> None:
     path = tmp_path / "config.toml"
     path.write_text(
-        'github_orgs=["polymerdao"]\n'
-        'reconciler_reasoning_effort = "invalid"\n',
+        'github_orgs=["polymerdao"]\nreconciler_reasoning_effort = "invalid"\n',
         encoding="utf-8",
     )
 
@@ -203,8 +196,7 @@ def test_load_config_rejects_reconciler_max_effort_for_codex_backend(tmp_path: P
 def test_load_config_accepts_gemini_reviewer(tmp_path: Path) -> None:
     path = tmp_path / "config.toml"
     path.write_text(
-        'github_orgs=["polymerdao"]\n'
-        'enabled_reviewers = ["gemini"]\n',
+        'github_orgs=["polymerdao"]\nenabled_reviewers = ["gemini"]\n',
         encoding="utf-8",
     )
 
@@ -215,8 +207,7 @@ def test_load_config_accepts_gemini_reviewer(tmp_path: Path) -> None:
 def test_load_config_accepts_all_three_reviewers(tmp_path: Path) -> None:
     path = tmp_path / "config.toml"
     path.write_text(
-        'github_orgs=["polymerdao"]\n'
-        'enabled_reviewers = ["claude", "codex", "gemini"]\n',
+        'github_orgs=["polymerdao"]\nenabled_reviewers = ["claude", "codex", "gemini"]\n',
         encoding="utf-8",
     )
 
@@ -227,8 +218,7 @@ def test_load_config_accepts_all_three_reviewers(tmp_path: Path) -> None:
 def test_load_config_rejects_empty_gemini_model(tmp_path: Path) -> None:
     path = tmp_path / "config.toml"
     path.write_text(
-        'github_orgs=["polymerdao"]\n'
-        'gemini_model = ""\n',
+        'github_orgs=["polymerdao"]\ngemini_model = ""\n',
         encoding="utf-8",
     )
 
@@ -239,8 +229,7 @@ def test_load_config_rejects_empty_gemini_model(tmp_path: Path) -> None:
 def test_load_config_rejects_empty_reconciler_model(tmp_path: Path) -> None:
     path = tmp_path / "config.toml"
     path.write_text(
-        'github_orgs=["polymerdao"]\n'
-        'reconciler_model = ""\n',
+        'github_orgs=["polymerdao"]\nreconciler_model = ""\n',
         encoding="utf-8",
     )
 
@@ -251,8 +240,7 @@ def test_load_config_rejects_empty_reconciler_model(tmp_path: Path) -> None:
 def test_load_config_accepts_rerequest_or_commit_trigger_mode(tmp_path: Path) -> None:
     path = tmp_path / "config.toml"
     path.write_text(
-        'github_orgs=["polymerdao"]\n'
-        'trigger_mode = "rerequest_or_commit"\n',
+        'github_orgs=["polymerdao"]\ntrigger_mode = "rerequest_or_commit"\n',
         encoding="utf-8",
     )
 
@@ -281,7 +269,6 @@ def test_load_config_triage_defaults(tmp_path: Path) -> None:
     assert cfg.triage_backend == "gemini"
     assert cfg.triage_model == "gemini-3-flash-preview"
     assert cfg.triage_timeout_seconds == 60
-
 
 
 def test_load_config_lightweight_review_defaults(tmp_path: Path) -> None:
@@ -356,11 +343,20 @@ def test_load_config_rejects_empty_lightweight_review_model(tmp_path: Path) -> N
         load_config(path)
 
 
+def test_default_config_returns_valid_config() -> None:
+    cfg = default_config()
+    assert cfg.github_orgs == []
+    assert cfg.enabled_reviewers == ["claude", "codex"]
+    assert cfg.poll_interval_seconds == 60
+    assert cfg.auto_post_review is False
+    assert cfg.triage_backend == "gemini"
+    assert cfg.lightweight_review_backend == "gemini"
+
+
 def test_load_config_rejects_invalid_trigger_mode(tmp_path: Path) -> None:
     path = tmp_path / "config.toml"
     path.write_text(
-        'github_orgs=["polymerdao"]\n'
-        'trigger_mode = "invalid"\n',
+        'github_orgs=["polymerdao"]\ntrigger_mode = "invalid"\n',
         encoding="utf-8",
     )
 
