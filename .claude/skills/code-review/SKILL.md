@@ -9,11 +9,9 @@ hooks:
           command: "if echo \"$TOOL_INPUT\" | grep -qE 'git commit'; then echo 'Before committing, have you reviewed these changes? Use the code-review skill to run a multi-model review: code-reviewer review --uncommitted --output-format json'; fi"
 ---
 
-# Local Code Review with code-reviewer
+Multi-model AI review pipeline that runs locally against git diffs. Every change goes through triage first — simple
+changes get a fast lightweight review, complex changes get parallel multi-reviewer analysis with reconciliation.
 
-Multi-model AI code review pipeline that runs locally against git diffs. Every change goes through triage first — simple changes get a fast lightweight review, complex changes get parallel multi-reviewer analysis with reconciliation.
-
-**Core principle:** Catch issues before they leave the developer's machine. The review pipeline uses multiple AI models (Claude, Codex, Gemini) so findings are cross-validated, not single-model blind spots.
 
 ## Modes of Operation
 
@@ -25,8 +23,6 @@ Multi-model AI code review pipeline that runs locally against git diffs. Every c
 - Security-sensitive modifications
 - Before committing or creating a PR
 
-**Behavior:** Detect the right review mode automatically, run the review, present findings.
-
 ### Mode 2: Slash Command
 
 ```
@@ -34,40 +30,6 @@ Multi-model AI code review pipeline that runs locally against git diffs. Every c
 /code-review --uncommitted        # Review uncommitted changes only
 /code-review --base main          # Review current branch vs main
 /code-review --commit abc123      # Review a specific commit
-```
-
-## Workflow
-
-```dot
-digraph workflow {
-    rankdir=TB;
-    node [shape=box];
-
-    start [label="User triggers\nreview" shape=ellipse];
-    prereq [label="Check prerequisites:\ncode-reviewer installed?\nconfig.toml exists?"];
-    detect [label="Detect review mode" shape=diamond];
-    uncommitted [label="--uncommitted\n(staged + unstaged vs HEAD)"];
-    branch [label="--base <default-branch>\n(branch diff)"];
-    commit [label="--commit <sha>\n(single commit)"];
-    run [label="Run code-reviewer review\n--output-format json"];
-    parse [label="Parse JSON result" shape=diamond];
-    success [label="Present findings:\ncritical → suggestions → test gaps"];
-    failure [label="Show error,\nsuggest fixes"];
-    act [label="Offer to fix\nfindings" shape=ellipse];
-
-    start -> prereq;
-    prereq -> detect;
-    detect -> uncommitted [label="dirty worktree"];
-    detect -> branch [label="clean, on\nfeature branch"];
-    detect -> commit [label="user specified\ncommit SHA"];
-    uncommitted -> run;
-    branch -> run;
-    commit -> run;
-    run -> parse;
-    parse -> success [label="processed: true"];
-    parse -> failure [label="processed: false"];
-    success -> act;
-}
 ```
 
 ## Prerequisites
@@ -120,16 +82,18 @@ DEFAULT_BRANCH=$(git rev-parse --verify main 2>/dev/null && echo "main" || \
                  echo "")
 ```
 
-| Git State | Mode | Flags |
-|-----------|------|-------|
-| Uncommitted changes exist | uncommitted | `--uncommitted` |
-| Clean worktree, on feature branch | branch | `--base <default-branch>` |
-| User provides commit SHA | commit | `--commit <sha>` |
-| Uncommitted + feature branch | uncommitted | `--uncommitted` (mention `--base` option) |
+| Git State                         | Mode        | Flags                                     |
+|-----------------------------------|-------------|-------------------------------------------|
+| Uncommitted changes exist         | uncommitted | `--uncommitted`                           |
+| Clean worktree, on feature branch | branch      | `--base <default-branch>`                 |
+| User provides commit SHA          | commit      | `--commit <sha>`                          |
+| Uncommitted + feature branch      | uncommitted | `--uncommitted` (mention `--base` option) |
 
-**When both uncommitted changes and a branch diff exist:** prefer `--uncommitted` for immediate feedback. After presenting results, mention: "You can also review the full branch diff with `--base <default-branch>` after committing."
+**When both uncommitted changes and a branch diff exist:** prefer `--uncommitted` for immediate feedback. After
+presenting results, mention: "You can also review the full branch diff with `--base <default-branch>` after committing."
 
-**If the base branch is ambiguous** (no `main` or `master`, or the user might mean a different branch), use `AskUserQuestion` to confirm.
+**If the base branch is ambiguous** (no `main` or `master`, or the user might mean a different branch), use
+`AskUserQuestion` to confirm.
 
 ## Running the Review
 
@@ -141,7 +105,8 @@ code-reviewer review \
   --output-format json
 ```
 
-**Timeout:** The review can take 30-120 seconds depending on diff size and configured backends. Use a generous timeout (at least 300 seconds).
+**Timeout:** The review takes 5-10 minutes depending on diff size and configured backends. Use a generous timeout (
+at least 600 seconds).
 
 The `--output-format json` flag sends logs to stderr and structured results to stdout.
 
@@ -157,21 +122,23 @@ The `--output-format json` flag sends logs to stderr and structured results to s
 }
 ```
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `processed` | boolean | Whether the review completed successfully |
-| `status` | string | Outcome: `reviewed`, `skipped`, `error` |
-| `final_review` | string\|null | The full markdown review content |
-| `output_file` | string\|null | Path where review was saved |
-| `error` | string\|null | Error message if failed |
+| Field          | Type         | Description                               |
+|----------------|--------------|-------------------------------------------|
+| `processed`    | boolean      | Whether the review completed successfully |
+| `status`       | string       | Outcome: `reviewed`, `skipped`, `error`   |
+| `final_review` | string\|null | The full markdown review content          |
+| `output_file`  | string\|null | Path where review was saved               |
+| `error`        | string\|null | Error message if failed                   |
 
 ## Presenting Results
 
 ### Successful Review
 
-Parse `final_review` from the JSON output and present it to the user. The review is already formatted as markdown. Present it directly — do not summarize or reformat.
+Parse `final_review` from the JSON output and present it to the user. The review is already formatted as markdown.
+Present it directly — do not summarize or reformat.
 
 If the review contains findings, organize follow-up by severity:
+
 1. **Critical issues** — must fix before committing
 2. **Suggestions** — worth considering
 3. **Test gaps** — areas lacking test coverage
@@ -188,6 +155,7 @@ If `processed` is false, show the error and suggest troubleshooting:
 **Error:** [error message]
 
 **Troubleshooting:**
+
 - Check API keys are set for configured backends
 - Verify config.toml settings are valid: `code-reviewer check --config config.toml`
 - Check the stderr output above for detailed error info
@@ -195,28 +163,15 @@ If `processed` is false, show the error and suggest troubleshooting:
 
 ## CLI Reference
 
-| Flag | Description |
-|------|-------------|
-| `--config`, `-c` | Path to TOML config file (default: `config.toml`) |
-| `--repo` | Path to git repository (default: `.`) |
-| `--base` | Base branch to diff against (branch mode) |
-| `--branch` | Head branch to review (default: current branch) |
-| `--uncommitted` | Review staged + unstaged changes vs HEAD |
-| `--commit` | Review a specific commit vs its parent |
-| `--output-format` | `text` (default) or `json` |
-| `--enabled-reviewer`, `-r` | Override reviewers (repeat for multiple) |
-| `--triage-backend` | Override triage backend: `claude`, `codex`, `gemini` |
-| `--lightweight-review-backend` | Override lightweight review backend |
-
-## Quick Reference
-
-| Scenario | What Happens |
-|----------|-------------|
-| Just finished implementing a feature | Auto-detect mode, run review, present findings |
-| About to commit | Check for uncommitted changes, review them |
-| About to open a PR | Review branch diff against default branch |
-| User says "review my changes" | Detect mode and run |
-| Review finds critical issues | Present findings, offer to fix before committing |
-| Review succeeds with no issues | Confirm clean review, proceed with commit/PR |
-| Review fails | Show error, suggest troubleshooting steps |
-| Re-review after fixes | Run again to confirm issues are resolved |
+| Flag                           | Description                                          |
+|--------------------------------|------------------------------------------------------|
+| `--config`, `-c`               | Path to TOML config file (default: `config.toml`)    |
+| `--repo`                       | Path to git repository (default: `.`)                |
+| `--base`                       | Base branch to diff against (branch mode)            |
+| `--branch`                     | Head branch to review (default: current branch)      |
+| `--uncommitted`                | Review staged + unstaged changes vs HEAD             |
+| `--commit`                     | Review a specific commit vs its parent               |
+| `--output-format`              | `text` (default) or `json`                           |
+| `--enabled-reviewer`, `-r`     | Override reviewers (repeat for multiple)             |
+| `--triage-backend`             | Override triage backend: `claude`, `codex`, `gemini` |
+| `--lightweight-review-backend` | Override lightweight review backend                  |

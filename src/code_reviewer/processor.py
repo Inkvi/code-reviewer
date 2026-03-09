@@ -587,17 +587,10 @@ async def process_local_review(
         if triage_result == TriageResult.SIMPLE:
             lightweight_text = _validate_review_format(lightweight_text)
 
-            info("writing lightweight review output")
-            version_label = _output_version_label(pr)
-            output_path = write_review_markdown(
-                Path(config.output_dir), pr, lightweight_text, version_label=version_label,
-            )
-            info(f"Lightweight review ready: {output_path.resolve()}")
             return ProcessingResult(
                 processed=True, pr_url=pr.url, pr_key=pr.key,
                 status="lightweight_generated",
                 final_review=lightweight_text,
-                output_file=str(output_path.resolve()),
                 triage_result="simple",
                 total_token_usage=lightweight_usage,
             )
@@ -641,24 +634,12 @@ async def process_local_review(
             raise RuntimeError("No enabled reviewers configured")
 
         _log_token_usage(active_outputs, reconciler_usage, pr.url)
-        info("writing final markdown output")
-        version_label = _output_version_label(pr)
-        output_path = write_review_markdown(
-            Path(config.output_dir), pr, final_review, version_label=version_label,
-        )
-        raw_output_path = write_reviewer_sidecar_markdown(
-            Path(config.output_dir), pr, active_outputs,
-            include_stderr=config.include_reviewer_stderr, version_label=version_label,
-        )
-        info(f"Final review ready: {output_path.resolve()}")
-        info(f"Raw reviewer outputs: {raw_output_path.resolve()}")
 
         review_decision = infer_review_decision(final_review) if final_review else None
         return ProcessingResult(
             processed=True, pr_url=pr.url, pr_key=pr.key,
             status="generated",
             final_review=final_review,
-            output_file=str(output_path.resolve()),
             triage_result="full_review",
             review_decision=review_decision,
             reviewer_outputs=_make_reviewer_summaries(active_outputs),

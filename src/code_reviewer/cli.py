@@ -922,7 +922,7 @@ def review_command(
     if output_format == "json":
         print(json.dumps(result.to_dict(), indent=2))
     elif result.processed:
-        info(f"Review complete. Output: {result.output_file}")
+        info("Review complete.")
         if result.final_review:
             console.print()
             console.print(result.final_review)
