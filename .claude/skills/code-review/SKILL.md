@@ -132,7 +132,9 @@ If the review contains findings, organize follow-up by severity:
 2. **Suggestions** — worth considering
 3. **Test gaps** — areas lacking test coverage
 
-After presenting, ask: "Want me to address any of these findings?"
+If there are **critical or high-severity** findings, evaluate each one by reading the relevant code to determine if the finding is valid or a false positive. Only fix the ones that are genuinely valid issues. After fixing, re-run the review. Repeat this validate-fix-review cycle until no valid critical/high issues remain.
+
+For remaining low-severity suggestions, evaluate and fix the valid ones at your discretion.
 
 ### Failed Review
 
