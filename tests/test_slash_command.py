@@ -6,6 +6,7 @@ from code_reviewer.config import AppConfig
 from code_reviewer.github import GitHubClient
 from code_reviewer.models import PRCandidate, ProcessedState, ReviewerOutput, SlashCommandTrigger
 from code_reviewer.processor import process_candidate
+from code_reviewer.reviewers.triage import TriageResult
 
 
 def test_slash_command_trigger_defaults() -> None:
@@ -109,7 +110,14 @@ def _sample_pr_with_slash_command(*, force: bool = False) -> PRCandidate:
     )
 
 
+def _mock_triage_full_review(monkeypatch) -> None:
+    async def fake_triage(*args, **kwargs):
+        return TriageResult.FULL_REVIEW
+    monkeypatch.setattr("code_reviewer.processor.run_triage", fake_triage)
+
+
 def test_slash_command_triggers_review(monkeypatch, tmp_path) -> None:
+    _mock_triage_full_review(monkeypatch)
     store = DummyStore()
     workspace = DummyWorkspace(tmp_path)
     client = GitHubClient(viewer_login="Inkvi")
@@ -198,6 +206,7 @@ def test_slash_command_skips_when_already_reviewed_at_head(monkeypatch, tmp_path
 
 
 def test_slash_command_force_reviews_even_when_already_reviewed(monkeypatch, tmp_path) -> None:
+    _mock_triage_full_review(monkeypatch)
     store = DummyStore(
         ProcessedState(
             last_processed_at="2026-03-05T09:00:00+00:00",
@@ -256,6 +265,7 @@ def test_slash_command_force_reviews_even_when_already_reviewed(monkeypatch, tmp
 
 def test_slash_command_full_flow_react_review_post(monkeypatch, tmp_path) -> None:
     """Integration test: /review comment → react → run review → post → persist state."""
+    _mock_triage_full_review(monkeypatch)
     store = DummyStore()
     workspace = DummyWorkspace(tmp_path)
     client = GitHubClient(viewer_login="Inkvi")
