@@ -88,6 +88,8 @@ presenting results, mention: "You can also review the full branch diff with `--b
 
 ## Running the Review
 
+Launch the review as a **background task** using the Bash tool with `run_in_background: true`. This lets the user continue working while the review runs (typically 5-10 minutes). Tell the user the review is running in the background.
+
 ```bash
 code-reviewer review \
   --repo . \
@@ -95,8 +97,7 @@ code-reviewer review \
   --output-format json
 ```
 
-**Timeout:** The review takes 5-10 minutes depending on diff size and configured backends. Use a generous timeout (
-at least 600 seconds).
+When the background task completes, you will be notified automatically. Use `TaskOutput` to read the result, then parse and present it.
 
 The `--output-format json` flag sends logs to stderr and structured results to stdout.
 
