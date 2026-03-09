@@ -6,7 +6,7 @@ hooks:
     - matcher: "Bash"
       hooks:
         - type: command
-          command: "if echo \"$TOOL_INPUT\" | grep -qE 'git commit'; then echo 'Before committing, have you reviewed these changes? Use the code-review skill to run a multi-model review: code-reviewer review --uncommitted --output-format json'; fi"
+          command: "if echo \"$TOOL_INPUT\" | grep -qE 'git commit'; then echo 'Before committing, have you reviewed these changes? Use the code-review skill to run a multi-model review: code-reviewer review --uncommitted'; fi"
 ---
 
 Multi-model AI review pipeline that runs locally against git diffs. Every change goes through triage first — simple
@@ -44,23 +44,14 @@ if ! command -v code-reviewer &>/dev/null; then
   exit 1
 fi
 
-# 2. Check for config.toml (look in repo root first, then current dir)
-REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || echo ".")
-if [ ! -f "$REPO_ROOT/config.toml" ] && [ ! -f "./config.toml" ]; then
-  echo "ERROR: No config.toml found."
-  echo "Copy the example: cp config.example.toml config.toml"
-  echo "Then configure your API keys and preferences."
-  exit 1
-fi
-
-# 3. Verify we're in a git repository
+# 2. Verify we're in a git repository
 git rev-parse --git-dir &>/dev/null || {
   echo "ERROR: Not a git repository."
   exit 1
 }
 ```
 
-**Required API keys** depend on which backends are enabled in config.toml:
+**Config is optional.** The CLI tries `./config.toml` first, then falls back to built-in defaults if missing. API keys depend on which backends are enabled:
 - Claude: `ANTHROPIC_API_KEY`
 - Codex: `OPENAI_API_KEY`
 - Gemini: `gemini` CLI authenticated
@@ -99,7 +90,6 @@ presenting results, mention: "You can also review the full branch diff with `--b
 
 ```bash
 code-reviewer review \
-  --config config.toml \
   --repo . \
   <mode-flags> \
   --output-format json
@@ -117,7 +107,6 @@ The `--output-format json` flag sends logs to stderr and structured results to s
   "processed": true,
   "status": "reviewed",
   "final_review": "## Code Review\n...",
-  "output_file": "./reviews/local/repo-abc123/review.md",
   "error": null
 }
 ```
@@ -127,7 +116,6 @@ The `--output-format json` flag sends logs to stderr and structured results to s
 | `processed`    | boolean      | Whether the review completed successfully |
 | `status`       | string       | Outcome: `reviewed`, `skipped`, `error`   |
 | `final_review` | string\|null | The full markdown review content          |
-| `output_file`  | string\|null | Path where review was saved               |
 | `error`        | string\|null | Error message if failed                   |
 
 ## Presenting Results
@@ -157,7 +145,7 @@ If `processed` is false, show the error and suggest troubleshooting:
 **Troubleshooting:**
 
 - Check API keys are set for configured backends
-- Verify config.toml settings are valid: `code-reviewer check --config config.toml`
+- If using a config file, verify settings are valid: `code-reviewer check`
 - Check the stderr output above for detailed error info
 ```
 
@@ -165,7 +153,7 @@ If `processed` is false, show the error and suggest troubleshooting:
 
 | Flag                           | Description                                          |
 |--------------------------------|------------------------------------------------------|
-| `--config`, `-c`               | Path to TOML config file (default: `config.toml`)    |
+| `--config`, `-c`               | Path to TOML config file (optional, tries `./config.toml` then built-in defaults) |
 | `--repo`                       | Path to git repository (default: `.`)                |
 | `--base`                       | Base branch to diff against (branch mode)            |
 | `--branch`                     | Head branch to review (default: current branch)      |
