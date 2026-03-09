@@ -110,7 +110,7 @@ Your primary job is validation, not aggregation. Treat all findings as suspects:
   The reviewer's job is to catch bugs and real problems, not to gold-plate the code.
 
 Strict output rules:
-- Keep total output under 220 words.
+- Keep total output under 1000 words.
 - No tables, no long summary, no praise/filler.
 - Include only these sections in this exact order:
   1) `### Findings`
