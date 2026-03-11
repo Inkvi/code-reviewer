@@ -6,6 +6,7 @@ import pytest
 
 from code_reviewer.config import AppConfig
 from code_reviewer.preflight import run_preflight
+from code_reviewer.shell import CommandError
 
 
 def test_run_preflight_requires_claude_for_multi_reviewer_without_claude_enabled(
@@ -181,3 +182,54 @@ def test_run_preflight_gemini_reviewer_with_prompt_override_does_not_require_ext
     assert result.viewer_login == "Inkvi"
     assert ["gemini", "--version"] in commands
     assert ["gemini", "extensions", "list"] not in commands
+
+
+def test_run_preflight_falls_back_to_app_slug_on_user_failure(monkeypatch) -> None:
+    cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["gemini"])
+
+    def fake_which(cmd: str) -> str | None:
+        if cmd in {"gh", "gemini"}:
+            return f"/usr/bin/{cmd}"
+        return None
+
+    def fake_run_command(args: list[str], **_kwargs) -> subprocess.CompletedProcess[str]:
+        if args[:3] == ["gh", "api", "user"]:
+            raise CommandError(args, 1, "", "403 Forbidden")
+        if args[:3] == ["gh", "api", "/app"]:
+            return subprocess.CompletedProcess(
+                args=args, returncode=0, stdout="my-code-reviewer\n", stderr=""
+            )
+        if args == ["gemini", "extensions", "list"]:
+            return subprocess.CompletedProcess(
+                args=args, returncode=0, stdout="✓ code-review (0.1.0)\n", stderr=""
+            )
+        return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr("code_reviewer.preflight.shutil.which", fake_which)
+    monkeypatch.setattr("code_reviewer.preflight.run_command", fake_run_command)
+
+    result = run_preflight(cfg)
+
+    assert result.viewer_login == "my-code-reviewer[bot]"
+
+
+def test_run_preflight_raises_when_both_user_and_app_fail(monkeypatch) -> None:
+    cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["gemini"])
+
+    def fake_which(cmd: str) -> str | None:
+        if cmd in {"gh", "gemini"}:
+            return f"/usr/bin/{cmd}"
+        return None
+
+    def fake_run_command(args: list[str], **_kwargs) -> subprocess.CompletedProcess[str]:
+        if args[:3] == ["gh", "api", "user"]:
+            raise CommandError(args, 1, "", "403 Forbidden")
+        if args[:3] == ["gh", "api", "/app"]:
+            raise CommandError(args, 1, "", "401 Unauthorized")
+        return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr("code_reviewer.preflight.shutil.which", fake_which)
+    monkeypatch.setattr("code_reviewer.preflight.run_command", fake_run_command)
+
+    with pytest.raises(RuntimeError, match="Failed to resolve GitHub user"):
+        run_preflight(cfg)

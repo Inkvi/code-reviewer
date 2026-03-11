@@ -45,11 +45,16 @@ def run_preflight(config: AppConfig) -> PreflightResult:
 
     try:
         login_proc = run_command(["gh", "api", "user", "--jq", ".login"])
-    except CommandError as exc:
-        raise RuntimeError("Failed to resolve GitHub user via gh api.") from exc
+        viewer_login = login_proc.stdout.strip()
+    except CommandError:
+        # GitHub App installation tokens cannot call /user — fall back to /app
+        try:
+            app_proc = run_command(["gh", "api", "/app", "--jq", ".slug"])
+            viewer_login = f"{app_proc.stdout.strip()}[bot]"
+        except CommandError as exc:
+            raise RuntimeError("Failed to resolve GitHub user via gh api.") from exc
 
-    viewer_login = login_proc.stdout.strip()
-    if not viewer_login:
+    if not viewer_login or viewer_login == "[bot]":
         raise RuntimeError("Could not determine authenticated GitHub login.")
 
     if uses_codex_cli:

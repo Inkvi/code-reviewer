@@ -5,6 +5,7 @@ from pathlib import Path
 
 from code_reviewer.config import AppConfig
 from code_reviewer.github import GitHubClient
+from code_reviewer.github_app_auth import is_github_app_auth, refresh_github_token
 from code_reviewer.logger import info, warn
 from code_reviewer.models import PRCandidate
 from code_reviewer.preflight import PreflightResult
@@ -98,8 +99,11 @@ async def start_daemon(config: AppConfig, preflight: PreflightResult, store: Sta
         "Starting daemon with "
         f"interval={config.poll_interval_seconds}s owners={','.join(config.github_owners)}"
     )
+    if is_github_app_auth():
+        info("GitHub App auth detected — tokens will refresh each cycle")
     while True:
         try:
+            refresh_github_token()
             processed = await run_cycle(config, preflight, store, verbose=False)
             info(f"Cycle complete. Processed {processed} PR(s)")
         except Exception as exc:  # noqa: BLE001
