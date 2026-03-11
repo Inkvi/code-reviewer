@@ -50,11 +50,9 @@ RUN chown -R 1000:1000 /app
 
 USER 1000
 
-# Bootstrap Gemini config dir and install code-review extension
-RUN mkdir -p /home/appuser/.gemini \
-    && echo '{}' > /home/appuser/.gemini/settings.json \
-    && echo '{}' > /home/appuser/.gemini/projects.json \
-    && GEMINI_API_KEY=dummy gemini extensions install https://github.com/gemini-cli-extensions/code-review
+# Install Gemini code-review extension (clone directly to avoid CLI bugs in Docker)
+RUN mkdir -p /home/appuser/.gemini/extensions \
+    && git clone https://github.com/gemini-cli-extensions/code-review /home/appuser/.gemini/extensions/code-review
 
 ENTRYPOINT ["uv", "run", "code-reviewer"]
 CMD ["start"]
