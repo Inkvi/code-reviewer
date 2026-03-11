@@ -23,7 +23,7 @@ class GitHubClient:
     viewer_login: str
     _REREQUEST_EVENTS_JQ = (
         '.[] | select(.event == "review_requested" and .requested_reviewer.login != null) '
-        '| [.requested_reviewer.login, .created_at] | @tsv'
+        "| [.requested_reviewer.login, .created_at] | @tsv"
     )
 
     @staticmethod
@@ -269,8 +269,7 @@ class GitHubClient:
             )
         except Exception as exc:  # noqa: BLE001
             warn(
-                f"{owner}/{repo}#{details['number']}: "
-                f"failed to fetch review-request events: {exc}"
+                f"{owner}/{repo}#{details['number']}: failed to fetch review-request events: {exc}"
             )
 
         return PRCandidate(
@@ -371,7 +370,7 @@ class GitHubClient:
                 "--paginate",
                 f"repos/{owner}/{repo}/issues/{number}/comments",
                 "--jq",
-                '.[] | {id, user: .user.login, created_at, body} | @json',
+                ".[] | {id, user: .user.login, created_at, body} | @json",
             ],
             retries=2,
         )

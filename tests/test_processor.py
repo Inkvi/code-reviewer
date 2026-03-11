@@ -139,7 +139,8 @@ def test_start_codex_review_task_uses_cli_backend(monkeypatch) -> None:
 
     monkeypatch.setattr("code_reviewer.processor.run_codex_review", fake_codex_cli)
     monkeypatch.setattr(
-        "code_reviewer.processor.run_codex_review_via_agents_sdk", fake_codex_agents,
+        "code_reviewer.processor.run_codex_review_via_agents_sdk",
+        fake_codex_agents,
     )
 
     cfg = AppConfig(
@@ -176,7 +177,8 @@ def test_start_codex_review_task_uses_agents_backend(monkeypatch) -> None:
 
     monkeypatch.setattr("code_reviewer.processor.run_codex_review", fake_codex_cli)
     monkeypatch.setattr(
-        "code_reviewer.processor.run_codex_review_via_agents_sdk", fake_codex_agents,
+        "code_reviewer.processor.run_codex_review_via_agents_sdk",
+        fake_codex_agents,
     )
 
     cfg = AppConfig(
@@ -274,8 +276,10 @@ def test_compute_processing_decision_missing_rerequest_data() -> None:
 
 def _mock_triage_full_review(monkeypatch) -> None:
     """Add run_triage mock that returns FULL_REVIEW to a test."""
+
     async def fake_triage(*args, **kwargs):
         return TriageResult.FULL_REVIEW
+
     monkeypatch.setattr("code_reviewer.processor.run_triage", fake_triage)
 
 
@@ -1034,7 +1038,8 @@ def test_process_candidate_restarts_on_new_commit(monkeypatch, tmp_path) -> None
         return await original_run_reviewers(config, client, pr, workdir)
 
     monkeypatch.setattr(
-        "code_reviewer.processor._run_reviewers_with_monitoring", patched_run_reviewers,
+        "code_reviewer.processor._run_reviewers_with_monitoring",
+        patched_run_reviewers,
     )
     cfg = AppConfig(
         github_orgs=["polymerdao"],
@@ -1061,7 +1066,8 @@ def test_process_candidate_exhausts_restarts(monkeypatch, tmp_path) -> None:
         raise _NewCommitDetected("newersha")
 
     monkeypatch.setattr(
-        "code_reviewer.processor._run_reviewers_with_monitoring", patched_run_reviewers,
+        "code_reviewer.processor._run_reviewers_with_monitoring",
+        patched_run_reviewers,
     )
     monkeypatch.setattr(
         "code_reviewer.processor.write_review_markdown",
@@ -1350,7 +1356,9 @@ def test_submit_own_pr_falls_back_to_comment(monkeypatch, tmp_path) -> None:
 
     def raise_own_pr(*_args, **_kwargs):
         raise CommandError(
-            ["gh", "pr", "review"], 1, "",
+            ["gh", "pr", "review"],
+            1,
+            "",
             "failed to create review: GraphQL: Review Can not approve your own pull request",
         )
 
@@ -1358,7 +1366,8 @@ def test_submit_own_pr_falls_back_to_comment(monkeypatch, tmp_path) -> None:
 
     posted_files: list[str] = []
     monkeypatch.setattr(
-        GitHubClient, "post_pr_comment",
+        GitHubClient,
+        "post_pr_comment",
         lambda _self, _pr, body_file: posted_files.append(body_file),
     )
 
@@ -1400,7 +1409,8 @@ def test_auto_reuse_saved_review_on_submission_failed(monkeypatch, tmp_path) -> 
 
     submitted_reviews: list[str] = []
     monkeypatch.setattr(
-        GitHubClient, "submit_pr_review",
+        GitHubClient,
+        "submit_pr_review",
         lambda _self, _pr, body_file, decision: submitted_reviews.append(decision),
     )
 

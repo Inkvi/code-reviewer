@@ -113,6 +113,7 @@ def _sample_pr_with_slash_command(*, force: bool = False) -> PRCandidate:
 def _mock_triage_full_review(monkeypatch) -> None:
     async def fake_triage(*args, **kwargs):
         return TriageResult.FULL_REVIEW
+
     monkeypatch.setattr("code_reviewer.processor.run_triage", fake_triage)
 
 

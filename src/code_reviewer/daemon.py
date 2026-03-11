@@ -42,9 +42,7 @@ async def run_cycle(
             if sc.key.lower() not in existing_keys:
                 candidates.append(sc)
             else:
-                candidates = [
-                    sc if c.key.lower() == sc.key.lower() else c for c in candidates
-                ]
+                candidates = [sc if c.key.lower() == sc.key.lower() else c for c in candidates]
 
     if not candidates:
         if verbose:

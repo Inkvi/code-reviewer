@@ -235,10 +235,7 @@ def test_get_pr_candidate_sets_latest_direct_rerequest(monkeypatch) -> None:
         return subprocess.CompletedProcess(
             args=args,
             returncode=0,
-            stdout=(
-                "Alice\t2026-02-27T20:00:00Z\n"
-                "Inkvi\t2026-02-27T20:05:00Z\n"
-            ),
+            stdout=("Alice\t2026-02-27T20:00:00Z\nInkvi\t2026-02-27T20:05:00Z\n"),
             stderr="",
         )
 

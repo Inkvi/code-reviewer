@@ -27,6 +27,7 @@ uv run code-reviewer check                  # preflight checks + runtime summary
 uv run code-reviewer run-once               # one polling cycle (requires config with github_orgs)
 uv run code-reviewer start                  # daemon mode (requires config with github_orgs)
 uv run code-reviewer review --uncommitted   # review local uncommitted changes (config optional)
+uv run code-reviewer webhook                # GitHub App webhook server (env: WEBHOOK_SECRET)
 ```
 
 > **Note:** `run-once --pr-url` and `review` work without a config file — sensible defaults are used.
@@ -282,6 +283,59 @@ flowchart TD
     style Triage fill:#f0f4ff,stroke:#4a6fa5
     style FullReview fill:#fff5f0,stroke:#c56a3a
     style Output fill:#f0fff4,stroke:#3aaa5b
+```
+
+## Webhook Server (GitHub App)
+
+Run as a GitHub App webhook receiver instead of polling. The webhook server listens for PR events and spawns `run-once --pr-url` for each actionable event.
+
+### Setup
+
+1. Create a GitHub App with permissions: `pull_requests: write`, `issues: read`, `contents: read`
+2. Subscribe to events: `pull_request`, `issue_comment`
+3. Set the webhook URL to `https://<your-host>/webhook`
+4. Note the webhook secret
+
+### Run locally
+
+```bash
+WEBHOOK_SECRET=your-secret code-reviewer webhook
+WEBHOOK_SECRET=your-secret code-reviewer webhook --host 127.0.0.1 --port 9090
+```
+
+### Environment variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `WEBHOOK_SECRET` | GitHub App webhook secret (recommended) | _(none, signature validation disabled)_ |
+| `WEBHOOK_HOST` | Bind address | `0.0.0.0` |
+| `WEBHOOK_PORT` | Bind port | `8000` |
+
+### Endpoints
+
+- `POST /webhook` — GitHub App webhook receiver
+- `GET /healthz` — liveness probe
+
+### Handled events
+
+| Event | Action | Behavior |
+|-------|--------|----------|
+| `pull_request` | `opened`, `synchronize`, `review_requested` | Spawns review (skips drafts) |
+| `issue_comment` | `created` with `/review` or `/review force` | Spawns review |
+| `ping` | — | Returns pong |
+
+## Docker
+
+```bash
+docker build -t code-reviewer .
+docker run -e WEBHOOK_SECRET=your-secret -p 8000:8000 code-reviewer
+```
+
+The default entrypoint runs `code-reviewer webhook`. Override the command for other modes:
+
+```bash
+docker run code-reviewer run-once --pr-url https://github.com/org/repo/pull/123
+docker run code-reviewer start
 ```
 
 ## Behavior

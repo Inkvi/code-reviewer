@@ -54,7 +54,7 @@ def run_command(
         if last_proc.returncode == 0:
             return last_proc
         if attempt < retries:
-            time.sleep(2 ** attempt)
+            time.sleep(2**attempt)
     assert last_proc is not None
     if check:
         raise CommandError(args, last_proc.returncode, last_proc.stdout, last_proc.stderr)

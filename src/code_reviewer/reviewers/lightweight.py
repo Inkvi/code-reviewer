@@ -74,10 +74,7 @@ async def run_lightweight_review(
     reasoning_effort: str | None = None,
 ) -> tuple[str, TokenUsage | None]:
     prompt = _build_lightweight_prompt(pr)
-    info(
-        f"running lightweight review "
-        f"(backend={backend}, model={model or 'default'}) {pr.url}"
-    )
+    info(f"running lightweight review (backend={backend}, model={model or 'default'}) {pr.url}")
 
     if backend == "claude":
         return await _run_claude_prompt(
