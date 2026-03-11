@@ -7,6 +7,34 @@ from pydantic import BaseModel, Field, ValidationError, field_validator, model_v
 
 from code_reviewer.prompts import PromptStep, validate_prompt_override_file
 
+_ALLOWED_BACKENDS = {"claude", "codex", "gemini"}
+
+
+def _normalize_backend_list(value: str | list[str], field_name: str) -> list[str]:
+    """Normalize a single string or list of strings into a deduplicated backend list."""
+    if isinstance(value, str):
+        items = [value]
+    elif isinstance(value, list):
+        items = value
+    else:
+        raise ValueError(f"{field_name} must be a string or list of strings")
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for entry in items:
+        if not isinstance(entry, str):
+            raise ValueError(f"{field_name} entries must be strings")
+        cleaned = entry.strip().lower()
+        if not cleaned or cleaned in seen:
+            continue
+        if cleaned not in _ALLOWED_BACKENDS:
+            raise ValueError(f"{field_name} entries must be one of: claude, codex, gemini")
+        seen.add(cleaned)
+        normalized.append(cleaned)
+    if not normalized:
+        raise ValueError(f"{field_name} must include at least one backend")
+    return normalized
+
+
 _PROMPT_PATH_FIELD_TO_STEP: dict[str, PromptStep] = {
     "triage_prompt_path": "triage",
     "lightweight_review_prompt_path": "lightweight_review",
@@ -22,7 +50,7 @@ class AppConfig(BaseModel):
     enabled_reviewers: list[str] = Field(default_factory=lambda: ["claude", "codex"])
     claude_model: str | None = None
     claude_reasoning_effort: str | None = None
-    reconciler_backend: str = "claude"
+    reconciler_backend: list[str] = Field(default_factory=lambda: ["claude"])
     reconciler_model: str | None = None
     reconciler_reasoning_effort: str | None = None
     codex_backend: str = "cli"
@@ -49,12 +77,12 @@ class AppConfig(BaseModel):
     slash_command_enabled: bool = True
 
     # Triage
-    triage_backend: str = "gemini"
+    triage_backend: list[str] = Field(default_factory=lambda: ["gemini"])
     triage_model: str | None = "gemini-3-flash-preview"
     triage_timeout_seconds: int = Field(default=60, ge=10)
 
     # Lightweight review
-    lightweight_review_backend: str = "gemini"
+    lightweight_review_backend: list[str] = Field(default_factory=lambda: ["gemini"])
     lightweight_review_model: str | None = "gemini-3-flash-preview"
     lightweight_review_reasoning_effort: str | None = None
     lightweight_review_timeout_seconds: int = Field(default=300, ge=30)
@@ -129,13 +157,10 @@ class AppConfig(BaseModel):
             raise ValueError("codex_backend must be one of: cli, agents_sdk")
         return normalized
 
-    @field_validator("reconciler_backend")
+    @field_validator("reconciler_backend", mode="before")
     @classmethod
-    def validate_reconciler_backend(cls, value: str) -> str:
-        normalized = value.strip().lower()
-        if normalized not in {"claude", "codex", "gemini"}:
-            raise ValueError("reconciler_backend must be one of: claude, codex, gemini")
-        return normalized
+    def validate_reconciler_backend(cls, value: str | list[str]) -> list[str]:
+        return _normalize_backend_list(value, "reconciler_backend")
 
     @field_validator("claude_reasoning_effort")
     @classmethod
@@ -167,13 +192,10 @@ class AppConfig(BaseModel):
             raise ValueError("codex_reasoning_effort must be one of: low, medium, high")
         return normalized
 
-    @field_validator("triage_backend")
+    @field_validator("triage_backend", mode="before")
     @classmethod
-    def validate_triage_backend(cls, value: str) -> str:
-        normalized = value.strip().lower()
-        if normalized not in {"claude", "codex", "gemini"}:
-            raise ValueError("triage_backend must be one of: claude, codex, gemini")
-        return normalized
+    def validate_triage_backend(cls, value: str | list[str]) -> list[str]:
+        return _normalize_backend_list(value, "triage_backend")
 
     @field_validator("triage_model")
     @classmethod
@@ -185,13 +207,10 @@ class AppConfig(BaseModel):
             raise ValueError("triage_model cannot be empty")
         return cleaned
 
-    @field_validator("lightweight_review_backend")
+    @field_validator("lightweight_review_backend", mode="before")
     @classmethod
-    def validate_lightweight_review_backend(cls, value: str) -> str:
-        normalized = value.strip().lower()
-        if normalized not in {"claude", "codex", "gemini"}:
-            raise ValueError("lightweight_review_backend must be one of: claude, codex, gemini")
-        return normalized
+    def validate_lightweight_review_backend(cls, value: str | list[str]) -> list[str]:
+        return _normalize_backend_list(value, "lightweight_review_backend")
 
     @field_validator("lightweight_review_model")
     @classmethod
@@ -284,22 +303,22 @@ class AppConfig(BaseModel):
 
     @model_validator(mode="after")
     def validate_reconciler_backend_settings(self) -> AppConfig:
-        if self.reconciler_backend == "codex" and self.reconciler_reasoning_effort == "max":
+        if self.reconciler_reasoning_effort == "max" and "codex" in self.reconciler_backend:
             raise ValueError(
                 "reconciler_reasoning_effort must be one of: low, medium, high "
-                "when reconciler_backend=codex"
+                "when codex is in reconciler_backend"
             )
         return self
 
     @model_validator(mode="after")
     def validate_lightweight_review_backend_settings(self) -> AppConfig:
         if (
-            self.lightweight_review_backend == "codex"
-            and self.lightweight_review_reasoning_effort == "max"
+            self.lightweight_review_reasoning_effort == "max"
+            and "codex" in self.lightweight_review_backend
         ):
             raise ValueError(
                 "lightweight_review_reasoning_effort must be one of: low, medium, high "
-                "when lightweight_review_backend=codex"
+                "when codex is in lightweight_review_backend"
             )
         return self
 

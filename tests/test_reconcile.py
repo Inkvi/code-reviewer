@@ -110,8 +110,31 @@ async def test_reconcile_reviews_rejects_unknown_backend(tmp_path: Path) -> None
             tmp_path,
             [_sample_output("claude"), _sample_output("codex")],
             45,
-            reconciler_backend="other",
+            reconciler_backend=["other"],
         )
+
+
+@pytest.mark.asyncio
+async def test_reconcile_reviews_falls_back_on_failure(monkeypatch, tmp_path: Path) -> None:
+    async def failing_claude(prompt, workspace, timeout_seconds, **kwargs):
+        raise RuntimeError("claude down")
+
+    async def ok_gemini(prompt, workspace, timeout_seconds, *, model=None):
+        return "### Findings\n- No material findings.\n\n### Test Gaps\n- None noted."
+
+    monkeypatch.setattr("code_reviewer.reviewers.reconcile._run_claude_prompt", failing_claude)
+    monkeypatch.setattr("code_reviewer.reviewers.reconcile.run_gemini_prompt", ok_gemini)
+
+    text, usage = await reconcile_reviews(
+        _sample_pr(),
+        tmp_path,
+        [_sample_output("claude"), _sample_output("codex")],
+        30,
+        reconciler_backend=["claude", "gemini"],
+    )
+
+    assert "No material findings" in text
+    assert usage is None
 
 
 def test_escape_delimiters_neutralizes_closing_tag() -> None:

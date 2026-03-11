@@ -289,18 +289,19 @@ def _apply_bool_override(
         ) from exc
 
 
-def _resolve_reconciler_settings(config: AppConfig) -> tuple[str, str | None, str | None]:
-    backend = config.reconciler_backend
-    if backend == "claude":
+def _resolve_reconciler_settings(config: AppConfig) -> tuple[list[str], str | None, str | None]:
+    backends = config.reconciler_backend
+    primary = backends[0]
+    if primary == "claude":
         model = config.reconciler_model or config.claude_model
         reasoning_effort = config.reconciler_reasoning_effort or config.claude_reasoning_effort
-    elif backend == "codex":
+    elif primary == "codex":
         model = config.reconciler_model or config.codex_model
         reasoning_effort = config.reconciler_reasoning_effort or config.codex_reasoning_effort
     else:
         model = config.reconciler_model or config.gemini_model
         reasoning_effort = None
-    return backend, model, reasoning_effort
+    return backends, model, reasoning_effort
 
 
 def _prompt_override_display(path_value: str | None, *, step: str) -> str:
@@ -511,10 +512,11 @@ def check_command(
     reconciler_backend_value, reconciler_model_value, reconciler_effort_value = (
         _resolve_reconciler_settings(cfg)
     )
+    reconciler_primary = reconciler_backend_value[0]
     reconciler_effort_display = (
-        reconciler_effort_value or "default" if reconciler_backend_value != "gemini" else "n/a"
+        reconciler_effort_value or "default" if reconciler_primary != "gemini" else "n/a"
     )
-    table.add_row("Reconciler backend", reconciler_backend_value)
+    table.add_row("Reconciler backend", " > ".join(reconciler_backend_value))
     table.add_row("Reconciler model", reconciler_model_value or "default")
     table.add_row("Reconciler reasoning effort", reconciler_effort_display)
     table.add_row("Codex backend", cfg.codex_backend)
@@ -522,11 +524,11 @@ def check_command(
     table.add_row("Codex reasoning effort", cfg.codex_reasoning_effort or "default")
     table.add_row("Gemini model", cfg.gemini_model or "default")
     table.add_row("Slash command enabled", str(cfg.slash_command_enabled))
-    table.add_row("Triage backend", cfg.triage_backend)
+    table.add_row("Triage backend", " > ".join(cfg.triage_backend))
     table.add_row("Triage model", cfg.triage_model or "default")
     table.add_row("Triage prompt", _prompt_override_display(cfg.triage_prompt_path, step="triage"))
     table.add_row("Triage timeout", str(cfg.triage_timeout_seconds))
-    table.add_row("Lightweight review backend", cfg.lightweight_review_backend)
+    table.add_row("Lightweight review backend", " > ".join(cfg.lightweight_review_backend))
     table.add_row("Lightweight review model", cfg.lightweight_review_model or "default")
     table.add_row(
         "Lightweight review prompt",

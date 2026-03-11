@@ -109,13 +109,16 @@ def _start_codex_review_task(config: AppConfig, pr: PRCandidate, workdir: Path) 
     )
 
 
-def _resolve_reconciler_settings(config: AppConfig) -> tuple[str, int, str | None, str | None]:
-    backend = config.reconciler_backend
-    if backend == "claude":
+def _resolve_reconciler_settings(
+    config: AppConfig,
+) -> tuple[list[str], int, str | None, str | None]:
+    backends = config.reconciler_backend
+    primary = backends[0]
+    if primary == "claude":
         model = config.reconciler_model or config.claude_model
         reasoning_effort = config.reconciler_reasoning_effort or config.claude_reasoning_effort
         timeout_seconds = config.claude_timeout_seconds
-    elif backend == "codex":
+    elif primary == "codex":
         model = config.reconciler_model or config.codex_model
         reasoning_effort = config.reconciler_reasoning_effort or config.codex_reasoning_effort
         timeout_seconds = config.codex_timeout_seconds
@@ -123,7 +126,7 @@ def _resolve_reconciler_settings(config: AppConfig) -> tuple[str, int, str | Non
         model = config.reconciler_model or config.gemini_model
         reasoning_effort = None
         timeout_seconds = config.gemini_timeout_seconds
-    return backend, timeout_seconds, model, reasoning_effort
+    return backends, timeout_seconds, model, reasoning_effort
 
 
 def _existing_saved_review_path(
@@ -616,7 +619,7 @@ async def process_local_review(
                 reconciler_model,
                 reconciler_reasoning_effort,
             ) = _resolve_reconciler_settings(config)
-            info(f"reconciling outputs (backend={reconciler_backend})")
+            info(f"reconciling outputs (backend={' > '.join(reconciler_backend)})")
             final_review, reconciler_usage = await reconcile_reviews(
                 pr,
                 workdir,
@@ -954,14 +957,14 @@ async def process_candidate(
                 reconciler_model,
                 reconciler_reasoning_effort,
             ) = _resolve_reconciler_settings(config)
+            primary_backend = reconciler_backend[0]
             effort_label = (
-                reconciler_reasoning_effort or "default"
-                if reconciler_backend != "gemini"
-                else "n/a"
+                reconciler_reasoning_effort or "default" if primary_backend != "gemini" else "n/a"
             )
             info(
                 f"reconciling {reviewer_names} outputs "
-                f"(backend={reconciler_backend}, model={reconciler_model or 'default'}, "
+                f"(backend={' > '.join(reconciler_backend)}, "
+                f"model={reconciler_model or 'default'}, "
                 f"effort={effort_label}) {pr.url}"
             )
             pr_comments: list[str] = []

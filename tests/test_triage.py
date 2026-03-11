@@ -35,7 +35,7 @@ def test_triage_returns_simple_when_model_says_simple(tmp_path: Path) -> None:
 
     with patch("code_reviewer.reviewers.triage._run_claude_prompt", side_effect=fake_claude_prompt):
         result = asyncio.run(
-            run_triage(_sample_pr(), tmp_path, timeout_seconds=60, backend="claude")
+            run_triage(_sample_pr(), tmp_path, timeout_seconds=60, backend=["claude"])
         )
     assert result == TriageResult.SIMPLE
 
@@ -46,7 +46,7 @@ def test_triage_returns_full_review_when_model_says_full(tmp_path: Path) -> None
 
     with patch("code_reviewer.reviewers.triage._run_claude_prompt", side_effect=fake_claude_prompt):
         result = asyncio.run(
-            run_triage(_sample_pr(), tmp_path, timeout_seconds=60, backend="claude")
+            run_triage(_sample_pr(), tmp_path, timeout_seconds=60, backend=["claude"])
         )
     assert result == TriageResult.FULL_REVIEW
 
@@ -57,7 +57,7 @@ def test_triage_falls_back_to_full_review_on_parse_error(tmp_path: Path) -> None
 
     with patch("code_reviewer.reviewers.triage._run_claude_prompt", side_effect=fake_claude_prompt):
         result = asyncio.run(
-            run_triage(_sample_pr(), tmp_path, timeout_seconds=60, backend="claude")
+            run_triage(_sample_pr(), tmp_path, timeout_seconds=60, backend=["claude"])
         )
     assert result == TriageResult.FULL_REVIEW
 
@@ -68,7 +68,7 @@ def test_triage_falls_back_to_full_review_on_exception(tmp_path: Path) -> None:
 
     with patch("code_reviewer.reviewers.triage._run_claude_prompt", side_effect=fake_claude_prompt):
         result = asyncio.run(
-            run_triage(_sample_pr(), tmp_path, timeout_seconds=60, backend="claude")
+            run_triage(_sample_pr(), tmp_path, timeout_seconds=60, backend=["claude"])
         )
     assert result == TriageResult.FULL_REVIEW
 
@@ -79,7 +79,7 @@ def test_triage_gemini_backend(tmp_path: Path) -> None:
 
     with patch("code_reviewer.reviewers.triage.run_gemini_prompt", side_effect=fake_gemini_prompt):
         result = asyncio.run(
-            run_triage(_sample_pr(), tmp_path, timeout_seconds=60, backend="gemini")
+            run_triage(_sample_pr(), tmp_path, timeout_seconds=60, backend=["gemini"])
         )
     assert result == TriageResult.SIMPLE
 
@@ -90,7 +90,7 @@ def test_triage_codex_backend(tmp_path: Path) -> None:
 
     with patch("code_reviewer.reviewers.triage.run_codex_prompt", side_effect=fake_codex_prompt):
         result = asyncio.run(
-            run_triage(_sample_pr(), tmp_path, timeout_seconds=60, backend="codex")
+            run_triage(_sample_pr(), tmp_path, timeout_seconds=60, backend=["codex"])
         )
     assert result == TriageResult.SIMPLE
 
@@ -113,7 +113,7 @@ def test_triage_extracts_json_from_markdown_code_block(tmp_path: Path) -> None:
 
     with patch("code_reviewer.reviewers.triage._run_claude_prompt", side_effect=fake_claude_prompt):
         result = asyncio.run(
-            run_triage(_sample_pr(), tmp_path, timeout_seconds=60, backend="claude")
+            run_triage(_sample_pr(), tmp_path, timeout_seconds=60, backend=["claude"])
         )
     assert result == TriageResult.SIMPLE
 
@@ -155,7 +155,7 @@ def test_triage_claude_system_prompt_warns_about_untrusted(tmp_path: Path) -> No
         return '{"classification": "full_review"}', None
 
     with patch("code_reviewer.reviewers.triage._run_claude_prompt", side_effect=fake_claude_prompt):
-        asyncio.run(run_triage(_sample_pr(), tmp_path, timeout_seconds=60, backend="claude"))
+        asyncio.run(run_triage(_sample_pr(), tmp_path, timeout_seconds=60, backend=["claude"]))
 
     sys_prompt = captured_kwargs.get("system_prompt", "")
     assert "untrusted" in sys_prompt.lower()
@@ -212,8 +212,42 @@ def test_run_triage_passes_diff_to_prompt(tmp_path: Path) -> None:
         patch("code_reviewer.reviewers.triage.run_gemini_prompt", side_effect=fake_gemini_prompt),
         patch("code_reviewer.reviewers.triage._get_diff_snippet", return_value=fake_diff),
     ):
-        asyncio.run(run_triage(_sample_pr(), tmp_path, timeout_seconds=60, backend="gemini"))
+        asyncio.run(run_triage(_sample_pr(), tmp_path, timeout_seconds=60, backend=["gemini"]))
 
     assert len(captured_prompts) == 1
     assert "<untrusted_data type='diff'>" in captured_prompts[0]
     assert "old" in captured_prompts[0]
+
+
+def test_triage_falls_back_to_second_backend(tmp_path: Path) -> None:
+    async def failing_gemini(prompt, cwd, timeout, **kwargs):
+        raise RuntimeError("gemini down")
+
+    async def ok_claude(prompt, cwd, timeout, **kwargs):
+        return '{"classification": "simple"}', None
+
+    with (
+        patch("code_reviewer.reviewers.triage.run_gemini_prompt", side_effect=failing_gemini),
+        patch("code_reviewer.reviewers.triage._run_claude_prompt", side_effect=ok_claude),
+    ):
+        result = asyncio.run(
+            run_triage(_sample_pr(), tmp_path, timeout_seconds=60, backend=["gemini", "claude"])
+        )
+    assert result == TriageResult.SIMPLE
+
+
+def test_triage_all_backends_fail_returns_full_review(tmp_path: Path) -> None:
+    async def failing_gemini(prompt, cwd, timeout, **kwargs):
+        raise RuntimeError("gemini down")
+
+    async def failing_claude(prompt, cwd, timeout, **kwargs):
+        raise RuntimeError("claude down")
+
+    with (
+        patch("code_reviewer.reviewers.triage.run_gemini_prompt", side_effect=failing_gemini),
+        patch("code_reviewer.reviewers.triage._run_claude_prompt", side_effect=failing_claude),
+    ):
+        result = asyncio.run(
+            run_triage(_sample_pr(), tmp_path, timeout_seconds=60, backend=["gemini", "claude"])
+        )
+    assert result == TriageResult.FULL_REVIEW

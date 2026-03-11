@@ -9,6 +9,7 @@ from pathlib import Path
 from code_reviewer.logger import info, warn
 from code_reviewer.models import PRCandidate
 from code_reviewer.prompts import build_triage_bundle
+from code_reviewer.reviewers._fallback import run_with_fallback
 from code_reviewer.reviewers._sanitize import _escape_delimiters
 from code_reviewer.reviewers.claude_sdk import _run_claude_prompt
 from code_reviewer.reviewers.codex_cli import run_codex_prompt
@@ -92,10 +93,11 @@ async def run_triage(
     workspace: Path,
     timeout_seconds: int,
     *,
-    backend: str = "gemini",
+    backend: list[str] | str = "gemini",
     model: str | None = None,
     prompt_path: str | None = None,
 ) -> TriageResult:
+    backends = [backend] if isinstance(backend, str) else list(backend)
     diff_snippet = _get_diff_snippet(workspace, pr)
     if diff_snippet:
         diff_section = (
@@ -107,35 +109,38 @@ async def run_triage(
         diff_section = ""
     bundle = build_triage_bundle(pr, workspace, diff_section, prompt_path)
     prompt = bundle.prompt
-    info(f"running triage (backend={backend}, model={model or 'default'}) {pr.url}")
+    info(f"running triage (backends={' > '.join(backends)}, model={model or 'default'}) {pr.url}")
 
-    try:
-        if backend == "claude":
+    async def _try(b: str) -> str:
+        use_model = model if b == backends[0] else None
+        if b == "claude":
             text, _ = await _run_claude_prompt(
                 prompt,
                 workspace,
                 timeout_seconds,
                 system_prompt=bundle.system_prompt,
                 max_turns=1,
-                model=model,
+                model=use_model,
             )
-        elif backend == "codex":
-            text = await run_codex_prompt(
+            return text
+        if b == "codex":
+            return await run_codex_prompt(
                 prompt,
                 workspace,
                 timeout_seconds,
-                model=model,
+                model=use_model,
             )
-        elif backend == "gemini":
-            text = await run_gemini_prompt(
+        if b == "gemini":
+            return await run_gemini_prompt(
                 prompt,
                 workspace,
                 timeout_seconds,
-                model=model,
+                model=use_model,
             )
-        else:
-            warn(f"unsupported triage backend: {backend} {pr.url}")
-            return TriageResult.FULL_REVIEW
+        raise RuntimeError(f"unsupported triage backend: {b}")
+
+    try:
+        text = await run_with_fallback(backends, _try, "triage", pr.url)
     except Exception as exc:  # noqa: BLE001
         warn(f"triage failed, falling back to full review: {exc} {pr.url}")
         return TriageResult.FULL_REVIEW

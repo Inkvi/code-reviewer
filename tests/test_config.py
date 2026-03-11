@@ -21,7 +21,7 @@ def test_load_config_success(tmp_path: Path) -> None:
     assert cfg.enabled_reviewers == ["claude", "codex"]
     assert cfg.claude_model is None
     assert cfg.claude_reasoning_effort is None
-    assert cfg.reconciler_backend == "claude"
+    assert cfg.reconciler_backend == ["claude"]
     assert cfg.reconciler_model is None
     assert cfg.reconciler_reasoning_effort is None
     assert cfg.codex_backend == "cli"
@@ -266,7 +266,7 @@ def test_load_config_triage_defaults(tmp_path: Path) -> None:
     path = tmp_path / "config.toml"
     path.write_text('github_orgs=["Inkvi"]\n', encoding="utf-8")
     cfg = load_config(path)
-    assert cfg.triage_backend == "gemini"
+    assert cfg.triage_backend == ["gemini"]
     assert cfg.triage_model == "gemini-3-flash-preview"
     assert cfg.triage_timeout_seconds == 60
 
@@ -275,7 +275,7 @@ def test_load_config_lightweight_review_defaults(tmp_path: Path) -> None:
     path = tmp_path / "config.toml"
     path.write_text('github_orgs=["Inkvi"]\n', encoding="utf-8")
     cfg = load_config(path)
-    assert cfg.lightweight_review_backend == "gemini"
+    assert cfg.lightweight_review_backend == ["gemini"]
     assert cfg.lightweight_review_model == "gemini-3-flash-preview"
     assert cfg.lightweight_review_reasoning_effort is None
     assert cfg.lightweight_review_timeout_seconds == 300
@@ -443,8 +443,8 @@ def test_default_config_returns_valid_config() -> None:
     assert cfg.enabled_reviewers == ["claude", "codex"]
     assert cfg.poll_interval_seconds == 60
     assert cfg.auto_post_review is False
-    assert cfg.triage_backend == "gemini"
-    assert cfg.lightweight_review_backend == "gemini"
+    assert cfg.triage_backend == ["gemini"]
+    assert cfg.lightweight_review_backend == ["gemini"]
 
 
 def test_load_config_rejects_invalid_trigger_mode(tmp_path: Path) -> None:
@@ -454,5 +454,92 @@ def test_load_config_rejects_invalid_trigger_mode(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
+    with pytest.raises(ValueError):
+        load_config(path)
+
+
+# --- Backend list syntax tests ---
+
+
+def test_triage_backend_accepts_list(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text(
+        'github_orgs=["Inkvi"]\ntriage_backend = ["gemini", "claude"]\n',
+        encoding="utf-8",
+    )
+    cfg = load_config(path)
+    assert cfg.triage_backend == ["gemini", "claude"]
+
+
+def test_triage_backend_string_normalized_to_list(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text(
+        'github_orgs=["Inkvi"]\ntriage_backend = "claude"\n',
+        encoding="utf-8",
+    )
+    cfg = load_config(path)
+    assert cfg.triage_backend == ["claude"]
+
+
+def test_triage_backend_deduplicates(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text(
+        'github_orgs=["Inkvi"]\ntriage_backend = ["gemini", "GEMINI", "claude"]\n',
+        encoding="utf-8",
+    )
+    cfg = load_config(path)
+    assert cfg.triage_backend == ["gemini", "claude"]
+
+
+def test_triage_backend_rejects_empty_list(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text(
+        'github_orgs=["Inkvi"]\ntriage_backend = []\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError):
+        load_config(path)
+
+
+def test_reconciler_backend_accepts_list(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text(
+        'github_orgs=["Inkvi"]\nreconciler_backend = ["claude", "gemini"]\n',
+        encoding="utf-8",
+    )
+    cfg = load_config(path)
+    assert cfg.reconciler_backend == ["claude", "gemini"]
+
+
+def test_lightweight_review_backend_accepts_list(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text(
+        'github_orgs=["Inkvi"]\nlightweight_review_backend = ["gemini", "claude", "codex"]\n',
+        encoding="utf-8",
+    )
+    cfg = load_config(path)
+    assert cfg.lightweight_review_backend == ["gemini", "claude", "codex"]
+
+
+def test_reconciler_rejects_max_effort_when_codex_in_chain(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text(
+        'github_orgs=["Inkvi"]\n'
+        'reconciler_backend = ["claude", "codex"]\n'
+        'reconciler_reasoning_effort = "max"\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError):
+        load_config(path)
+
+
+def test_lightweight_rejects_max_effort_when_codex_in_chain(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text(
+        'github_orgs=["Inkvi"]\n'
+        'lightweight_review_backend = ["gemini", "codex"]\n'
+        'lightweight_review_reasoning_effort = "max"\n',
+        encoding="utf-8",
+    )
     with pytest.raises(ValueError):
         load_config(path)

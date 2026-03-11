@@ -19,15 +19,12 @@ def run_preflight(config: AppConfig) -> PreflightResult:
     required = ["gh"]
     enabled = set(config.enabled_reviewers)
     uses_reconciler = len(enabled) >= 2
-    uses_claude_runtime = "claude" in enabled or (
-        uses_reconciler and config.reconciler_backend == "claude"
-    )
+    reconciler_backends = set(config.reconciler_backend) if uses_reconciler else set()
+    uses_claude_runtime = "claude" in enabled or "claude" in reconciler_backends
     uses_codex_cli = ("codex" in enabled and config.codex_backend == "cli") or (
-        uses_reconciler and config.reconciler_backend == "codex"
+        "codex" in reconciler_backends
     )
-    uses_gemini_cli = "gemini" in enabled or (
-        uses_reconciler and config.reconciler_backend == "gemini"
-    )
+    uses_gemini_cli = "gemini" in enabled or "gemini" in reconciler_backends
     uses_gemini_extension_review = "gemini" in enabled and config.full_review_prompt_path is None
 
     if uses_claude_runtime:

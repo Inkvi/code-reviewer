@@ -106,7 +106,7 @@ def test_apply_field_override_reconciler_backend() -> None:
         "--reconciler-backend",
     )
 
-    assert out.reconciler_backend == "codex"
+    assert out.reconciler_backend == ["codex"]
 
 
 def test_apply_field_override_invalid_reconciler_backend_raises_bad_parameter() -> None:

@@ -4,6 +4,7 @@ from pathlib import Path
 
 from code_reviewer.models import PRCandidate, ReviewerOutput, TokenUsage
 from code_reviewer.prompts import build_reconcile_bundle
+from code_reviewer.reviewers._fallback import run_with_fallback
 from code_reviewer.reviewers._sanitize import _escape_delimiters
 from code_reviewer.reviewers.claude_sdk import _run_claude_prompt
 from code_reviewer.reviewers.codex_cli import run_codex_prompt
@@ -47,7 +48,7 @@ async def reconcile_reviews(
     reviewer_outputs: list[ReviewerOutput],
     timeout_seconds: int,
     *,
-    reconciler_backend: str = "claude",
+    reconciler_backend: list[str] | str = "claude",
     pr_comments: list[str] | None = None,
     reconciler_model: str | None = None,
     reconciler_reasoning_effort: str | None = None,
@@ -55,6 +56,9 @@ async def reconcile_reviews(
     max_test_gaps: int = 3,
     prompt_path: str | None = None,
 ) -> tuple[str, TokenUsage | None]:
+    backends = (
+        [reconciler_backend] if isinstance(reconciler_backend, str) else list(reconciler_backend)
+    )
     comments_text = _format_pr_comments(pr_comments)
     bundle = build_reconcile_bundle(
         pr,
@@ -67,31 +71,37 @@ async def reconcile_reviews(
     )
     prompt = bundle.prompt
 
-    if reconciler_backend == "claude":
-        return await _run_claude_prompt(
-            prompt,
-            workspace,
-            timeout_seconds,
-            system_prompt=bundle.system_prompt,
-            max_turns=1,
-            model=reconciler_model,
-            reasoning_effort=reconciler_reasoning_effort,
-        )
-    if reconciler_backend == "codex":
-        text = await run_codex_prompt(
-            prompt,
-            workspace,
-            timeout_seconds,
-            model=reconciler_model,
-            reasoning_effort=reconciler_reasoning_effort,
-        )
-        return text, None
-    if reconciler_backend == "gemini":
-        text = await run_gemini_prompt(
-            prompt,
-            workspace,
-            timeout_seconds,
-            model=reconciler_model,
-        )
-        return text, None
-    raise RuntimeError(f"Unsupported reconciler backend: {reconciler_backend}")
+    async def _try(b: str) -> tuple[str, TokenUsage | None]:
+        is_primary = b == backends[0]
+        use_model = reconciler_model if is_primary else None
+        use_effort = reconciler_reasoning_effort if is_primary else None
+        if b == "claude":
+            return await _run_claude_prompt(
+                prompt,
+                workspace,
+                timeout_seconds,
+                system_prompt=bundle.system_prompt,
+                max_turns=1,
+                model=use_model,
+                reasoning_effort=use_effort,
+            )
+        if b == "codex":
+            text = await run_codex_prompt(
+                prompt,
+                workspace,
+                timeout_seconds,
+                model=use_model,
+                reasoning_effort=use_effort,
+            )
+            return text, None
+        if b == "gemini":
+            text = await run_gemini_prompt(
+                prompt,
+                workspace,
+                timeout_seconds,
+                model=use_model,
+            )
+            return text, None
+        raise RuntimeError(f"Unsupported reconciler backend: {b}")
+
+    return await run_with_fallback(backends, _try, "reconcile", pr.url)

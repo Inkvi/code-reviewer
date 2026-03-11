@@ -209,9 +209,9 @@ def test_resolve_reconciler_settings_defaults_to_claude_backend() -> None:
         claude_timeout_seconds=321,
     )
 
-    backend, timeout_seconds, model, reasoning_effort = _resolve_reconciler_settings(cfg)
+    backends, timeout_seconds, model, reasoning_effort = _resolve_reconciler_settings(cfg)
 
-    assert backend == "claude"
+    assert backends == ["claude"]
     assert timeout_seconds == 321
     assert model == "claude-sonnet-4-5"
     assert reasoning_effort == "high"
@@ -226,9 +226,9 @@ def test_resolve_reconciler_settings_can_use_codex_backend() -> None:
         codex_timeout_seconds=222,
     )
 
-    backend, timeout_seconds, model, reasoning_effort = _resolve_reconciler_settings(cfg)
+    backends, timeout_seconds, model, reasoning_effort = _resolve_reconciler_settings(cfg)
 
-    assert backend == "codex"
+    assert backends == ["codex"]
     assert timeout_seconds == 222
     assert model == "gpt-5.3-codex"
     assert reasoning_effort == "medium"
@@ -242,9 +242,9 @@ def test_resolve_reconciler_settings_can_use_gemini_backend() -> None:
         gemini_timeout_seconds=123,
     )
 
-    backend, timeout_seconds, model, reasoning_effort = _resolve_reconciler_settings(cfg)
+    backends, timeout_seconds, model, reasoning_effort = _resolve_reconciler_settings(cfg)
 
-    assert backend == "gemini"
+    assert backends == ["gemini"]
     assert timeout_seconds == 123
     assert model == "gemini-3.1-pro-preview"
     assert reasoning_effort is None
@@ -871,7 +871,7 @@ def test_process_candidate_reconcile_uses_enabled_reviewer_order(monkeypatch, tm
     assert result.processed is True
     assert seen_order == ["gemini", "codex"]
     assert seen_comments == ["@alice (2026-03-03T00:00:00Z): please verify x"]
-    assert seen_reconciler_backend == "codex"
+    assert seen_reconciler_backend == ["codex"]
     assert seen_reconciler_model == "gpt-5.3-codex-mini"
     assert seen_reconciler_reasoning_effort == "high"
 
@@ -959,7 +959,7 @@ def test_process_candidate_reconcile_falls_back_to_claude_settings(monkeypatch, 
     result = asyncio.run(process_candidate(cfg, client, store, workspace, _sample_pr()))
 
     assert result.processed is True
-    assert seen_reconciler_backend == "claude"
+    assert seen_reconciler_backend == ["claude"]
     assert seen_reconciler_model == "claude-sonnet-4-5"
     assert seen_reconciler_reasoning_effort == "medium"
 
