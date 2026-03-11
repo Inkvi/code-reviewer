@@ -50,8 +50,11 @@ RUN chown -R 1000:1000 /app
 
 USER 1000
 
-# Install Gemini code-review extension as non-root user
-RUN gemini extensions install https://github.com/gemini-cli-extensions/code-review
+# Bootstrap Gemini config dir and install code-review extension
+RUN mkdir -p /home/appuser/.gemini \
+    && echo '{}' > /home/appuser/.gemini/settings.json \
+    && echo '{}' > /home/appuser/.gemini/projects.json \
+    && GEMINI_API_KEY=dummy gemini extensions install https://github.com/gemini-cli-extensions/code-review
 
 ENTRYPOINT ["uv", "run", "code-reviewer"]
 CMD ["start"]
