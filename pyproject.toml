@@ -38,6 +38,7 @@ select = ["E", "F", "I", "UP", "B", "W"]
 "src/code_reviewer/reviewers/reconcile.py" = ["E501"]
 "src/code_reviewer/reviewers/triage.py" = ["E501"]
 "src/code_reviewer/reviewers/lightweight.py" = ["E501"]
+"src/code_reviewer/processor.py" = ["E501"]
 
 [tool.pytest.ini_options]
 addopts = "-q"
