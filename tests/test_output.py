@@ -68,9 +68,7 @@ def test_write_reviewer_sidecar_markdown(tmp_path: Path) -> None:
         ended_at=now,
     )
 
-    path = write_reviewer_sidecar_markdown(
-        tmp_path, pr, {"claude": claude, "codex": codex}
-    )
+    path = write_reviewer_sidecar_markdown(tmp_path, pr, {"claude": claude, "codex": codex})
 
     assert path.exists()
     text = path.read_text(encoding="utf-8")

@@ -75,7 +75,9 @@ async def reconcile_reviews(
     comments_text = _format_pr_comments(pr_comments)
 
     url_label = "Repository" if pr.is_local else "URL"
-    output_target = "saved to a local file" if pr.is_local else "posted\ndirectly as a GitHub comment"
+    output_target = (
+        "saved to a local file" if pr.is_local else "posted\ndirectly as a GitHub comment"
+    )
 
     prompt = f"""
 You are reconciling {count} code reviews into one final markdown review that will be {output_target}.

@@ -28,7 +28,7 @@ def test_extract_codex_review_from_stderr_assistant_marker() -> None:
 def test_sanitize_codex_markdown_removes_internal_warnings() -> None:
     text = (
         "I found one issue.\n"
-        "Failed to write last message file \"/tmp/x\": No such file or directory (os error 2)\n"
+        'Failed to write last message file "/tmp/x": No such file or directory (os error 2)\n'
         "Warning: no last agent message; wrote empty content to /tmp/x\n"
     )
     assert _sanitize_codex_markdown(text) == "I found one issue."

@@ -272,7 +272,8 @@ def _ok_reviewer_output(name: str) -> ReviewerOutput:
 
 
 def test_process_local_review_runs_pipeline(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Verify process_local_review runs triage + review and returns a result."""
     repo = _init_git_repo(tmp_path)
@@ -316,7 +317,8 @@ def test_process_local_review_runs_pipeline(
 
 
 def test_process_local_review_lightweight_path(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Verify process_local_review handles lightweight (simple) triage path."""
     repo = _init_git_repo(tmp_path)
@@ -367,7 +369,8 @@ def test_gather_diff_metadata_uncommitted_includes_untracked(tmp_path: Path) -> 
 
 
 def test_process_local_review_reconciler_path(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Verify process_local_review runs reconciler when 2+ reviewers enabled."""
     repo = _init_git_repo(tmp_path)
@@ -415,7 +418,8 @@ def test_process_local_review_reconciler_path(
 
 
 def test_process_local_review_error_handling(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Verify process_local_review returns error result on exception."""
     repo = _init_git_repo(tmp_path)
@@ -465,7 +469,8 @@ def test_build_local_candidate_sets_review_mode(tmp_path: Path) -> None:
 
 
 def test_run_claude_review_local_passes_system_prompt(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Verify local Claude reviews include an untrusted-content system prompt."""
     captured_kwargs: dict = {}
@@ -475,7 +480,8 @@ def test_run_claude_review_local_passes_system_prompt(
         return "### Findings\n- No material findings.\n\n### Test Gaps\n- None noted.", None
 
     monkeypatch.setattr(
-        "code_reviewer.reviewers.claude_sdk._run_claude_prompt", fake_run_claude_prompt,
+        "code_reviewer.reviewers.claude_sdk._run_claude_prompt",
+        fake_run_claude_prompt,
     )
 
     pr = PRCandidate(

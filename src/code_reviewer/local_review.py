@@ -97,7 +97,10 @@ def gather_diff_metadata(
         # Include untracked files that git diff misses
         try:
             untracked = _run_git(
-                repo, "ls-files", "--others", "--exclude-standard",
+                repo,
+                "ls-files",
+                "--others",
+                "--exclude-standard",
             )
         except subprocess.CalledProcessError:
             untracked = ""

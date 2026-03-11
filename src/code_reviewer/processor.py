@@ -343,10 +343,7 @@ async def _run_reviewers_with_monitoring(
         info(f"Codex reviewer disabled {pr.url}")
 
     if "gemini" in enabled_reviewer_set:
-        info(
-            f"starting Gemini review "
-            f"(model={config.gemini_model or 'default'}) {pr.url}"
-        )
+        info(f"starting Gemini review (model={config.gemini_model or 'default'}) {pr.url}")
         pending_tasks["gemini"] = asyncio.create_task(
             run_gemini_review(
                 pr,
@@ -509,10 +506,7 @@ async def _run_local_reviewers(
         )
 
     if "codex" in enabled_reviewer_set:
-        info(
-            f"starting Codex review "
-            f"(backend={config.codex_backend}, model={config.codex_model})"
-        )
+        info(f"starting Codex review (backend={config.codex_backend}, model={config.codex_model})")
         pending_tasks["codex"] = _start_codex_review_task(config, pr, workdir)
 
     if "gemini" in enabled_reviewer_set:
@@ -588,7 +582,9 @@ async def process_local_review(
             lightweight_text = _validate_review_format(lightweight_text)
 
             return ProcessingResult(
-                processed=True, pr_url=pr.url, pr_key=pr.key,
+                processed=True,
+                pr_url=pr.url,
+                pr_key=pr.key,
                 status="lightweight_generated",
                 final_review=lightweight_text,
                 triage_result="simple",
@@ -599,8 +595,7 @@ async def process_local_review(
         reviewer_outputs = await _run_local_reviewers(config, pr, workdir)
         enabled_reviewers = list(config.enabled_reviewers)
         active_outputs = {
-            name: reviewer_outputs.get(name, _disabled_output(name))
-            for name in enabled_reviewers
+            name: reviewer_outputs.get(name, _disabled_output(name)) for name in enabled_reviewers
         }
 
         if len(enabled_reviewers) >= 2:
@@ -637,7 +632,9 @@ async def process_local_review(
 
         review_decision = infer_review_decision(final_review) if final_review else None
         return ProcessingResult(
-            processed=True, pr_url=pr.url, pr_key=pr.key,
+            processed=True,
+            pr_url=pr.url,
+            pr_key=pr.key,
             status="generated",
             final_review=final_review,
             triage_result="full_review",
@@ -648,8 +645,11 @@ async def process_local_review(
     except Exception as exc:  # noqa: BLE001
         warn(f"failed processing local review: {exc}")
         return ProcessingResult(
-            processed=False, pr_url=pr.url, pr_key=pr.key,
-            status="error", error=str(exc),
+            processed=False,
+            pr_url=pr.url,
+            pr_key=pr.key,
+            status="error",
+            error=str(exc),
         )
 
 
@@ -672,7 +672,9 @@ async def process_candidate(
     if config.skip_own_prs and pr.author_login == client.viewer_login:
         detail(f"skipping own PR (author={pr.author_login}) {pr.url}")
         return ProcessingResult(
-            processed=False, pr_url=pr.url, pr_key=pr.key,
+            processed=False,
+            pr_url=pr.url,
+            pr_key=pr.key,
             status="skipped_own_pr",
         )
 
@@ -687,7 +689,9 @@ async def process_candidate(
             store.set(pr.key, previous)
             store.save()
             return ProcessingResult(
-                processed=False, pr_url=pr.url, pr_key=pr.key,
+                processed=False,
+                pr_url=pr.url,
+                pr_key=pr.key,
                 status="skipped_missing_saved_review",
             )
         detail(f"using saved review file ({saved_review_path}) {pr.url}")
@@ -704,7 +708,9 @@ async def process_candidate(
         )
         info(f"processing complete (reused saved review) {pr.url}")
         return ProcessingResult(
-            processed=True, pr_url=pr.url, pr_key=pr.key,
+            processed=True,
+            pr_url=pr.url,
+            pr_key=pr.key,
             status="reused_saved_review",
             final_review=review_text_for_decision,
             output_file=str(saved_review_path.resolve()),
@@ -722,14 +728,20 @@ async def process_candidate(
             info(f"reusing previously generated review (submission retry) {pr.url}")
             review_text = saved_path.read_text(encoding="utf-8")
             _publish_and_persist(
-                config, client, store, pr, saved_path,
+                config,
+                client,
+                store,
+                pr,
+                saved_path,
                 review_text,
                 status_when_not_posted="reused_saved_review",
                 previous=previous,
             )
             info(f"processing complete (submission retry) {pr.url}")
             return ProcessingResult(
-                processed=True, pr_url=pr.url, pr_key=pr.key,
+                processed=True,
+                pr_url=pr.url,
+                pr_key=pr.key,
                 status="reused_saved_review",
                 final_review=review_text,
                 output_file=str(saved_path.resolve()),
@@ -746,8 +758,7 @@ async def process_candidate(
         already_reviewed = (
             not trigger.force
             and previous.last_reviewed_head_sha == pr.head_sha
-            and previous.last_status
-            in ("posted", "approved", "changes_requested", "generated")
+            and previous.last_status in ("posted", "approved", "changes_requested", "generated")
         )
         if already_reviewed:
             try:
@@ -763,7 +774,9 @@ async def process_candidate(
             store.set(pr.key, previous)
             store.save()
             return ProcessingResult(
-                processed=False, pr_url=pr.url, pr_key=pr.key,
+                processed=False,
+                pr_url=pr.url,
+                pr_key=pr.key,
                 status="skipped_already_reviewed",
             )
 
@@ -778,7 +791,9 @@ async def process_candidate(
             store.set(pr.key, previous)
             store.save()
             return ProcessingResult(
-                processed=False, pr_url=pr.url, pr_key=pr.key,
+                processed=False,
+                pr_url=pr.url,
+                pr_key=pr.key,
                 status=f"skipped_{decision.reason}",
             )
 
@@ -837,10 +852,7 @@ async def process_candidate(
                     reasoning_effort=config.lightweight_review_reasoning_effort,
                 )
             except Exception as exc:  # noqa: BLE001
-                warn(
-                    f"lightweight review failed, falling back to full review: "
-                    f"{exc} {pr.url}"
-                )
+                warn(f"lightweight review failed, falling back to full review: {exc} {pr.url}")
                 triage_result = TriageResult.FULL_REVIEW
 
         if triage_result == TriageResult.SIMPLE:
@@ -859,19 +871,28 @@ async def process_candidate(
             info(f"writing lightweight review output {pr.url}")
             version_label = _output_version_label(pr)
             output_path = write_review_markdown(
-                Path(config.output_dir), pr, lightweight_text, version_label=version_label,
+                Path(config.output_dir),
+                pr,
+                lightweight_text,
+                version_label=version_label,
             )
             info(f"Lightweight review ready: {output_path.resolve()}")
 
             _publish_and_persist(
-                config, client, store, pr, output_path,
+                config,
+                client,
+                store,
+                pr,
+                output_path,
                 lightweight_text,
                 status_when_not_posted="lightweight_generated",
                 previous=previous,
             )
             info(f"processing complete (lightweight) {pr.url}")
             return ProcessingResult(
-                processed=True, pr_url=pr.url, pr_key=pr.key,
+                processed=True,
+                pr_url=pr.url,
+                pr_key=pr.key,
                 status="lightweight_generated",
                 final_review=lightweight_text,
                 output_file=str(output_path.resolve()),
@@ -883,9 +904,7 @@ async def process_candidate(
         # Retry loop: restart reviewers when new commits are pushed mid-review.
         while True:
             try:
-                reviewer_outputs = await _run_reviewers_with_monitoring(
-                    config, client, pr, workdir
-                )
+                reviewer_outputs = await _run_reviewers_with_monitoring(config, client, pr, workdir)
                 break  # Reviews completed without mid-review commits.
             except _NewCommitDetected as ncd:
                 if restarts_remaining <= 0:
@@ -908,8 +927,7 @@ async def process_candidate(
         enabled_reviewers = list(config.enabled_reviewers)
 
         active_outputs = {
-            name: reviewer_outputs.get(name, _disabled_output(name))
-            for name in enabled_reviewers
+            name: reviewer_outputs.get(name, _disabled_output(name)) for name in enabled_reviewers
         }
 
         if len(enabled_reviewers) >= 2:
@@ -990,7 +1008,9 @@ async def process_candidate(
         info(f"processing complete {pr.url}")
         review_decision = infer_review_decision(final_review) if final_review else None
         return ProcessingResult(
-            processed=True, pr_url=pr.url, pr_key=pr.key,
+            processed=True,
+            pr_url=pr.url,
+            pr_key=pr.key,
             status="generated",
             final_review=final_review,
             output_file=str(output_path.resolve()),
@@ -1011,8 +1031,11 @@ async def process_candidate(
         store.set(pr.key, state)
         store.save()
         return ProcessingResult(
-            processed=False, pr_url=pr.url, pr_key=pr.key,
-            status="error", error=str(exc),
+            processed=False,
+            pr_url=pr.url,
+            pr_key=pr.key,
+            status="error",
+            error=str(exc),
         )
     finally:
         if workdir is not None:

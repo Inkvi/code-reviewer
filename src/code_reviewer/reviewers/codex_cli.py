@@ -126,7 +126,7 @@ def _build_codex_exec_command(
 
 def _codex_review_json_unsupported(stderr: str) -> bool:
     lowered = stderr.lower()
-    return "unexpected argument '--json'" in lowered or "unexpected argument \"--json\"" in lowered
+    return "unexpected argument '--json'" in lowered or 'unexpected argument "--json"' in lowered
 
 
 async def run_codex_prompt(

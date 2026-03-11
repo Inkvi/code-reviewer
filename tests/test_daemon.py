@@ -50,7 +50,10 @@ def test_run_cycle_quiet_mode_suppresses_per_pr_logs(monkeypatch) -> None:
     ) -> ProcessingResult:
         verbose_args.append(verbose)
         return ProcessingResult(
-            processed=False, pr_url=_pr.url, pr_key=_pr.key, status="skipped",
+            processed=False,
+            pr_url=_pr.url,
+            pr_key=_pr.key,
+            status="skipped",
         )
 
     monkeypatch.setattr("code_reviewer.daemon.process_candidate", fake_process_candidate)
@@ -142,7 +145,10 @@ def test_run_cycle_merges_slash_command_candidates(monkeypatch, tmp_path) -> Non
     async def fake_process(_config, _client, _store, _workspace, pr, **_kwargs):
         processed_keys.append(pr.key)
         return ProcessingResult(
-            processed=True, pr_url=pr.url, pr_key=pr.key, status="generated",
+            processed=True,
+            pr_url=pr.url,
+            pr_key=pr.key,
+            status="generated",
         )
 
     monkeypatch.setattr("code_reviewer.daemon.process_candidate", fake_process)
@@ -214,7 +220,10 @@ def test_run_cycle_slash_command_replaces_existing_candidate(monkeypatch, tmp_pa
     async def fake_process(_config, _client, _store, _workspace, pr, **_kwargs):
         processed_prs.append(pr)
         return ProcessingResult(
-            processed=True, pr_url=pr.url, pr_key=pr.key, status="generated",
+            processed=True,
+            pr_url=pr.url,
+            pr_key=pr.key,
+            status="generated",
         )
 
     monkeypatch.setattr("code_reviewer.daemon.process_candidate", fake_process)

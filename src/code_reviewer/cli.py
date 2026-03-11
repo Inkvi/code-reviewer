@@ -19,11 +19,12 @@ from code_reviewer.local_review import (
     resolve_head_sha,
     validate_git_repo,
 )
-from code_reviewer.logger import console, error, info, redirect_to_stderr
+from code_reviewer.logger import console, error, info, redirect_to_stderr, warn
 from code_reviewer.models import ProcessingResult
 from code_reviewer.preflight import run_preflight
 from code_reviewer.processor import process_candidate, process_local_review
 from code_reviewer.state import StateStore
+from code_reviewer.webhook import WebhookConfig, run_server
 from code_reviewer.workspace import PRWorkspace
 
 app = typer.Typer(add_completion=False, help="AI code review tool")
@@ -928,3 +929,46 @@ def review_command(
             console.print(result.final_review)
     else:
         error(f"Review failed: {result.error or result.status}")
+
+
+WebhookHostOption = Annotated[
+    str | None,
+    typer.Option("--host", help="Host to bind the webhook server to. Env: WEBHOOK_HOST."),
+]
+WebhookPortOption = Annotated[
+    int | None,
+    typer.Option("--port", "-p", help="Port to bind the webhook server to. Env: WEBHOOK_PORT."),
+]
+
+
+@app.command("webhook")
+def webhook_command(
+    host: WebhookHostOption = None,
+    port: WebhookPortOption = None,
+) -> None:
+    """Run GitHub App webhook server.
+
+    Listens for pull_request and issue_comment events, validates the webhook
+    signature, and spawns ``code-reviewer run-once --pr-url`` for each
+    actionable event.
+
+    Configuration is read from environment variables:
+      WEBHOOK_SECRET  — GitHub App webhook secret (recommended)
+      WEBHOOK_HOST    — Bind address (default: 0.0.0.0)
+      WEBHOOK_PORT    — Bind port (default: 8000)
+    """
+    import logging
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(message)s",
+    )
+    cfg = WebhookConfig.from_env()
+    if host is not None:
+        cfg.host = host
+    if port is not None:
+        cfg.port = port
+    if not cfg.webhook_secret:
+        warn("WEBHOOK_SECRET is not set; signature validation is disabled")
+    info(f"Starting webhook server on {cfg.host}:{cfg.port}")
+    run_server(cfg)

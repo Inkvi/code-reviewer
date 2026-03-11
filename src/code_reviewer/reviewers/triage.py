@@ -66,7 +66,9 @@ def _get_diff_snippet(workspace: Path, pr: PRCandidate) -> str:
             return ""
         lines = diff.splitlines()
         if len(lines) > _DIFF_MAX_LINES:
-            return "\n".join(lines[:_DIFF_MAX_LINES]) + f"\n... (truncated, {len(lines)} total lines)"
+            return (
+                "\n".join(lines[:_DIFF_MAX_LINES]) + f"\n... (truncated, {len(lines)} total lines)"
+            )
         return diff
     except Exception:  # noqa: BLE001
         return ""
@@ -152,11 +154,17 @@ async def run_triage(
             )
         elif backend == "codex":
             text = await run_codex_prompt(
-                prompt, workspace, timeout_seconds, model=model,
+                prompt,
+                workspace,
+                timeout_seconds,
+                model=model,
             )
         elif backend == "gemini":
             text = await run_gemini_prompt(
-                prompt, workspace, timeout_seconds, model=model,
+                prompt,
+                workspace,
+                timeout_seconds,
+                model=model,
             )
         else:
             warn(f"unsupported triage backend: {backend} {pr.url}")
