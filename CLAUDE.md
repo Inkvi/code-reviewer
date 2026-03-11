@@ -12,6 +12,7 @@
 - `src/code_reviewer/`: core application logic (CLI, daemon, GitHub integration, config/state, output)
   - `webhook.py`: GitHub App webhook receiver (FastAPI/Starlette)
   - `local_review.py`: local diff review (uncommitted changes, branch comparisons)
+  - `github_app_auth.py`: GitHub App JWT + installation token generation (env-var driven, no-op when unconfigured)
 - `src/code_reviewer/reviewers/`: reviewer backends and reconciliation (`claude_sdk`, `codex_cli`, `codex_agents_sdk`, `gemini_cli`, `triage`, `lightweight`, `reconcile`)
 - `tests/`: pytest suite mirrored by module name (e.g., `test_processor.py` for `processor.py`)
 - `reviews/<org>/<repo>/`: latest review artifacts (`pr-<number>.md`, `pr-<number>.raw.md`) plus versioned history under `pr-<number>/`
@@ -28,6 +29,8 @@
 - `_run_claude_prompt` passes `env={"CLAUDECODE": ""}` to `ClaudeAgentOptions` so the Agent SDK works when invoked from inside Claude Code (avoids nested execution block)
 - Backend functions support claude/codex/gemini with graceful fallback on errors
 - Keep CLI orchestration in `cli.py`; isolate reusable logic in testable modules
+- `github_app_auth.refresh_github_token()` is no-op when `GITHUB_APP_*` env vars are absent — safe to call unconditionally
+- Preflight `gh api user` falls back to `gh api /app` for GitHub App installation tokens (which return 403 on `/user`)
 
 ## Testing
 - Changing `process_candidate` return type requires updating test_processor.py, test_daemon.py, and test_slash_command.py
@@ -53,6 +56,13 @@
 - Docker image: `ghcr.io/inkvi/code-reviewer` — tagged with semver from git tag
 - `git tag v<semver> && git push origin v<semver>`: trigger docker build
 - `gh run list` / `gh run watch <id>`: monitor GitHub Actions runs
+- To retrigger a Docker build on the same tag: `git tag -d <tag> && git push origin :refs/tags/<tag>` then re-tag and push
+
+## Dockerfile
+- Runs as non-root user (UID 1000, `appuser`)
+- Installs Claude CLI (`@anthropic-ai/claude-code`), Codex CLI (`@openai/codex`), Gemini CLI (`@google/gemini-cli`)
+- Gemini code-review extension: use `git clone` to `~/.gemini/extensions/code-review` — `gemini extensions install` has bugs in non-interactive Docker builds
+- Default CMD is `start` (polling daemon); override with `webhook` for webhook mode
 
 ## Commits & PRs
 - Imperative commit subjects; Conventional Commit prefixes (`feat:`, `fix:`, `docs:`)
