@@ -303,10 +303,10 @@ class AppConfig(BaseModel):
 
     @model_validator(mode="after")
     def validate_reconciler_backend_settings(self) -> AppConfig:
-        if self.reconciler_reasoning_effort == "max" and "codex" in self.reconciler_backend:
+        if self.reconciler_reasoning_effort == "max" and self.reconciler_backend[0] == "codex":
             raise ValueError(
                 "reconciler_reasoning_effort must be one of: low, medium, high "
-                "when codex is in reconciler_backend"
+                "when reconciler_backend primary is codex"
             )
         return self
 
@@ -314,11 +314,11 @@ class AppConfig(BaseModel):
     def validate_lightweight_review_backend_settings(self) -> AppConfig:
         if (
             self.lightweight_review_reasoning_effort == "max"
-            and "codex" in self.lightweight_review_backend
+            and self.lightweight_review_backend[0] == "codex"
         ):
             raise ValueError(
                 "lightweight_review_reasoning_effort must be one of: low, medium, high "
-                "when codex is in lightweight_review_backend"
+                "when lightweight_review_backend primary is codex"
             )
         return self
 

@@ -521,7 +521,8 @@ def test_lightweight_review_backend_accepts_list(tmp_path: Path) -> None:
     assert cfg.lightweight_review_backend == ["gemini", "claude", "codex"]
 
 
-def test_reconciler_rejects_max_effort_when_codex_in_chain(tmp_path: Path) -> None:
+def test_reconciler_allows_max_effort_when_codex_is_fallback(tmp_path: Path) -> None:
+    """max reasoning_effort is fine when codex is a fallback (not primary)."""
     path = tmp_path / "config.toml"
     path.write_text(
         'github_orgs=["Inkvi"]\n'
@@ -529,15 +530,42 @@ def test_reconciler_rejects_max_effort_when_codex_in_chain(tmp_path: Path) -> No
         'reconciler_reasoning_effort = "max"\n',
         encoding="utf-8",
     )
+    cfg = load_config(path)
+    assert cfg.reconciler_backend == ["claude", "codex"]
+    assert cfg.reconciler_reasoning_effort == "max"
+
+
+def test_reconciler_rejects_max_effort_when_codex_is_primary(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text(
+        'github_orgs=["Inkvi"]\n'
+        'reconciler_backend = ["codex", "claude"]\n'
+        'reconciler_reasoning_effort = "max"\n',
+        encoding="utf-8",
+    )
     with pytest.raises(ValueError):
         load_config(path)
 
 
-def test_lightweight_rejects_max_effort_when_codex_in_chain(tmp_path: Path) -> None:
+def test_lightweight_allows_max_effort_when_codex_is_fallback(tmp_path: Path) -> None:
+    """max reasoning_effort is fine when codex is a fallback (not primary)."""
     path = tmp_path / "config.toml"
     path.write_text(
         'github_orgs=["Inkvi"]\n'
         'lightweight_review_backend = ["gemini", "codex"]\n'
+        'lightweight_review_reasoning_effort = "max"\n',
+        encoding="utf-8",
+    )
+    cfg = load_config(path)
+    assert cfg.lightweight_review_backend == ["gemini", "codex"]
+    assert cfg.lightweight_review_reasoning_effort == "max"
+
+
+def test_lightweight_rejects_max_effort_when_codex_is_primary(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text(
+        'github_orgs=["Inkvi"]\n'
+        'lightweight_review_backend = ["codex", "claude"]\n'
         'lightweight_review_reasoning_effort = "max"\n',
         encoding="utf-8",
     )

@@ -209,10 +209,10 @@ def test_resolve_reconciler_settings_defaults_to_claude_backend() -> None:
         claude_timeout_seconds=321,
     )
 
-    backends, timeout_seconds, model, reasoning_effort = _resolve_reconciler_settings(cfg)
+    backends, backend_timeouts, model, reasoning_effort = _resolve_reconciler_settings(cfg)
 
     assert backends == ["claude"]
-    assert timeout_seconds == 321
+    assert backend_timeouts == {"claude": 321}
     assert model == "claude-sonnet-4-5"
     assert reasoning_effort == "high"
 
@@ -226,10 +226,10 @@ def test_resolve_reconciler_settings_can_use_codex_backend() -> None:
         codex_timeout_seconds=222,
     )
 
-    backends, timeout_seconds, model, reasoning_effort = _resolve_reconciler_settings(cfg)
+    backends, backend_timeouts, model, reasoning_effort = _resolve_reconciler_settings(cfg)
 
     assert backends == ["codex"]
-    assert timeout_seconds == 222
+    assert backend_timeouts == {"codex": 222}
     assert model == "gpt-5.3-codex"
     assert reasoning_effort == "medium"
 
@@ -242,12 +242,26 @@ def test_resolve_reconciler_settings_can_use_gemini_backend() -> None:
         gemini_timeout_seconds=123,
     )
 
-    backends, timeout_seconds, model, reasoning_effort = _resolve_reconciler_settings(cfg)
+    backends, backend_timeouts, model, reasoning_effort = _resolve_reconciler_settings(cfg)
 
     assert backends == ["gemini"]
-    assert timeout_seconds == 123
+    assert backend_timeouts == {"gemini": 123}
     assert model == "gemini-3.1-pro-preview"
     assert reasoning_effort is None
+
+
+def test_resolve_reconciler_settings_multi_backend_timeouts() -> None:
+    cfg = AppConfig(
+        github_orgs=["polymerdao"],
+        reconciler_backend=["claude", "gemini"],
+        claude_timeout_seconds=900,
+        gemini_timeout_seconds=600,
+    )
+
+    backends, backend_timeouts, _, _ = _resolve_reconciler_settings(cfg)
+
+    assert backends == ["claude", "gemini"]
+    assert backend_timeouts == {"claude": 900, "gemini": 600}
 
 
 def test_compute_processing_decision_bootstrap_state() -> None:

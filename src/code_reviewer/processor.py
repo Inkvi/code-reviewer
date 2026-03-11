@@ -111,22 +111,27 @@ def _start_codex_review_task(config: AppConfig, pr: PRCandidate, workdir: Path) 
 
 def _resolve_reconciler_settings(
     config: AppConfig,
-) -> tuple[list[str], int, str | None, str | None]:
+) -> tuple[list[str], dict[str, int], str | None, str | None]:
     backends = config.reconciler_backend
     primary = backends[0]
     if primary == "claude":
         model = config.reconciler_model or config.claude_model
         reasoning_effort = config.reconciler_reasoning_effort or config.claude_reasoning_effort
-        timeout_seconds = config.claude_timeout_seconds
     elif primary == "codex":
         model = config.reconciler_model or config.codex_model
         reasoning_effort = config.reconciler_reasoning_effort or config.codex_reasoning_effort
-        timeout_seconds = config.codex_timeout_seconds
     else:
         model = config.reconciler_model or config.gemini_model
         reasoning_effort = None
-        timeout_seconds = config.gemini_timeout_seconds
-    return backends, timeout_seconds, model, reasoning_effort
+    backend_timeouts: dict[str, int] = {}
+    for b in backends:
+        if b == "claude":
+            backend_timeouts[b] = config.claude_timeout_seconds
+        elif b == "codex":
+            backend_timeouts[b] = config.codex_timeout_seconds
+        else:
+            backend_timeouts[b] = config.gemini_timeout_seconds
+    return backends, backend_timeouts, model, reasoning_effort
 
 
 def _existing_saved_review_path(

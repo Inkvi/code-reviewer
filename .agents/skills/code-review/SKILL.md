@@ -52,7 +52,7 @@ git rev-parse --git-dir &>/dev/null || {
 ```
 
 **Config is optional.** The CLI tries `./config.toml` first, then falls back to built-in defaults if missing. API keys depend on which backends are enabled:
-- Codex: `ANTHROPIC_API_KEY`
+- Claude: `ANTHROPIC_API_KEY`
 - Codex: `OPENAI_API_KEY`
 - Gemini: `gemini` CLI authenticated
 

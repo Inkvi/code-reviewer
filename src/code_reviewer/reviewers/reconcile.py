@@ -46,7 +46,7 @@ async def reconcile_reviews(
     pr: PRCandidate,
     workspace: Path,
     reviewer_outputs: list[ReviewerOutput],
-    timeout_seconds: int,
+    timeout_seconds: int | dict[str, int],
     *,
     reconciler_backend: list[str] | str = "claude",
     pr_comments: list[str] | None = None,
@@ -71,15 +71,21 @@ async def reconcile_reviews(
     )
     prompt = bundle.prompt
 
+    def _timeout_for(b: str) -> int:
+        if isinstance(timeout_seconds, dict):
+            return timeout_seconds.get(b, next(iter(timeout_seconds.values())))
+        return timeout_seconds
+
     async def _try(b: str) -> tuple[str, TokenUsage | None]:
         is_primary = b == backends[0]
         use_model = reconciler_model if is_primary else None
         use_effort = reconciler_reasoning_effort if is_primary else None
+        t = _timeout_for(b)
         if b == "claude":
             return await _run_claude_prompt(
                 prompt,
                 workspace,
-                timeout_seconds,
+                t,
                 system_prompt=bundle.system_prompt,
                 max_turns=1,
                 model=use_model,
@@ -89,7 +95,7 @@ async def reconcile_reviews(
             text = await run_codex_prompt(
                 prompt,
                 workspace,
-                timeout_seconds,
+                t,
                 model=use_model,
                 reasoning_effort=use_effort,
             )
@@ -98,7 +104,7 @@ async def reconcile_reviews(
             text = await run_gemini_prompt(
                 prompt,
                 workspace,
-                timeout_seconds,
+                t,
                 model=use_model,
             )
             return text, None
