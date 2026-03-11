@@ -28,6 +28,7 @@ def run_preflight(config: AppConfig) -> PreflightResult:
     uses_gemini_cli = "gemini" in enabled or (
         uses_reconciler and config.reconciler_backend == "gemini"
     )
+    uses_gemini_extension_review = "gemini" in enabled and config.full_review_prompt_path is None
 
     if uses_claude_runtime:
         required.append("claude")
@@ -85,7 +86,7 @@ def run_preflight(config: AppConfig) -> PreflightResult:
 
     if uses_gemini_cli:
         run_command(["gemini", "--version"])
-    if "gemini" in enabled:
+    if uses_gemini_extension_review:
         try:
             extension_proc = run_command(["gemini", "extensions", "list"])
         except CommandError as exc:
@@ -96,8 +97,9 @@ def run_preflight(config: AppConfig) -> PreflightResult:
         extension_listing = f"{extension_proc.stdout}\n{extension_proc.stderr}".lower()
         if _GEMINI_CODE_REVIEW_EXTENSION not in extension_listing:
             raise RuntimeError(
-                "Gemini reviewer requires the `code-review` extension. "
-                "Install with: gemini extensions install "
+                "Gemini reviewer requires the `code-review` extension when "
+                "`full_review_prompt_path` is unset. Install with: "
+                "gemini extensions install "
                 "https://github.com/gemini-cli-extensions/code-review"
             )
 

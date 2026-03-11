@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from code_reviewer.models import PRCandidate, ReviewerOutput, TokenUsage
+from code_reviewer.prompts import build_full_review_bundle
 
 
 def _load_agents_sdk() -> Any:
@@ -101,44 +102,25 @@ def _build_agent_model_settings(openai_agents: Any, reasoning_effort: str | None
 
 
 def _run_agents_codex_review_sync(
-    pr: PRCandidate, workspace: Path, model: str, reasoning_effort: str | None
+    pr: PRCandidate,
+    workspace: Path,
+    model: str,
+    reasoning_effort: str | None,
+    prompt_path: str | None,
 ) -> tuple[str, TokenUsage | None]:
     openai_agents = _load_agents_sdk()
     if not hasattr(openai_agents, "Agent") or not hasattr(openai_agents, "Runner"):
         raise RuntimeError("OpenAI Agents SDK does not provide Agent/Runner")
 
-    if pr.is_local:
-        review_subject = f"Review the code changes in repository at {workspace}."
-        base_branch = pr.base_ref
-    else:
-        review_subject = f"Review pull request {pr.url}."
-        base_branch = f"origin/{pr.base_ref}"
-    prompt = (
-        f"{review_subject}\n"
-        f"Repository workspace: {workspace}\n"
-        f"Base branch: {base_branch}\n\n"
-        "Focus only on actionable bugs, regressions, and missing tests. "
-        "Return concise markdown with exactly:\n"
-        "### Findings\n"
-        "Severity: P0 = blocking / security vulnerability / data loss / breaks production, "
-        "P1 = urgent logic error / correctness issue causing user-facing misbehavior, "
-        "P2 = non-trivial code quality issue / missing validation, "
-        "P3 = minor style / nit / low-risk concern.\n"
-        "- [P0|P1|P2|P3] path[:line] - issue. Impact. Recommended fix.\n"
-        "### Test Gaps\n"
-        "- missing tests\n"
-        "If no findings, write '- No material findings.' under Findings and '- None noted.' "
-        "under Test Gaps."
-    )
-    instructions = (
-        "You are a strict code reviewer. Use repository context and git diff against the provided "
-        "base branch. Do not add filler, and do not invent evidence."
-    )
+    bundle = build_full_review_bundle(pr, workspace, prompt_path)
+    prompt = bundle.prompt
+    instructions = bundle.system_prompt
     agent_kwargs: dict[str, Any] = {
         "name": "Codex PR Reviewer",
-        "instructions": instructions,
         "model": model,
     }
+    if instructions is not None:
+        agent_kwargs["instructions"] = instructions
     model_settings = _build_agent_model_settings(openai_agents, reasoning_effort)
     if model_settings is not None:
         agent_kwargs["model_settings"] = model_settings
@@ -158,6 +140,7 @@ async def run_codex_review_via_agents_sdk(
     timeout_seconds: int,
     model: str,
     reasoning_effort: str | None = None,
+    prompt_path: str | None = None,
 ) -> ReviewerOutput:
     started = datetime.now(UTC)
     token_usage: TokenUsage | None = None
@@ -169,6 +152,7 @@ async def run_codex_review_via_agents_sdk(
                 workspace,
                 model,
                 reasoning_effort,
+                prompt_path,
             ),
             timeout=timeout_seconds,
         )

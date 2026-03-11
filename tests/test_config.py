@@ -281,6 +281,100 @@ def test_load_config_lightweight_review_defaults(tmp_path: Path) -> None:
     assert cfg.lightweight_review_timeout_seconds == 300
 
 
+def test_load_config_resolves_relative_prompt_override_paths(tmp_path: Path) -> None:
+    prompt_dir = tmp_path / "prompts"
+    prompt_dir.mkdir()
+    prompt_path = prompt_dir / "triage.toml"
+    prompt_path.write_text('prompt = "Review {url}"\n', encoding="utf-8")
+
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        'github_orgs=["Inkvi"]\ntriage_prompt_path = "prompts/triage.toml"\n',
+        encoding="utf-8",
+    )
+
+    cfg = load_config(config_path)
+
+    assert cfg.triage_prompt_path == str(prompt_path.resolve())
+
+
+def test_load_config_rejects_empty_prompt_override_path(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text(
+        'github_orgs=["Inkvi"]\ntriage_prompt_path = "   "\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="prompt override path cannot be empty"):
+        load_config(path)
+
+
+def test_load_config_rejects_missing_prompt_override_file(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text(
+        'github_orgs=["Inkvi"]\ntriage_prompt_path = "missing.toml"\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="prompt spec file not found"):
+        load_config(path)
+
+
+def test_load_config_rejects_invalid_prompt_override_toml(tmp_path: Path) -> None:
+    prompt_path = tmp_path / "triage.toml"
+    prompt_path.write_text('prompt = """oops"\n', encoding="utf-8")
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        f'github_orgs=["Inkvi"]\ntriage_prompt_path = "{prompt_path.name}"\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="invalid TOML"):
+        load_config(config_path)
+
+
+def test_load_config_rejects_prompt_override_without_prompt_field(tmp_path: Path) -> None:
+    prompt_path = tmp_path / "triage.toml"
+    prompt_path.write_text('system_prompt = "Only JSON"\n', encoding="utf-8")
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        f'github_orgs=["Inkvi"]\ntriage_prompt_path = "{prompt_path.name}"\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="`prompt` is required"):
+        load_config(config_path)
+
+
+def test_load_config_rejects_prompt_override_unknown_keys(tmp_path: Path) -> None:
+    prompt_path = tmp_path / "triage.toml"
+    prompt_path.write_text(
+        'prompt = "Review {url}"\nextra = "bad"\n',
+        encoding="utf-8",
+    )
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        f'github_orgs=["Inkvi"]\ntriage_prompt_path = "{prompt_path.name}"\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="unknown prompt-spec keys"):
+        load_config(config_path)
+
+
+def test_load_config_rejects_unknown_prompt_placeholders(tmp_path: Path) -> None:
+    prompt_path = tmp_path / "triage.toml"
+    prompt_path.write_text('prompt = "Review {not_real}"\n', encoding="utf-8")
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        f'github_orgs=["Inkvi"]\ntriage_prompt_path = "{prompt_path.name}"\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="unknown placeholders"):
+        load_config(config_path)
+
+
 def test_load_config_rejects_invalid_triage_backend(tmp_path: Path) -> None:
     path = tmp_path / "config.toml"
     path.write_text(

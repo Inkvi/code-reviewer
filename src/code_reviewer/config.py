@@ -5,6 +5,15 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
+from code_reviewer.prompts import PromptStep, validate_prompt_override_file
+
+_PROMPT_PATH_FIELD_TO_STEP: dict[str, PromptStep] = {
+    "triage_prompt_path": "triage",
+    "lightweight_review_prompt_path": "lightweight_review",
+    "full_review_prompt_path": "full_review",
+    "reconcile_prompt_path": "reconcile",
+}
+
 
 class AppConfig(BaseModel):
     github_orgs: list[str] = Field(default_factory=list)
@@ -49,6 +58,10 @@ class AppConfig(BaseModel):
     lightweight_review_model: str | None = "gemini-3-flash-preview"
     lightweight_review_reasoning_effort: str | None = None
     lightweight_review_timeout_seconds: int = Field(default=300, ge=30)
+    triage_prompt_path: str | None = None
+    lightweight_review_prompt_path: str | None = None
+    full_review_prompt_path: str | None = None
+    reconcile_prompt_path: str | None = None
 
     @property
     def github_owners(self) -> list[str]:
@@ -202,6 +215,21 @@ class AppConfig(BaseModel):
             )
         return normalized
 
+    @field_validator(
+        "triage_prompt_path",
+        "lightweight_review_prompt_path",
+        "full_review_prompt_path",
+        "reconcile_prompt_path",
+    )
+    @classmethod
+    def validate_prompt_path(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("prompt override path cannot be empty")
+        return cleaned
+
     @field_validator("claude_model")
     @classmethod
     def validate_claude_model(cls, value: str | None) -> str | None:
@@ -291,7 +319,37 @@ def load_config(path: Path) -> AppConfig:
     if "github_org" in data:
         raise ValueError("Invalid config: github_org is no longer supported; use github_orgs")
 
+    _resolve_prompt_override_paths(data, path.parent)
+
     try:
-        return AppConfig.model_validate(data)
+        config = AppConfig.model_validate(data)
     except ValidationError as exc:
         raise ValueError(f"Invalid config in {path}: {exc}") from exc
+    _validate_prompt_overrides(config, path)
+    return config
+
+
+def _resolve_prompt_override_paths(data: dict[str, object], base_dir: Path) -> None:
+    for field in _PROMPT_PATH_FIELD_TO_STEP:
+        raw_value = data.get(field)
+        if raw_value is None or not isinstance(raw_value, str):
+            continue
+        cleaned = raw_value.strip()
+        if not cleaned:
+            data[field] = cleaned
+            continue
+        candidate = Path(cleaned)
+        if not candidate.is_absolute():
+            candidate = (base_dir / candidate).resolve()
+        data[field] = str(candidate)
+
+
+def _validate_prompt_overrides(config: AppConfig, config_path: Path) -> None:
+    for field, step in _PROMPT_PATH_FIELD_TO_STEP.items():
+        raw_path = getattr(config, field)
+        if raw_path is None:
+            continue
+        try:
+            validate_prompt_override_file(Path(raw_path), step=step)
+        except ValueError as exc:
+            raise ValueError(f"Invalid config in {config_path}: {exc}") from exc

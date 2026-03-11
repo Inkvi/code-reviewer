@@ -18,6 +18,7 @@ from code_reviewer.models import (
     TokenUsage,
 )
 from code_reviewer.output import write_review_markdown, write_reviewer_sidecar_markdown
+from code_reviewer.prompts import PromptOverrideError
 from code_reviewer.review_decision import infer_review_decision
 from code_reviewer.reviewers import (
     TriageResult,
@@ -93,6 +94,7 @@ def _start_codex_review_task(config: AppConfig, pr: PRCandidate, workdir: Path) 
                 config.codex_timeout_seconds,
                 config.codex_model,
                 config.codex_reasoning_effort,
+                config.full_review_prompt_path,
             )
         )
     return asyncio.create_task(
@@ -102,6 +104,7 @@ def _start_codex_review_task(config: AppConfig, pr: PRCandidate, workdir: Path) 
             config.codex_timeout_seconds,
             model=config.codex_model,
             reasoning_effort=config.codex_reasoning_effort,
+            prompt_path=config.full_review_prompt_path,
         )
     )
 
@@ -327,6 +330,7 @@ async def _run_reviewers_with_monitoring(
                 config.claude_timeout_seconds,
                 model=config.claude_model,
                 reasoning_effort=config.claude_reasoning_effort,
+                prompt_path=config.full_review_prompt_path,
             )
         )
     else:
@@ -350,6 +354,7 @@ async def _run_reviewers_with_monitoring(
                 workdir,
                 config.gemini_timeout_seconds,
                 model=config.gemini_model,
+                prompt_path=config.full_review_prompt_path,
             )
         )
     else:
@@ -502,6 +507,7 @@ async def _run_local_reviewers(
                 config.claude_timeout_seconds,
                 model=config.claude_model,
                 reasoning_effort=config.claude_reasoning_effort,
+                prompt_path=config.full_review_prompt_path,
             )
         )
 
@@ -517,6 +523,7 @@ async def _run_local_reviewers(
                 workdir,
                 config.gemini_timeout_seconds,
                 model=config.gemini_model,
+                prompt_path=config.full_review_prompt_path,
             )
         )
 
@@ -562,6 +569,7 @@ async def process_local_review(
             config.triage_timeout_seconds,
             backend=config.triage_backend,
             model=config.triage_model,
+            prompt_path=config.triage_prompt_path,
         )
 
         if triage_result == TriageResult.SIMPLE:
@@ -573,7 +581,10 @@ async def process_local_review(
                     backend=config.lightweight_review_backend,
                     model=config.lightweight_review_model,
                     reasoning_effort=config.lightweight_review_reasoning_effort,
+                    prompt_path=config.lightweight_review_prompt_path,
                 )
+            except PromptOverrideError:
+                raise
             except Exception as exc:  # noqa: BLE001
                 warn(f"lightweight review failed, falling back to full review: {exc}")
                 triage_result = TriageResult.FULL_REVIEW
@@ -616,6 +627,7 @@ async def process_local_review(
                 reconciler_reasoning_effort=reconciler_reasoning_effort,
                 max_findings=config.max_findings,
                 max_test_gaps=config.max_test_gaps,
+                prompt_path=config.reconcile_prompt_path,
             )
             final_review = _validate_review_format(final_review)
         elif len(enabled_reviewers) == 1:
@@ -826,6 +838,7 @@ async def process_candidate(
             config.triage_timeout_seconds,
             backend=config.triage_backend,
             model=config.triage_model,
+            prompt_path=config.triage_prompt_path,
         )
 
         if triage_result == TriageResult.SIMPLE:
@@ -850,7 +863,10 @@ async def process_candidate(
                     backend=config.lightweight_review_backend,
                     model=config.lightweight_review_model,
                     reasoning_effort=config.lightweight_review_reasoning_effort,
+                    prompt_path=config.lightweight_review_prompt_path,
                 )
+            except PromptOverrideError:
+                raise
             except Exception as exc:  # noqa: BLE001
                 warn(f"lightweight review failed, falling back to full review: {exc} {pr.url}")
                 triage_result = TriageResult.FULL_REVIEW
@@ -964,6 +980,7 @@ async def process_candidate(
                 reconciler_reasoning_effort=reconciler_reasoning_effort,
                 max_findings=config.max_findings,
                 max_test_gaps=config.max_test_gaps,
+                prompt_path=config.reconcile_prompt_path,
             )
             final_review = _validate_review_format(final_review)
         elif len(enabled_reviewers) == 1:

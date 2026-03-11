@@ -9,7 +9,8 @@ AI code review tool powered by Claude, Codex, and Gemini. Works as a GitHub PR d
 - `gh` authenticated (`gh auth login`)
 - `codex` authenticated
 - `claude` authenticated (Agent SDK depends on Claude Code runtime)
-- if using `gemini` reviewer: `gemini` authenticated + `code-review` extension installed
+- if using `gemini` reviewer: `gemini` authenticated
+- Gemini full review uses the `code-review` extension by default; install it unless `full_review_prompt_path` is set
   (`gemini extensions install https://github.com/gemini-cli-extensions/code-review`)
 - for `codex_backend = "agents_sdk"`: OpenAI Agents SDK package + `OPENAI_API_KEY`
 
@@ -125,6 +126,8 @@ codex_backend = "cli"
 # codex_backend = "agents_sdk"
 ```
 
+Both backends use the same configurable full-review prompt.
+
 ### Model and reasoning tuning
 
 ```toml
@@ -158,6 +161,86 @@ lightweight_review_backend = "gemini"  # claude|codex|gemini
 lightweight_review_model = "gemini-3-flash-preview"
 # lightweight_review_reasoning_effort = "low"   # low|medium|high|max
 lightweight_review_timeout_seconds = 300
+```
+
+### Prompt overrides
+
+Every model-backed step can load an optional TOML prompt spec from config:
+
+```toml
+triage_prompt_path = "./prompts/triage.toml"
+lightweight_review_prompt_path = "./prompts/lightweight_review.toml"
+full_review_prompt_path = "./prompts/full_review.toml"
+reconcile_prompt_path = "./prompts/reconcile.toml"
+```
+
+Prompt paths are resolved relative to the `config.toml` file that declares them. Each spec fully replaces that step's built-in instruction package:
+
+```toml
+prompt = """Review {url}"""
+system_prompt = """Optional system prompt"""
+```
+
+Built-in prompt specs now live in [src/code_reviewer/prompt_specs/triage.toml](/Users/inkvi/dev/code-reviewer/src/code_reviewer/prompt_specs/triage.toml), [src/code_reviewer/prompt_specs/lightweight_review.toml](/Users/inkvi/dev/code-reviewer/src/code_reviewer/prompt_specs/lightweight_review.toml), [src/code_reviewer/prompt_specs/full_review.toml](/Users/inkvi/dev/code-reviewer/src/code_reviewer/prompt_specs/full_review.toml), and [src/code_reviewer/prompt_specs/reconcile.toml](/Users/inkvi/dev/code-reviewer/src/code_reviewer/prompt_specs/reconcile.toml). Use them as the visible source of truth for the default templates.
+
+Rules:
+
+- `prompt` is required
+- `system_prompt` is optional
+- unknown keys or unknown placeholders fail config load
+- prompt override paths are config-only in this release; there are no CLI flags for them
+
+Supported placeholders:
+
+- Common: `{url_label}`, `{url}`, `{title}`, `{base_ref}`, `{head_sha}`, `{changed_files}`, `{additions}`, `{deletions}`, `{workspace}`
+- `triage`: `{diff_section}`
+- `full_review`: `{diff_command}`, `{extra_context}`
+- `reconcile`: `{pr_comments}`, `{reviewer_sources}`, `{max_findings}`, `{max_test_gaps}`
+
+Notes:
+
+- `full_review_prompt_path` applies to Claude, Codex CLI, Codex Agents SDK, and Gemini
+- Gemini uses the `code-review` extension when `full_review_prompt_path` is unset; when it is set, Gemini switches to prompt execution for full review
+- for Codex Agents SDK, `system_prompt` is used as the agent instruction layer
+- `code-reviewer check` shows whether each step is using the default prompt or an override path
+
+Examples:
+
+```toml
+# triage.toml
+prompt = """Classify this PR using the diff:
+{diff_section}
+Respond with JSON only."""
+system_prompt = "You are a PR triage classifier."
+```
+
+```toml
+# lightweight_review.toml
+prompt = """Review this simple change:
+- URL: {url}
+- Files: {changed_files}
+Return only ### Findings and ### Test Gaps."""
+system_prompt = "You are a lightweight config reviewer."
+```
+
+```toml
+# full_review.toml
+prompt = """Review this change set:
+- URL: {url}
+- Base: {base_ref}
+Run `{diff_command}` and inspect the workspace at {workspace}.
+Return only ### Findings and ### Test Gaps."""
+system_prompt = "You are a code reviewer. Use the diff command and repository context. Do not invent evidence."
+```
+
+```toml
+# reconcile.toml
+prompt = """Reconcile these reviewer outputs:
+{reviewer_sources}
+PR comments:
+{pr_comments}
+Keep at most {max_findings} findings and {max_test_gaps} test gaps."""
+system_prompt = "You are a review reconciler."
 ```
 
 ### Auto submission
@@ -252,8 +335,8 @@ flowchart TD
         direction TB
         Launch[Launch enabled reviewers<br>in parallel]
         Launch --> Claude[Claude<br><i>Agent SDK</i>]
-        Launch --> Codex[Codex<br><i>CLI or Agents SDK</i>]
-        Launch --> Gemini[Gemini<br><i>CLI + extension</i>]
+        Launch --> Codex[Codex<br><i>CLI exec or Agents SDK</i>]
+        Launch --> Gemini[Gemini<br><i>CLI extension or prompt</i>]
 
         Claude --> Collect[Collect outputs]
         Codex --> Collect

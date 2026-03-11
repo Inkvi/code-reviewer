@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from code_reviewer.models import PRCandidate, ReviewerOutput
+from code_reviewer.prompts import build_full_review_bundle
 from code_reviewer.shell import run_command_async
 
 _CODE_REVIEW_PROMPT = "/code-review"
@@ -130,26 +131,45 @@ async def run_gemini_review(
     timeout_seconds: int,
     *,
     model: str | None = None,
+    prompt_path: str | None = None,
 ) -> ReviewerOutput:
     started = datetime.now(UTC)
 
     try:
-        args = _build_gemini_review_command(pr, model=model)
-        code, raw_stdout, stderr = await run_command_async(
-            args,
-            cwd=workspace,
-            timeout=timeout_seconds,
-        )
-
-        status = "ok" if code == 0 else "error"
-        error = None if code == 0 else f"gemini exited with status {code}: {stderr.strip()}"
-        markdown = _extract_gemini_review_text(raw_stdout, stderr)
-        stdout = raw_stdout
+        if prompt_path is None:
+            args = _build_gemini_review_command(pr, model=model)
+            code, raw_stdout, stderr = await run_command_async(
+                args,
+                cwd=workspace,
+                timeout=timeout_seconds,
+            )
+            status = "ok" if code == 0 else "error"
+            error = None if code == 0 else f"gemini exited with status {code}: {stderr.strip()}"
+            markdown = _extract_gemini_review_text(raw_stdout, stderr)
+            stdout = raw_stdout
+        else:
+            bundle = build_full_review_bundle(pr, workspace, prompt_path)
+            markdown = await run_gemini_prompt(
+                bundle.prompt,
+                workspace,
+                timeout_seconds,
+                model=model,
+            )
+            stdout = markdown
+            stderr = ""
+            status = "ok"
+            error = None
     except TimeoutError:
         stdout = ""
         stderr = f"gemini review timed out after {timeout_seconds}s"
         status = "error"
         error = stderr
+        markdown = ""
+    except Exception as exc:  # noqa: BLE001
+        stdout = ""
+        stderr = str(exc)
+        status = "error"
+        error = str(exc)
         markdown = ""
 
     ended = datetime.now(UTC)
@@ -179,7 +199,7 @@ async def run_gemini_prompt(
             timeout=timeout_seconds,
         )
     except TimeoutError as exc:
-        raise RuntimeError(f"gemini reconciliation timed out after {timeout_seconds}s") from exc
+        raise RuntimeError(f"gemini prompt timed out after {timeout_seconds}s") from exc
 
     if code != 0:
         raise RuntimeError(f"gemini exited with status {code}: {stderr.strip()}")

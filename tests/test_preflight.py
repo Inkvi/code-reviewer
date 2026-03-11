@@ -50,6 +50,7 @@ def test_run_preflight_does_not_require_claude_for_single_gemini_reviewer(monkey
     result = run_preflight(cfg)
 
     assert result.viewer_login == "Inkvi"
+    assert ["gemini", "--version"] in commands
     assert ["gemini", "extensions", "list"] in commands
     assert all(command[0] != "claude" for command in commands)
 
@@ -144,4 +145,39 @@ def test_run_preflight_gemini_reconciler_does_not_require_extension_when_not_rev
     result = run_preflight(cfg)
 
     assert result.viewer_login == "Inkvi"
+    assert ["gemini", "--version"] in commands
+    assert ["gemini", "extensions", "list"] not in commands
+
+
+def test_run_preflight_gemini_reviewer_with_prompt_override_does_not_require_extension(
+    monkeypatch,
+) -> None:
+    cfg = AppConfig(
+        github_orgs=["polymerdao"],
+        enabled_reviewers=["gemini"],
+        full_review_prompt_path="/tmp/full_review.toml",
+    )
+
+    def fake_which(cmd: str) -> str | None:
+        if cmd in {"gh", "gemini"}:
+            return f"/usr/bin/{cmd}"
+        return None
+
+    commands: list[list[str]] = []
+
+    def fake_run_command(args: list[str], **_kwargs) -> subprocess.CompletedProcess[str]:
+        commands.append(args)
+        if args[:3] == ["gh", "api", "user"]:
+            stdout = "Inkvi\n"
+        else:
+            stdout = ""
+        return subprocess.CompletedProcess(args=args, returncode=0, stdout=stdout, stderr="")
+
+    monkeypatch.setattr("code_reviewer.preflight.shutil.which", fake_which)
+    monkeypatch.setattr("code_reviewer.preflight.run_command", fake_run_command)
+
+    result = run_preflight(cfg)
+
+    assert result.viewer_login == "Inkvi"
+    assert ["gemini", "--version"] in commands
     assert ["gemini", "extensions", "list"] not in commands

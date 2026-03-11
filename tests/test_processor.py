@@ -15,6 +15,7 @@ from code_reviewer.processor import (
     _start_codex_review_task,
     process_candidate,
 )
+from code_reviewer.prompts import PromptOverrideError
 from code_reviewer.reviewers.triage import TriageResult
 from code_reviewer.shell import CommandError
 
@@ -125,7 +126,7 @@ def test_single_reviewer_final_review_returns_failure_template() -> None:
 
 def test_start_codex_review_task_uses_cli_backend(monkeypatch) -> None:
     async def fake_codex_cli(  # noqa: ANN001
-        pr, workdir, timeout_seconds, *, model=None, reasoning_effort=None
+        pr, workdir, timeout_seconds, *, model=None, reasoning_effort=None, prompt_path=None
     ):
         assert pr.number == 64
         assert workdir == Path("/tmp/repo")
@@ -166,7 +167,7 @@ def test_start_codex_review_task_uses_agents_backend(monkeypatch) -> None:
         raise AssertionError("cli backend should not be called")
 
     async def fake_codex_agents(  # noqa: ANN001
-        pr, workdir, timeout_seconds, model, reasoning_effort=None
+        pr, workdir, timeout_seconds, model, reasoning_effort=None, prompt_path=None
     ):
         assert pr.number == 64
         assert workdir == Path("/tmp/repo")
@@ -302,7 +303,9 @@ def test_processes_on_bootstrap_when_state_missing(monkeypatch, tmp_path) -> Non
         ended_at=now,
     )
 
-    async def fake_codex(_pr, _workdir, _timeout, *, model=None, reasoning_effort=None):  # noqa: ANN001
+    async def fake_codex(  # noqa: ANN001
+        _pr, _workdir, _timeout, *, model=None, reasoning_effort=None, prompt_path=None
+    ):
         return ok_output
 
     monkeypatch.setattr("code_reviewer.processor.run_codex_review", fake_codex)
@@ -350,7 +353,9 @@ def test_process_candidate_adds_eyes_reaction(monkeypatch, tmp_path) -> None:
         ended_at=now,
     )
 
-    async def fake_codex(_pr, _workdir, _timeout, *, model=None, reasoning_effort=None):  # noqa: ANN001
+    async def fake_codex(  # noqa: ANN001
+        _pr, _workdir, _timeout, *, model=None, reasoning_effort=None, prompt_path=None
+    ):
         return ok_output
 
     monkeypatch.setattr("code_reviewer.processor.run_codex_review", fake_codex)
@@ -428,7 +433,9 @@ def test_processes_on_newer_direct_rerequest(monkeypatch, tmp_path) -> None:
         ended_at=now,
     )
 
-    async def fake_codex(_pr, _workdir, _timeout, *, model=None, reasoning_effort=None):  # noqa: ANN001
+    async def fake_codex(  # noqa: ANN001
+        _pr, _workdir, _timeout, *, model=None, reasoning_effort=None, prompt_path=None
+    ):
         return ok_output
 
     monkeypatch.setattr("code_reviewer.processor.run_codex_review", fake_codex)
@@ -488,7 +495,9 @@ def test_rerequest_posts_starting_review_comment(monkeypatch, tmp_path) -> None:
         ended_at=now,
     )
 
-    async def fake_codex(_pr, _workdir, _timeout, *, model=None, reasoning_effort=None):  # noqa: ANN001
+    async def fake_codex(  # noqa: ANN001
+        _pr, _workdir, _timeout, *, model=None, reasoning_effort=None, prompt_path=None
+    ):
         return ok_output
 
     monkeypatch.setattr("code_reviewer.processor.run_codex_review", fake_codex)
@@ -544,7 +553,9 @@ def test_bootstrap_does_not_post_rerequest_comment(monkeypatch, tmp_path) -> Non
         ended_at=now,
     )
 
-    async def fake_codex(_pr, _workdir, _timeout, *, model=None, reasoning_effort=None):  # noqa: ANN001
+    async def fake_codex(  # noqa: ANN001
+        _pr, _workdir, _timeout, *, model=None, reasoning_effort=None, prompt_path=None
+    ):
         return ok_output
 
     monkeypatch.setattr("code_reviewer.processor.run_codex_review", fake_codex)
@@ -594,7 +605,9 @@ def test_rerequest_comment_disabled_by_config(monkeypatch, tmp_path) -> None:
         ended_at=now,
     )
 
-    async def fake_codex(_pr, _workdir, _timeout, *, model=None, reasoning_effort=None):  # noqa: ANN001
+    async def fake_codex(  # noqa: ANN001
+        _pr, _workdir, _timeout, *, model=None, reasoning_effort=None, prompt_path=None
+    ):
         return ok_output
 
     monkeypatch.setattr("code_reviewer.processor.run_codex_review", fake_codex)
@@ -638,7 +651,9 @@ def test_does_not_advance_trigger_checkpoint_on_failure(monkeypatch, tmp_path) -
     monkeypatch.setattr(GitHubClient, "post_pr_comment_inline", lambda _self, _pr, _body: None)
     _mock_triage_full_review(monkeypatch)
 
-    async def fake_codex(_pr, _workdir, _timeout, *, model=None, reasoning_effort=None):  # noqa: ANN001
+    async def fake_codex(  # noqa: ANN001
+        _pr, _workdir, _timeout, *, model=None, reasoning_effort=None, prompt_path=None
+    ):
         raise RuntimeError("codex boom")
 
     monkeypatch.setattr("code_reviewer.processor.run_codex_review", fake_codex)
@@ -736,7 +751,9 @@ def test_saved_review_existing_does_not_skip_normal_flow(monkeypatch, tmp_path) 
         ended_at=now,
     )
 
-    async def fake_codex(_pr, _workdir, _timeout, *, model=None, reasoning_effort=None):  # noqa: ANN001
+    async def fake_codex(  # noqa: ANN001
+        _pr, _workdir, _timeout, *, model=None, reasoning_effort=None, prompt_path=None
+    ):
         return ok_output
 
     monkeypatch.setattr("code_reviewer.processor.run_codex_review", fake_codex)
@@ -789,10 +806,12 @@ def test_process_candidate_reconcile_uses_enabled_reviewer_order(monkeypatch, tm
         ended_at=now,
     )
 
-    async def fake_codex(_pr, _workdir, _timeout, *, model=None, reasoning_effort=None):  # noqa: ANN001
+    async def fake_codex(  # noqa: ANN001
+        _pr, _workdir, _timeout, *, model=None, reasoning_effort=None, prompt_path=None
+    ):
         return codex_output
 
-    async def fake_gemini(_pr, _workdir, _timeout, *, model=None):  # noqa: ANN001
+    async def fake_gemini(_pr, _workdir, _timeout, *, model=None, prompt_path=None):  # noqa: ANN001
         return gemini_output
 
     seen_order: list[str] = []
@@ -886,10 +905,12 @@ def test_process_candidate_reconcile_falls_back_to_claude_settings(monkeypatch, 
         ended_at=now,
     )
 
-    async def fake_codex(_pr, _workdir, _timeout, *, model=None, reasoning_effort=None):  # noqa: ANN001
+    async def fake_codex(  # noqa: ANN001
+        _pr, _workdir, _timeout, *, model=None, reasoning_effort=None, prompt_path=None
+    ):
         return codex_output
 
-    async def fake_gemini(_pr, _workdir, _timeout, *, model=None):  # noqa: ANN001
+    async def fake_gemini(_pr, _workdir, _timeout, *, model=None, prompt_path=None):  # noqa: ANN001
         return gemini_output
 
     seen_reconciler_backend: str | None = None
@@ -1000,7 +1021,9 @@ def test_process_candidate_restarts_on_new_commit(monkeypatch, tmp_path) -> None
         ended_at=now,
     )
 
-    async def fake_codex(_pr, _workdir, _timeout, *, model=None, reasoning_effort=None):  # noqa: ANN001
+    async def fake_codex(  # noqa: ANN001
+        _pr, _workdir, _timeout, *, model=None, reasoning_effort=None, prompt_path=None
+    ):
         nonlocal call_count
         call_count += 1
         return ok_output
@@ -1110,7 +1133,9 @@ def test_process_candidate_no_restart_when_disabled(monkeypatch, tmp_path) -> No
         ended_at=now,
     )
 
-    async def fake_codex(_pr, _workdir, _timeout, *, model=None, reasoning_effort=None):  # noqa: ANN001
+    async def fake_codex(  # noqa: ANN001
+        _pr, _workdir, _timeout, *, model=None, reasoning_effort=None, prompt_path=None
+    ):
         return ok_output
 
     sha_checked = False
@@ -1321,6 +1346,35 @@ def test_process_candidate_lightweight_failure_falls_back_to_full(monkeypatch, t
     assert "lightweight" not in (store.state.last_status or "")
 
 
+def test_process_candidate_prompt_override_error_does_not_fallback(monkeypatch, tmp_path) -> None:
+    store = DummyStore()
+    workspace = DummyWorkspace(tmp_path)
+    client = GitHubClient(viewer_login="Inkvi")
+    monkeypatch.setattr(GitHubClient, "add_eyes_reaction", lambda _self, _pr: None)
+
+    async def fake_triage(*args, **kwargs):  # noqa: ANN002, ANN003
+        return TriageResult.SIMPLE
+
+    async def fake_lightweight(*args, **kwargs):  # noqa: ANN002, ANN003
+        raise PromptOverrideError("lightweight_review: invalid prompt override")
+
+    async def fail_full_review(*args, **kwargs):  # noqa: ANN002, ANN003
+        raise AssertionError("full review should not run after prompt override error")
+
+    monkeypatch.setattr("code_reviewer.processor.run_triage", fake_triage)
+    monkeypatch.setattr("code_reviewer.processor.run_lightweight_review", fake_lightweight)
+    monkeypatch.setattr("code_reviewer.processor.run_codex_review", fail_full_review)
+
+    cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["codex"])
+    pr = _sample_pr(additions=1, deletions=0, changed_file_paths=["config.yaml"])
+
+    result = asyncio.run(process_candidate(cfg, client, store, workspace, pr))
+
+    assert result.processed is False
+    assert result.status == "error"
+    assert "invalid prompt override" in (result.error or "")
+
+
 def test_submit_own_pr_falls_back_to_comment(monkeypatch, tmp_path) -> None:
     """When submit_pr_review fails with 'own PR' error, falls back to post_pr_comment."""
     store = DummyStore()
@@ -1341,7 +1395,9 @@ def test_submit_own_pr_falls_back_to_comment(monkeypatch, tmp_path) -> None:
         ended_at=now,
     )
 
-    async def fake_codex(_pr, _workdir, _timeout, *, model=None, reasoning_effort=None):
+    async def fake_codex(
+        _pr, _workdir, _timeout, *, model=None, reasoning_effort=None, prompt_path=None
+    ):
         return ok_output
 
     monkeypatch.setattr("code_reviewer.processor.run_codex_review", fake_codex)
@@ -1448,7 +1504,9 @@ def test_error_handler_saves_output_file_when_exists(monkeypatch, tmp_path) -> N
         ended_at=now,
     )
 
-    async def fake_codex(_pr, _workdir, _timeout, *, model=None, reasoning_effort=None):
+    async def fake_codex(
+        _pr, _workdir, _timeout, *, model=None, reasoning_effort=None, prompt_path=None
+    ):
         return ok_output
 
     monkeypatch.setattr("code_reviewer.processor.run_codex_review", fake_codex)

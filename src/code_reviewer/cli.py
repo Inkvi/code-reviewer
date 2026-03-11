@@ -23,6 +23,7 @@ from code_reviewer.logger import console, error, info, redirect_to_stderr, warn
 from code_reviewer.models import ProcessingResult
 from code_reviewer.preflight import run_preflight
 from code_reviewer.processor import process_candidate, process_local_review
+from code_reviewer.prompts import get_default_prompt_spec_path
 from code_reviewer.state import StateStore
 from code_reviewer.webhook import WebhookConfig, run_server
 from code_reviewer.workspace import PRWorkspace
@@ -302,6 +303,12 @@ def _resolve_reconciler_settings(config: AppConfig) -> tuple[str, str | None, st
     return backend, model, reasoning_effort
 
 
+def _prompt_override_display(path_value: str | None, *, step: str) -> str:
+    if path_value is None:
+        return f"default ({get_default_prompt_spec_path(step)})"
+    return str(Path(path_value).resolve())
+
+
 def _load_runtime(
     config_path: Path | None,
     enabled_reviewer: list[str] | None,
@@ -517,12 +524,25 @@ def check_command(
     table.add_row("Slash command enabled", str(cfg.slash_command_enabled))
     table.add_row("Triage backend", cfg.triage_backend)
     table.add_row("Triage model", cfg.triage_model or "default")
+    table.add_row("Triage prompt", _prompt_override_display(cfg.triage_prompt_path, step="triage"))
     table.add_row("Triage timeout", str(cfg.triage_timeout_seconds))
     table.add_row("Lightweight review backend", cfg.lightweight_review_backend)
     table.add_row("Lightweight review model", cfg.lightweight_review_model or "default")
+    table.add_row(
+        "Lightweight review prompt",
+        _prompt_override_display(cfg.lightweight_review_prompt_path, step="lightweight_review"),
+    )
     lw_effort = cfg.lightweight_review_reasoning_effort or "default"
     table.add_row("Lightweight review reasoning effort", lw_effort)
     table.add_row("Lightweight review timeout", str(cfg.lightweight_review_timeout_seconds))
+    table.add_row(
+        "Full review prompt",
+        _prompt_override_display(cfg.full_review_prompt_path, step="full_review"),
+    )
+    table.add_row(
+        "Reconcile prompt",
+        _prompt_override_display(cfg.reconcile_prompt_path, step="reconcile"),
+    )
     table.add_row("Trigger mode", cfg.trigger_mode)
     table.add_row("Output dir", str(Path(cfg.output_dir).resolve()))
     table.add_row("State file", str(Path(cfg.state_file).resolve()))

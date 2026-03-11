@@ -148,7 +148,9 @@ def test_slash_command_triggers_review(monkeypatch, tmp_path) -> None:
         ended_at=now,
     )
 
-    async def fake_codex(_pr, _workdir, _timeout, *, model=None, reasoning_effort=None):
+    async def fake_codex(
+        _pr, _workdir, _timeout, *, model=None, reasoning_effort=None, prompt_path=None
+    ):
         return ok_output
 
     monkeypatch.setattr("code_reviewer.processor.run_codex_review", fake_codex)
@@ -241,7 +243,9 @@ def test_slash_command_force_reviews_even_when_already_reviewed(monkeypatch, tmp
         ended_at=now,
     )
 
-    async def fake_codex(_pr, _workdir, _timeout, *, model=None, reasoning_effort=None):
+    async def fake_codex(
+        _pr, _workdir, _timeout, *, model=None, reasoning_effort=None, prompt_path=None
+    ):
         return ok_output
 
     monkeypatch.setattr("code_reviewer.processor.run_codex_review", fake_codex)
@@ -314,7 +318,9 @@ def test_slash_command_full_flow_react_review_post(monkeypatch, tmp_path) -> Non
         ended_at=now,
     )
 
-    async def fake_codex(_pr, _workdir, _timeout, *, model=None, reasoning_effort=None):
+    async def fake_codex(
+        _pr, _workdir, _timeout, *, model=None, reasoning_effort=None, prompt_path=None
+    ):
         api_calls.append("run_reviewer:codex")
         return ok_output
 

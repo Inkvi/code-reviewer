@@ -6,6 +6,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from code_reviewer.models import PRCandidate, ReviewerOutput
+from code_reviewer.prompts import build_full_review_bundle
 from code_reviewer.shell import run_command_async
 
 
@@ -80,28 +81,6 @@ def _sanitize_codex_markdown(text: str) -> str:
     return "\n".join(lines).strip()
 
 
-def _build_codex_review_command(
-    pr: PRCandidate,
-    *,
-    model: str | None,
-    reasoning_effort: str | None,
-    json_mode: bool,
-) -> list[str]:
-    args = ["codex", "review"]
-    if pr.is_local and pr.review_mode == "uncommitted":
-        args.append("--uncommitted")
-    else:
-        base_ref = pr.base_ref if pr.is_local else f"origin/{pr.base_ref}"
-        args.extend(["--base", base_ref])
-    if json_mode:
-        args.append("--json")
-    if model:
-        args.extend(["-c", f'model="{model}"'])
-    if reasoning_effort:
-        args.extend(["-c", f'model_reasoning_effort="{reasoning_effort}"'])
-    return args
-
-
 def _build_codex_exec_command(
     prompt: str,
     *,
@@ -150,7 +129,7 @@ async def run_codex_prompt(
             timeout=timeout_seconds,
         )
     except TimeoutError as exc:
-        raise RuntimeError(f"codex reconciliation timed out after {timeout_seconds}s") from exc
+        raise RuntimeError(f"codex prompt timed out after {timeout_seconds}s") from exc
 
     output_last_message = ""
     if output_last_message_path.exists():
@@ -174,57 +153,34 @@ async def run_codex_review(
     *,
     model: str | None = None,
     reasoning_effort: str | None = None,
+    prompt_path: str | None = None,
 ) -> ReviewerOutput:
     started = datetime.now(UTC)
 
     try:
-        json_mode_used = True
-        json_fallback_used = False
-        code, raw_stdout, stderr = await run_command_async(
-            _build_codex_review_command(
-                pr,
-                model=model,
-                reasoning_effort=reasoning_effort,
-                json_mode=True,
-            ),
-            cwd=workspace,
-            timeout=timeout_seconds,
+        bundle = build_full_review_bundle(pr, workspace, prompt_path)
+        markdown = await run_codex_prompt(
+            bundle.prompt,
+            workspace,
+            timeout_seconds,
+            model=model,
+            reasoning_effort=reasoning_effort,
         )
-        if code != 0 and _codex_review_json_unsupported(stderr):
-            code, raw_stdout, stderr = await run_command_async(
-                _build_codex_review_command(
-                    pr,
-                    model=model,
-                    reasoning_effort=reasoning_effort,
-                    json_mode=False,
-                ),
-                cwd=workspace,
-                timeout=timeout_seconds,
-            )
-            json_mode_used = False
-            json_fallback_used = True
-
-        status = "ok" if code == 0 else "error"
-        error = None if code == 0 else f"codex exited with status {code}: {stderr.strip()}"
-        markdown = ""
-        event_count = 0
-        if json_mode_used:
-            markdown, event_count = _extract_codex_markdown_from_jsonl(raw_stdout)
-        if not markdown:
-            markdown = _extract_codex_review_text(raw_stdout, stderr)
-        if json_mode_used and event_count > 0:
-            stdout = f"codex JSON events captured: {event_count}"
-        elif json_mode_used:
-            stdout = "codex JSON mode enabled but no parseable events were captured"
-        elif json_fallback_used:
-            stdout = "codex review JSON mode unsupported; used plain review output"
-        else:
-            stdout = raw_stdout
+        stdout = markdown
+        stderr = ""
+        status = "ok"
+        error = None
     except TimeoutError:
         stdout = ""
         stderr = f"codex review timed out after {timeout_seconds}s"
         status = "error"
         error = stderr
+        markdown = ""
+    except Exception as exc:  # noqa: BLE001
+        stdout = ""
+        stderr = str(exc)
+        status = "error"
+        error = str(exc)
         markdown = ""
 
     ended = datetime.now(UTC)
