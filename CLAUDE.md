@@ -10,9 +10,12 @@
 
 ## Project Structure
 - `src/code_reviewer/`: core application logic (CLI, daemon, GitHub integration, config/state, output)
+  - `webhook.py`: GitHub App webhook receiver (FastAPI/Starlette)
+  - `local_review.py`: local diff review (uncommitted changes, branch comparisons)
 - `src/code_reviewer/reviewers/`: reviewer backends and reconciliation (`claude_sdk`, `codex_cli`, `codex_agents_sdk`, `gemini_cli`, `triage`, `lightweight`, `reconcile`)
 - `tests/`: pytest suite mirrored by module name (e.g., `test_processor.py` for `processor.py`)
 - `reviews/<org>/<repo>/`: latest review artifacts (`pr-<number>.md`, `pr-<number>.raw.md`) plus versioned history under `pr-<number>/`
+  - `reviews/` is gitignored — local artifact storage only
 - Config: `pyproject.toml`, `config.example.toml`
 - All model interactions go through CLI/SDK runners (`_run_claude_prompt`, `run_codex_prompt`, `run_gemini_prompt`) — no direct API calls
 
