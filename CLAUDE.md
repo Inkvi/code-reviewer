@@ -44,6 +44,13 @@
 - `uv tool install --reinstall --editable .`: reinstall global CLI after source changes (editable mode avoids future reinstalls)
 - Config-optional commands try `./config.toml` first, fall back to built-in defaults if missing
 
+## CI/CD
+- `.github/workflows/ci.yml`: lint + test on PRs and pushes to main (ruff check, ruff format --check, pytest)
+- `.github/workflows/docker.yml`: build and push to GHCR on version tags (`v*`)
+- Docker image: `ghcr.io/inkvi/code-reviewer` — tagged with semver from git tag
+- `git tag v<semver> && git push origin v<semver>`: trigger docker build
+- `gh run list` / `gh run watch <id>`: monitor GitHub Actions runs
+
 ## Commits & PRs
 - Imperative commit subjects; Conventional Commit prefixes (`feat:`, `fix:`, `docs:`)
 - Keep each commit focused on one logical change
