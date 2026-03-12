@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import signal
+from collections.abc import Callable
 from pathlib import Path
 
 from code_reviewer.config import AppConfig
@@ -94,18 +96,40 @@ async def run_cycle(
     return processed
 
 
-async def start_daemon(config: AppConfig, preflight: PreflightResult, store: StateStore) -> None:
+async def start_daemon(
+    config: AppConfig,
+    preflight: PreflightResult,
+    store: StateStore,
+    *,
+    reload_config: Callable[[], AppConfig] | None = None,
+) -> None:
     info(
         "Starting daemon with "
         f"interval={config.poll_interval_seconds}s owners={','.join(config.github_owners)}"
     )
     if is_github_app_auth():
         info("GitHub App auth detected — tokens will refresh each cycle")
-    while True:
+
+    shutdown = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        loop.add_signal_handler(sig, shutdown.set)
+
+    while not shutdown.is_set():
+        if reload_config is not None:
+            try:
+                config = reload_config()
+            except Exception as exc:  # noqa: BLE001
+                warn(f"Config reload failed, using previous config: {exc}")
         try:
             refresh_github_token()
             processed = await run_cycle(config, preflight, store, verbose=False)
             info(f"Cycle complete. Processed {processed} PR(s)")
         except Exception as exc:  # noqa: BLE001
             warn(f"Cycle failed: {exc}")
-        await asyncio.sleep(config.poll_interval_seconds)
+        try:
+            await asyncio.wait_for(shutdown.wait(), timeout=config.poll_interval_seconds)
+        except TimeoutError:
+            pass
+
+    info("Shutting down daemon")

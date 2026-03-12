@@ -1,6 +1,6 @@
 import asyncio
-
-import pytest
+import os
+import signal
 
 from code_reviewer.config import AppConfig
 from code_reviewer.daemon import run_cycle, start_daemon
@@ -74,14 +74,14 @@ def test_start_daemon_uses_quiet_run_cycle(monkeypatch) -> None:
         run_cycle_verbose_args.append(verbose)
         return 0
 
-    async def fake_sleep(_seconds: int) -> None:
-        raise RuntimeError("stop daemon loop")
-
     monkeypatch.setattr("code_reviewer.daemon.run_cycle", fake_run_cycle)
-    monkeypatch.setattr("code_reviewer.daemon.asyncio.sleep", fake_sleep)
 
-    with pytest.raises(RuntimeError, match="stop daemon loop"):
-        asyncio.run(start_daemon(config, preflight, object()))
+    async def run_then_stop() -> None:
+        loop = asyncio.get_running_loop()
+        loop.call_later(0.1, lambda: loop.call_soon(os.kill, os.getpid(), signal.SIGINT))
+        await start_daemon(config, preflight, object())
+
+    asyncio.run(run_then_stop())
 
     assert run_cycle_verbose_args == [False]
 

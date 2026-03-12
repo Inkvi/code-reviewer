@@ -311,7 +311,7 @@ def _prompt_override_display(path_value: str | None, *, step: str) -> str:
     return str(Path(path_value).resolve())
 
 
-def _load_runtime(
+def _load_config_with_overrides(
     config_path: Path | None,
     enabled_reviewer: list[str] | None,
     codex_backend: str | None,
@@ -330,7 +330,7 @@ def _load_runtime(
     lightweight_review_backend: str | None,
     lightweight_review_model: str | None,
     lightweight_review_reasoning_effort: str | None,
-) -> tuple[AppConfig, StateStore]:
+) -> AppConfig:
     config = _load_config_or_default(config_path)
     config = _apply_enabled_reviewer_override(config, enabled_reviewer)
     config = _apply_codex_backend_override(config, codex_backend)
@@ -395,6 +395,49 @@ def _load_runtime(
         "lightweight_review_reasoning_effort",
         lightweight_review_reasoning_effort,
         "--lightweight-review-reasoning-effort",
+    )
+    return config
+
+
+def _load_runtime(
+    config_path: Path | None,
+    enabled_reviewer: list[str] | None,
+    codex_backend: str | None,
+    claude_model: str | None,
+    claude_reasoning_effort: str | None,
+    reconciler_backend: str | None,
+    reconciler_model: str | None,
+    reconciler_reasoning_effort: str | None,
+    codex_model: str | None,
+    codex_reasoning_effort: str | None,
+    auto_post_review: bool | None,
+    gemini_model: str | None,
+    slash_command_enabled: bool | None,
+    triage_backend: str | None,
+    triage_model: str | None,
+    lightweight_review_backend: str | None,
+    lightweight_review_model: str | None,
+    lightweight_review_reasoning_effort: str | None,
+) -> tuple[AppConfig, StateStore]:
+    config = _load_config_with_overrides(
+        config_path,
+        enabled_reviewer,
+        codex_backend,
+        claude_model,
+        claude_reasoning_effort,
+        reconciler_backend,
+        reconciler_model,
+        reconciler_reasoning_effort,
+        codex_model,
+        codex_reasoning_effort,
+        auto_post_review,
+        gemini_model,
+        slash_command_enabled,
+        triage_backend,
+        triage_model,
+        lightweight_review_backend,
+        lightweight_review_model,
+        lightweight_review_reasoning_effort,
     )
     store = StateStore(Path(config.state_file))
     store.acquire_lock()
@@ -692,16 +735,40 @@ def start_command(
         lightweight_review_reasoning_effort,
     )
     _require_github_orgs(cfg)
+
+    def reload_config() -> AppConfig:
+        return _load_config_with_overrides(
+            config,
+            enabled_reviewer,
+            codex_backend,
+            claude_model,
+            claude_reasoning_effort,
+            reconciler_backend,
+            reconciler_model,
+            reconciler_reasoning_effort,
+            codex_model,
+            codex_reasoning_effort,
+            auto_post_review,
+            gemini_model,
+            slash_command_enabled,
+            triage_backend,
+            triage_model,
+            lightweight_review_backend,
+            lightweight_review_model,
+            lightweight_review_reasoning_effort,
+        )
+
     try:
         refresh_github_token()
         preflight = run_preflight(cfg)
-        asyncio.run(start_daemon(cfg, preflight, store))
+        asyncio.run(start_daemon(cfg, preflight, store, reload_config=reload_config))
     except KeyboardInterrupt:
         info("Shutting down daemon")
     except Exception as exc:  # noqa: BLE001
         error(str(exc))
         raise typer.Exit(code=1) from exc
     finally:
+        info("Released state lock")
         store.release_lock()
 
 
