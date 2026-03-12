@@ -58,7 +58,9 @@ def run_preflight(config: AppConfig) -> PreflightResult:
             app_proc = run_command(["gh", "api", "/app", "--jq", ".slug"])
             viewer_login = f"{app_proc.stdout.strip()}[bot]"
         except CommandError as exc:
-            raise RuntimeError("Failed to resolve GitHub App slug via gh api /app.") from exc
+            raise RuntimeError(
+                f"Failed to resolve GitHub App slug via gh api /app: {exc.stderr}"
+            ) from exc
         finally:
             if saved_token is not None:
                 os.environ["GH_TOKEN"] = saved_token
