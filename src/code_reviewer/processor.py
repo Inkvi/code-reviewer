@@ -88,7 +88,11 @@ def _extract_injection_section(text: str) -> tuple[str, str | None]:
     return cleaned, combined
 
 
-def _validate_review_format(text: str, *, pr_url: str = "") -> str:
+def _validate_review_format(
+    text: str, *, pr_url: str = "", injection_protection: bool = True
+) -> str:
+    if not injection_protection:
+        return text
     from rich.markup import escape as rich_escape
 
     cleaned, injection_detail = _extract_injection_section(text)
@@ -654,7 +658,11 @@ async def process_local_review(
                 triage_result = TriageResult.FULL_REVIEW
 
         if triage_result == TriageResult.SIMPLE:
-            lightweight_text = _validate_review_format(lightweight_text, pr_url=pr.url)
+            lightweight_text = _validate_review_format(
+                lightweight_text,
+                pr_url=pr.url,
+                injection_protection=config.prompt_injection_protection,
+            )
 
             return ProcessingResult(
                 processed=True,
@@ -699,12 +707,16 @@ async def process_local_review(
                 prompt_path=config.reconcile_prompt_path,
                 claude_backend=config.claude_backend,
             )
-            final_review = _validate_review_format(final_review, pr_url=pr.url)
+            final_review = _validate_review_format(
+                final_review, pr_url=pr.url, injection_protection=config.prompt_injection_protection
+            )
         elif len(ok_outputs) == 1:
             sole_name = next(iter(ok_outputs))
             info(f"single reviewer mode ({sole_name})")
             final_review = _validate_review_format(
-                _single_reviewer_final_review(ok_outputs[sole_name]), pr_url=pr.url
+                _single_reviewer_final_review(ok_outputs[sole_name]),
+                pr_url=pr.url,
+                injection_protection=config.prompt_injection_protection,
             )
             reconciler_usage = None
         elif len(enabled_reviewers) >= 1:
@@ -948,7 +960,11 @@ async def process_candidate(
                 triage_result = TriageResult.FULL_REVIEW
 
         if triage_result == TriageResult.SIMPLE:
-            lightweight_text = _validate_review_format(lightweight_text, pr_url=pr.url)
+            lightweight_text = _validate_review_format(
+                lightweight_text,
+                pr_url=pr.url,
+                injection_protection=config.prompt_injection_protection,
+            )
 
             if lightweight_usage is not None:
                 cost = lightweight_usage.cost_usd
@@ -1067,12 +1083,16 @@ async def process_candidate(
                 prompt_path=config.reconcile_prompt_path,
                 claude_backend=config.claude_backend,
             )
-            final_review = _validate_review_format(final_review, pr_url=pr.url)
+            final_review = _validate_review_format(
+                final_review, pr_url=pr.url, injection_protection=config.prompt_injection_protection
+            )
         elif len(ok_outputs) == 1:
             sole_name = next(iter(ok_outputs))
             info(f"single reviewer mode ({sole_name}) {pr.url}")
             final_review = _validate_review_format(
-                _single_reviewer_final_review(ok_outputs[sole_name]), pr_url=pr.url
+                _single_reviewer_final_review(ok_outputs[sole_name]),
+                pr_url=pr.url,
+                injection_protection=config.prompt_injection_protection,
             )
             reconciler_usage = None
         elif len(enabled_reviewers) >= 1:

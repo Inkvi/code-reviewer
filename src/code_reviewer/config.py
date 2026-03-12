@@ -76,6 +76,7 @@ class AppConfig(BaseModel):
     max_test_gaps: int = Field(default=3, ge=1, le=10)
     post_rerequest_comment: bool = True
     slash_command_enabled: bool = True
+    prompt_injection_protection: bool = True
 
     # Triage
     triage_backend: list[str] = Field(default_factory=lambda: ["gemini"])

@@ -55,6 +55,9 @@ max_test_gaps = 3
 post_rerequest_comment = true
 # Slash command trigger — respond to /review comments in monitored org PRs
 slash_command_enabled = true
+# Prompt injection detection — extracts injection sections from output, logs warnings,
+# and rejects malformed output. Disable if you trust your input sources fully.
+# prompt_injection_protection = false
 # Triage — classifies PRs as simple (lightweight review) or complex (full review)
 # Every PR goes through triage; no more hard skips.
 triage_backend = "gemini"   # single string or list: ["gemini", "claude"]
