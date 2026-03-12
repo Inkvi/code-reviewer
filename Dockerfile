@@ -28,8 +28,9 @@ RUN npm install -g @google/gemini-cli
 # Install uv for fast Python dependency management
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
-# Allow git operations in any directory (for cloned repos)
-RUN git config --system --add safe.directory '*'
+# Allow git operations in any directory and use gh for HTTPS auth
+RUN git config --system --add safe.directory '*' \
+    && git config --system credential.https://github.com.helper '!/usr/local/bin/gh auth git-credential'
 
 # Create non-root user
 RUN groupadd -g 1000 appuser && useradd -u 1000 -g 1000 -m appuser
