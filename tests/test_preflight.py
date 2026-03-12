@@ -81,6 +81,72 @@ def test_run_preflight_rejects_missing_gemini_code_review_extension(monkeypatch,
         run_preflight(cfg)
 
 
+def test_run_preflight_requires_claude_when_triage_backend_is_claude(monkeypatch) -> None:
+    cfg = AppConfig(
+        github_orgs=["polymerdao"],
+        enabled_reviewers=["codex"],
+        triage_backend="claude",
+    )
+
+    def fake_which(cmd: str) -> str | None:
+        if cmd == "claude":
+            return None
+        return f"/usr/bin/{cmd}"
+
+    monkeypatch.setattr("code_reviewer.preflight.shutil.which", fake_which)
+
+    with pytest.raises(RuntimeError, match=r"Missing required commands: claude"):
+        run_preflight(cfg)
+
+
+def test_run_preflight_requires_claude_when_lightweight_backend_is_claude(monkeypatch) -> None:
+    cfg = AppConfig(
+        github_orgs=["polymerdao"],
+        enabled_reviewers=["codex"],
+        lightweight_review_backend="claude",
+    )
+
+    def fake_which(cmd: str) -> str | None:
+        if cmd == "claude":
+            return None
+        return f"/usr/bin/{cmd}"
+
+    monkeypatch.setattr("code_reviewer.preflight.shutil.which", fake_which)
+
+    with pytest.raises(RuntimeError, match=r"Missing required commands: claude"):
+        run_preflight(cfg)
+
+
+def test_run_preflight_skips_sdk_import_for_claude_cli_triage_backend(monkeypatch) -> None:
+    cfg = AppConfig(
+        github_orgs=["polymerdao"],
+        enabled_reviewers=["codex"],
+        triage_backend="claude",
+        claude_backend="cli",
+    )
+
+    def fake_which(cmd: str) -> str | None:
+        return f"/usr/bin/{cmd}"
+
+    commands: list[list[str]] = []
+
+    def fake_run_command(args: list[str], **_kwargs) -> subprocess.CompletedProcess[str]:
+        commands.append(args)
+        if args[:3] == ["gh", "api", "user"]:
+            stdout = "Inkvi\n"
+        else:
+            stdout = ""
+        return subprocess.CompletedProcess(args=args, returncode=0, stdout=stdout, stderr="")
+
+    monkeypatch.setattr("code_reviewer.preflight.shutil.which", fake_which)
+    monkeypatch.setattr("code_reviewer.preflight.run_command", fake_run_command)
+
+    result = run_preflight(cfg)
+
+    assert result.viewer_login == "Inkvi"
+    assert ["claude", "-v"] in commands
+
+
 def test_run_preflight_does_not_require_claude_for_codex_reconciler(monkeypatch) -> None:
     cfg = AppConfig(
         github_orgs=["polymerdao"],
