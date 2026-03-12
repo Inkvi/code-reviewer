@@ -12,6 +12,7 @@ from rich.table import Table
 from code_reviewer.config import AppConfig, default_config, load_config
 from code_reviewer.daemon import run_cycle, start_daemon
 from code_reviewer.github import GitHubClient
+from code_reviewer.github_app_auth import refresh_github_token
 from code_reviewer.local_review import (
     build_local_candidate,
     gather_diff_metadata,
@@ -495,6 +496,7 @@ def check_command(
         lightweight_review_reasoning_effort,
         "--lightweight-review-reasoning-effort",
     )
+    refresh_github_token()
     preflight = run_preflight(cfg)
 
     table = Table(title="code-reviewer check")
@@ -611,6 +613,7 @@ def run_once_command(
         cfg = _apply_bool_override(cfg, "skip_own_prs", False, "--review-own")
     results: list[ProcessingResult] = []
     try:
+        refresh_github_token()
         preflight = run_preflight(cfg)
         if target_pr_urls:
             client = GitHubClient(viewer_login=preflight.viewer_login)
@@ -690,6 +693,7 @@ def start_command(
     )
     _require_github_orgs(cfg)
     try:
+        refresh_github_token()
         preflight = run_preflight(cfg)
         asyncio.run(start_daemon(cfg, preflight, store))
     except KeyboardInterrupt:
