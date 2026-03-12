@@ -52,7 +52,8 @@ USER 1000
 
 # Install Gemini code-review extension (clone directly to avoid CLI bugs in Docker)
 RUN mkdir -p /home/appuser/.gemini/extensions \
-    && git clone https://github.com/gemini-cli-extensions/code-review /home/appuser/.gemini/extensions/code-review
+    && git clone https://github.com/gemini-cli-extensions/code-review /home/appuser/.gemini/extensions/code-review \
+    && printf '{"code-review":{"overrides":["/*"]}}\n' > /home/appuser/.gemini/extensions/extension-enablement.json
 
 ENTRYPOINT ["uv", "run", "code-reviewer"]
 CMD ["start"]
