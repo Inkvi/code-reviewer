@@ -83,24 +83,11 @@ def run_preflight(config: AppConfig) -> PreflightResult:
         except Exception as exc:
             raise RuntimeError("Failed to resolve GitHub App slug via /app.") from exc
     else:
-        viewer_login = ""
-        # Try REST /user first (requires `user` or `read:user` scope)
         try:
             login_proc = run_command(["gh", "api", "user", "--jq", ".login"])
             viewer_login = login_proc.stdout.strip()
-        except CommandError:
-            pass
-        # Fall back to GraphQL viewer query (works with any authenticated token)
-        if not viewer_login:
-            try:
-                gql_query = "query={viewer{login}}"
-                gql_jq = ".data.viewer.login"
-                gql_proc = run_command(
-                    ["gh", "api", "graphql", "-f", gql_query, "--jq", gql_jq]
-                )
-                viewer_login = gql_proc.stdout.strip()
-            except CommandError as exc:
-                raise RuntimeError("Failed to resolve GitHub user via gh api.") from exc
+        except CommandError as exc:
+            raise RuntimeError("Failed to resolve GitHub user via gh api.") from exc
 
     if not viewer_login or viewer_login == "[bot]":
         raise RuntimeError("Could not determine authenticated GitHub login.")
