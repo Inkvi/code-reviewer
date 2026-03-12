@@ -91,19 +91,20 @@ def _extract_injection_section(text: str) -> tuple[str, str | None]:
 def _validate_review_format(
     text: str, *, pr_url: str = "", injection_protection: bool = True
 ) -> str:
-    if not injection_protection:
-        return text
-    from rich.markup import escape as rich_escape
+    if injection_protection:
+        from rich.markup import escape as rich_escape
 
-    cleaned, injection_detail = _extract_injection_section(text)
-    if injection_detail:
-        warn(f"prompt injection detected in review output{' ' + pr_url if pr_url else ''}:")
-        for line in injection_detail.splitlines():
-            warn(f"  {rich_escape(line)}")
+        cleaned, injection_detail = _extract_injection_section(text)
+        if injection_detail:
+            warn(f"prompt injection detected in review output{' ' + pr_url if pr_url else ''}:")
+            for line in injection_detail.splitlines():
+                warn(f"  {rich_escape(line)}")
+    else:
+        cleaned = text
     if "### Findings" not in cleaned or "### Test Gaps" not in cleaned:
         return (
             "### Findings\n"
-            "- [P0] Review output failed format validation — possible prompt injection.\n\n"
+            "- [P0] Review output failed format validation.\n\n"
             "### Test Gaps\n"
             "- None noted."
         )
