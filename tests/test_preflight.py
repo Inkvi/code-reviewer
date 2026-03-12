@@ -184,8 +184,12 @@ def test_run_preflight_gemini_reviewer_with_prompt_override_does_not_require_ext
     assert ["gemini", "extensions", "list"] not in commands
 
 
-def test_run_preflight_falls_back_to_app_slug_on_user_failure(monkeypatch) -> None:
+def test_run_preflight_uses_app_slug_for_github_app_auth(monkeypatch) -> None:
     cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["gemini"])
+
+    monkeypatch.setenv("GITHUB_APP_ID", "12345")
+    monkeypatch.setenv("GITHUB_APP_INSTALLATION_ID", "67890")
+    monkeypatch.setenv("GITHUB_APP_PRIVATE_KEY", "fake-key")
 
     def fake_which(cmd: str) -> str | None:
         if cmd in {"gh", "gemini"}:
@@ -193,8 +197,6 @@ def test_run_preflight_falls_back_to_app_slug_on_user_failure(monkeypatch) -> No
         return None
 
     def fake_run_command(args: list[str], **_kwargs) -> subprocess.CompletedProcess[str]:
-        if args[:3] == ["gh", "api", "user"]:
-            raise CommandError(args, 1, "", "403 Forbidden")
         if args[:3] == ["gh", "api", "/app"]:
             return subprocess.CompletedProcess(
                 args=args, returncode=0, stdout="my-code-reviewer\n", stderr=""
@@ -207,14 +209,21 @@ def test_run_preflight_falls_back_to_app_slug_on_user_failure(monkeypatch) -> No
 
     monkeypatch.setattr("code_reviewer.preflight.shutil.which", fake_which)
     monkeypatch.setattr("code_reviewer.preflight.run_command", fake_run_command)
+    monkeypatch.setattr(
+        "code_reviewer.github_app_auth._generate_jwt", lambda app_id, pk: "fake-jwt"
+    )
 
     result = run_preflight(cfg)
 
     assert result.viewer_login == "my-code-reviewer[bot]"
 
 
-def test_run_preflight_raises_when_both_user_and_app_fail(monkeypatch) -> None:
+def test_run_preflight_raises_when_app_slug_fails(monkeypatch) -> None:
     cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["gemini"])
+
+    monkeypatch.setenv("GITHUB_APP_ID", "12345")
+    monkeypatch.setenv("GITHUB_APP_INSTALLATION_ID", "67890")
+    monkeypatch.setenv("GITHUB_APP_PRIVATE_KEY", "fake-key")
 
     def fake_which(cmd: str) -> str | None:
         if cmd in {"gh", "gemini"}:
@@ -222,14 +231,15 @@ def test_run_preflight_raises_when_both_user_and_app_fail(monkeypatch) -> None:
         return None
 
     def fake_run_command(args: list[str], **_kwargs) -> subprocess.CompletedProcess[str]:
-        if args[:3] == ["gh", "api", "user"]:
-            raise CommandError(args, 1, "", "403 Forbidden")
         if args[:3] == ["gh", "api", "/app"]:
             raise CommandError(args, 1, "", "401 Unauthorized")
         return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
 
     monkeypatch.setattr("code_reviewer.preflight.shutil.which", fake_which)
     monkeypatch.setattr("code_reviewer.preflight.run_command", fake_run_command)
+    monkeypatch.setattr(
+        "code_reviewer.github_app_auth._generate_jwt", lambda app_id, pk: "fake-jwt"
+    )
 
-    with pytest.raises(RuntimeError, match="Failed to resolve GitHub user"):
+    with pytest.raises(RuntimeError, match="Failed to resolve GitHub App slug"):
         run_preflight(cfg)

@@ -5,6 +5,7 @@ import shutil
 from dataclasses import dataclass
 
 from code_reviewer.config import AppConfig
+from code_reviewer.github_app_auth import is_github_app_auth
 from code_reviewer.shell import CommandError, run_command
 
 _GEMINI_CODE_REVIEW_EXTENSION = "code-review"
@@ -43,14 +44,30 @@ def run_preflight(config: AppConfig) -> PreflightResult:
     except CommandError as exc:
         raise RuntimeError("gh auth is not configured. Run 'gh auth login'.") from exc
 
-    try:
-        login_proc = run_command(["gh", "api", "user", "--jq", ".login"])
-        viewer_login = login_proc.stdout.strip()
-    except CommandError:
-        # GitHub App installation tokens cannot call /user — fall back to /app
+    if is_github_app_auth():
+        # Installation tokens can't call /user or /app — resolve the app slug
+        # by temporarily using a JWT (app-level auth) for the /app endpoint.
+        from code_reviewer.github_app_auth import _generate_jwt
+
+        app_id = os.environ["GITHUB_APP_ID"]
+        private_key = os.environ["GITHUB_APP_PRIVATE_KEY"]
+        jwt_token = _generate_jwt(app_id, private_key)
+        saved_token = os.environ.get("GH_TOKEN")
         try:
+            os.environ["GH_TOKEN"] = jwt_token
             app_proc = run_command(["gh", "api", "/app", "--jq", ".slug"])
             viewer_login = f"{app_proc.stdout.strip()}[bot]"
+        except CommandError as exc:
+            raise RuntimeError("Failed to resolve GitHub App slug via gh api /app.") from exc
+        finally:
+            if saved_token is not None:
+                os.environ["GH_TOKEN"] = saved_token
+            else:
+                os.environ.pop("GH_TOKEN", None)
+    else:
+        try:
+            login_proc = run_command(["gh", "api", "user", "--jq", ".login"])
+            viewer_login = login_proc.stdout.strip()
         except CommandError as exc:
             raise RuntimeError("Failed to resolve GitHub user via gh api.") from exc
 
