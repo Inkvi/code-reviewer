@@ -110,15 +110,21 @@ def run_preflight(config: AppConfig) -> PreflightResult:
     if uses_gemini_cli:
         run_command(["gemini", "--version"])
     if uses_gemini_extension_review:
+        found_extension = False
         try:
             extension_proc = run_command(["gemini", "extensions", "list"])
-        except CommandError as exc:
-            raise RuntimeError(
-                "Failed to list Gemini extensions. "
-                "Install/upgrade Gemini CLI and ensure it is authenticated."
-            ) from exc
-        extension_listing = f"{extension_proc.stdout}\n{extension_proc.stderr}".lower()
-        if _GEMINI_CODE_REVIEW_EXTENSION not in extension_listing:
+            listing = f"{extension_proc.stdout}\n{extension_proc.stderr}".lower()
+            found_extension = _GEMINI_CODE_REVIEW_EXTENSION in listing
+        except CommandError:
+            pass
+        # Fallback: check filesystem directly (covers Docker git-clone installs)
+        if not found_extension:
+            from pathlib import Path
+
+            home = Path.home()
+            ext_dir = home / ".gemini" / "extensions" / _GEMINI_CODE_REVIEW_EXTENSION
+            found_extension = ext_dir.is_dir()
+        if not found_extension:
             raise RuntimeError(
                 "Gemini reviewer requires the `code-review` extension when "
                 "`full_review_prompt_path` is unset. Install with: "

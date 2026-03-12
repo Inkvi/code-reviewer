@@ -55,7 +55,7 @@ def test_run_preflight_does_not_require_claude_for_single_gemini_reviewer(monkey
     assert all(command[0] != "claude" for command in commands)
 
 
-def test_run_preflight_rejects_missing_gemini_code_review_extension(monkeypatch) -> None:
+def test_run_preflight_rejects_missing_gemini_code_review_extension(monkeypatch, tmp_path) -> None:
     cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["gemini"])
 
     def fake_which(cmd: str) -> str | None:
@@ -74,6 +74,8 @@ def test_run_preflight_rejects_missing_gemini_code_review_extension(monkeypatch)
 
     monkeypatch.setattr("code_reviewer.preflight.shutil.which", fake_which)
     monkeypatch.setattr("code_reviewer.preflight.run_command", fake_run_command)
+    # Use tmp_path as home so filesystem fallback doesn't find the real extension
+    monkeypatch.setattr("pathlib.Path.home", classmethod(lambda cls: tmp_path))
 
     with pytest.raises(RuntimeError, match=r"requires the `code-review` extension"):
         run_preflight(cfg)
