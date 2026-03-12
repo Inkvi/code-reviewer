@@ -100,6 +100,27 @@ def _extract_gemini_markdown_from_json(stdout: str) -> str:
     return ""
 
 
+def _summarize_gemini_error(stderr: str) -> str:
+    """Extract a concise error summary from gemini's verbose stderr.
+
+    Gemini CLI dumps full JS stack traces on failure. Pull out just the
+    meaningful error class/message (e.g. TerminalQuotaError line) and
+    drop the noise. The full stderr is still available in ReviewerOutput.stderr.
+    """
+    lines = stderr.strip().splitlines()
+    # Look for a recognizable "ErrorType: message" line
+    for line in lines:
+        stripped = line.strip()
+        if "Error:" in stripped and not stripped.startswith("at "):
+            return stripped
+    # Fallback: first non-empty line, capped
+    for line in lines:
+        stripped = line.strip()
+        if stripped:
+            return stripped[:200]
+    return stderr.strip()[:200]
+
+
 def _extract_gemini_review_text(stdout: str, stderr: str) -> str:
     """Extract review text from gemini CLI output, trying JSON then plain text."""
     markdown = _extract_gemini_markdown_from_json(stdout)
@@ -144,7 +165,7 @@ async def run_gemini_review(
                 timeout=timeout_seconds,
             )
             status = "ok" if code == 0 else "error"
-            error = None if code == 0 else f"gemini exited with status {code}: {stderr.strip()}"
+            error = None if code == 0 else f"gemini exited with status {code}: {_summarize_gemini_error(stderr)}"
             markdown = _extract_gemini_review_text(raw_stdout, stderr)
             stdout = raw_stdout
         else:
@@ -202,7 +223,7 @@ async def run_gemini_prompt(
         raise RuntimeError(f"gemini prompt timed out after {timeout_seconds}s") from exc
 
     if code != 0:
-        raise RuntimeError(f"gemini exited with status {code}: {stderr.strip()}")
+        raise RuntimeError(f"gemini exited with status {code}: {_summarize_gemini_error(stderr)}")
 
     markdown = _extract_gemini_review_text(raw_stdout, stderr)
     if not markdown:
