@@ -6,7 +6,6 @@ import pytest
 
 from code_reviewer.config import AppConfig
 from code_reviewer.preflight import run_preflight
-from code_reviewer.shell import CommandError
 
 
 def test_run_preflight_requires_claude_for_multi_reviewer_without_claude_enabled(
@@ -185,6 +184,9 @@ def test_run_preflight_gemini_reviewer_with_prompt_override_does_not_require_ext
 
 
 def test_run_preflight_uses_app_slug_for_github_app_auth(monkeypatch) -> None:
+    import io
+    import json
+
     cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["gemini"])
 
     monkeypatch.setenv("GITHUB_APP_ID", "12345")
@@ -197,21 +199,26 @@ def test_run_preflight_uses_app_slug_for_github_app_auth(monkeypatch) -> None:
         return None
 
     def fake_run_command(args: list[str], **_kwargs) -> subprocess.CompletedProcess[str]:
-        if args[:3] == ["gh", "api", "/app"]:
-            return subprocess.CompletedProcess(
-                args=args, returncode=0, stdout="my-code-reviewer\n", stderr=""
-            )
         if args == ["gemini", "extensions", "list"]:
             return subprocess.CompletedProcess(
                 args=args, returncode=0, stdout="✓ code-review (0.1.0)\n", stderr=""
             )
         return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
 
+    def fake_urlopen(req):
+        body = json.dumps({"slug": "my-code-reviewer"}).encode()
+        resp = io.BytesIO(body)
+        resp.read = resp.read
+        resp.__enter__ = lambda s: s
+        resp.__exit__ = lambda s, *a: None
+        return resp
+
     monkeypatch.setattr("code_reviewer.preflight.shutil.which", fake_which)
     monkeypatch.setattr("code_reviewer.preflight.run_command", fake_run_command)
     monkeypatch.setattr(
         "code_reviewer.github_app_auth._generate_jwt", lambda app_id, pk: "fake-jwt"
     )
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
 
     result = run_preflight(cfg)
 
@@ -219,6 +226,8 @@ def test_run_preflight_uses_app_slug_for_github_app_auth(monkeypatch) -> None:
 
 
 def test_run_preflight_raises_when_app_slug_fails(monkeypatch) -> None:
+    from urllib.error import HTTPError
+
     cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["gemini"])
 
     monkeypatch.setenv("GITHUB_APP_ID", "12345")
@@ -231,15 +240,17 @@ def test_run_preflight_raises_when_app_slug_fails(monkeypatch) -> None:
         return None
 
     def fake_run_command(args: list[str], **_kwargs) -> subprocess.CompletedProcess[str]:
-        if args[:3] == ["gh", "api", "/app"]:
-            raise CommandError(args, 1, "", "401 Unauthorized")
         return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
+
+    def fake_urlopen(req):
+        raise HTTPError(req.full_url, 401, "Unauthorized", {}, None)
 
     monkeypatch.setattr("code_reviewer.preflight.shutil.which", fake_which)
     monkeypatch.setattr("code_reviewer.preflight.run_command", fake_run_command)
     monkeypatch.setattr(
         "code_reviewer.github_app_auth._generate_jwt", lambda app_id, pk: "fake-jwt"
     )
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
 
     with pytest.raises(RuntimeError, match="Failed to resolve GitHub App slug"):
         run_preflight(cfg)

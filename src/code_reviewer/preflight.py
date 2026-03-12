@@ -45,27 +45,29 @@ def run_preflight(config: AppConfig) -> PreflightResult:
         raise RuntimeError("gh auth is not configured. Run 'gh auth login'.") from exc
 
     if is_github_app_auth():
-        # Installation tokens can't call /user or /app — resolve the app slug
-        # by temporarily using a JWT (app-level auth) for the /app endpoint.
+        # Installation tokens can't call /user — resolve the app slug
+        # via a direct API call using JWT (Bearer auth, not gh CLI which uses token auth).
+        import json
+        import urllib.request
+
         from code_reviewer.github_app_auth import _generate_jwt
 
         app_id = os.environ["GITHUB_APP_ID"]
         private_key = os.environ["GITHUB_APP_PRIVATE_KEY"]
         jwt_token = _generate_jwt(app_id, private_key)
-        saved_token = os.environ.get("GH_TOKEN")
         try:
-            os.environ["GH_TOKEN"] = jwt_token
-            app_proc = run_command(["gh", "api", "/app", "--jq", ".slug"])
-            viewer_login = f"{app_proc.stdout.strip()}[bot]"
-        except CommandError as exc:
-            raise RuntimeError(
-                f"Failed to resolve GitHub App slug via gh api /app: {exc.stderr}"
-            ) from exc
-        finally:
-            if saved_token is not None:
-                os.environ["GH_TOKEN"] = saved_token
-            else:
-                os.environ.pop("GH_TOKEN", None)
+            req = urllib.request.Request(
+                "https://api.github.com/app",
+                headers={
+                    "Authorization": f"Bearer {jwt_token}",
+                    "Accept": "application/vnd.github+json",
+                },
+            )
+            with urllib.request.urlopen(req) as resp:
+                data = json.loads(resp.read())
+            viewer_login = f"{data['slug']}[bot]"
+        except Exception as exc:
+            raise RuntimeError("Failed to resolve GitHub App slug via /app.") from exc
     else:
         try:
             login_proc = run_command(["gh", "api", "user", "--jq", ".login"])
