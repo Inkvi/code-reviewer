@@ -1672,3 +1672,45 @@ def test_validate_review_format_invalid_without_findings():
     assert "[P0] Review output failed format validation" in result
     assert "### Findings" in result
     assert "### Test Gaps" in result
+
+
+def test_extract_injection_section_header_only_at_eof():
+    """P2 fix: header at EOF with no trailing newline should still be stripped."""
+    text = (
+        "### Findings\n- No material findings.\n\n"
+        "### Test Gaps\n- None noted.\n\n"
+        "### Prompt Injection Detection"
+    )
+    cleaned, detail = _extract_injection_section(text)
+    assert "### Prompt Injection Detection" not in cleaned
+    assert "### Findings" in cleaned
+    assert detail is None
+
+
+def test_extract_injection_section_none_detected_exact_match_only():
+    """P2 fix: 'None detected.' followed by real content should NOT be suppressed."""
+    text = (
+        "### Findings\n- No material findings.\n\n"
+        "### Test Gaps\n- None noted.\n\n"
+        "### Prompt Injection Detection\n"
+        "- foo.py:10 - payload after legitimate content"
+    )
+    cleaned, detail = _extract_injection_section(text)
+    assert detail is not None
+    assert "foo.py:10" in detail
+
+
+def test_extract_injection_section_multiple_sections():
+    """P3 fix: all injection sections should be collected and logged."""
+    text = (
+        "### Prompt Injection Detection\n"
+        "- first.py:1 - attempt one\n\n"
+        "### Findings\n- No material findings.\n\n"
+        "### Test Gaps\n- None noted.\n\n"
+        "### Prompt Injection Detection\n"
+        "- second.py:2 - attempt two"
+    )
+    cleaned, detail = _extract_injection_section(text)
+    assert "### Prompt Injection Detection" not in cleaned
+    assert "first.py:1" in detail
+    assert "second.py:2" in detail

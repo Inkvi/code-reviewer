@@ -66,28 +66,36 @@ def _disabled_output(reviewer: str) -> ReviewerOutput:
 
 
 def _extract_injection_section(text: str) -> tuple[str, str | None]:
-    """Extract and strip the '### Prompt Injection Detection' section from review output.
+    """Extract and strip all '### Prompt Injection Detection' sections from review output.
 
-    Returns (cleaned_text, injection_section_or_None).
+    Returns (cleaned_text, combined_injection_detail_or_None).
     """
-    pattern = r"(### Prompt Injection Detection\s*\n)([\s\S]*?)(?=\n###\s|\Z)"
-    match = re.search(pattern, text)
-    if not match:
+    # Match section header with optional body; handles EOF with or without trailing newline
+    pattern = r"### Prompt Injection Detection[^\S\n]*\n?([\s\S]*?)(?=\n###\s|\Z)"
+    matches = list(re.finditer(pattern, text))
+    if not matches:
         return text, None
-    section_content = match.group(2).strip()
-    # "None detected." means no injection found — don't log it
-    if section_content.lower().startswith("none detected"):
-        return re.sub(pattern, "", text).strip(), None
+    details: list[str] = []
+    for m in matches:
+        content = m.group(1).strip()
+        # "None detected." means no injection found — skip it
+        if content.lower() in ("none detected.", "none detected"):
+            continue
+        if content:
+            details.append(content)
     cleaned = re.sub(pattern, "", text).strip()
-    return cleaned, section_content
+    combined = "\n".join(details) if details else None
+    return cleaned, combined
 
 
 def _validate_review_format(text: str, *, pr_url: str = "") -> str:
+    from rich.markup import escape as rich_escape
+
     cleaned, injection_detail = _extract_injection_section(text)
     if injection_detail:
         warn(f"prompt injection detected in review output{' ' + pr_url if pr_url else ''}:")
         for line in injection_detail.splitlines():
-            warn(f"  {line}")
+            warn(f"  {rich_escape(line)}")
     if "### Findings" not in cleaned or "### Test Gaps" not in cleaned:
         return (
             "### Findings\n"
