@@ -16,6 +16,10 @@ def is_github_app_auth() -> bool:
 def _generate_jwt(app_id: str, private_key: str) -> str:
     import jwt
 
+    # Handle literal \n from env vars / secret managers
+    if "\\n" in private_key:
+        private_key = private_key.replace("\\n", "\n")
+
     now = int(time.time())
     payload = {
         "iat": now - 60,
