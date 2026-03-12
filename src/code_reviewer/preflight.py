@@ -51,10 +51,12 @@ def run_preflight(config: AppConfig) -> PreflightResult:
     if missing:
         raise RuntimeError(f"Missing required commands: {', '.join(missing)}")
 
-    try:
-        run_command(["gh", "auth", "status"])
-    except CommandError as exc:
-        raise RuntimeError("gh auth is not configured. Run 'gh auth login'.") from exc
+    has_token = bool(os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN"))
+    if not has_token:
+        try:
+            run_command(["gh", "auth", "status"])
+        except CommandError as exc:
+            raise RuntimeError("gh auth is not configured. Run 'gh auth login'.") from exc
 
     if is_github_app_auth():
         # Installation tokens can't call /user — resolve the app slug
