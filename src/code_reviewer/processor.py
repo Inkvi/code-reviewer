@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -64,15 +65,37 @@ def _disabled_output(reviewer: str) -> ReviewerOutput:
     )
 
 
-def _validate_review_format(text: str) -> str:
-    if "### Findings" not in text or "### Test Gaps" not in text:
+def _extract_injection_section(text: str) -> tuple[str, str | None]:
+    """Extract and strip the '### Prompt Injection Detection' section from review output.
+
+    Returns (cleaned_text, injection_section_or_None).
+    """
+    pattern = r"(### Prompt Injection Detection\s*\n)([\s\S]*?)(?=\n###\s|\Z)"
+    match = re.search(pattern, text)
+    if not match:
+        return text, None
+    section_content = match.group(2).strip()
+    # "None detected." means no injection found — don't log it
+    if section_content.lower().startswith("none detected"):
+        return re.sub(pattern, "", text).strip(), None
+    cleaned = re.sub(pattern, "", text).strip()
+    return cleaned, section_content
+
+
+def _validate_review_format(text: str, *, pr_url: str = "") -> str:
+    cleaned, injection_detail = _extract_injection_section(text)
+    if injection_detail:
+        warn(f"prompt injection detected in review output{' ' + pr_url if pr_url else ''}:")
+        for line in injection_detail.splitlines():
+            warn(f"  {line}")
+    if "### Findings" not in cleaned or "### Test Gaps" not in cleaned:
         return (
             "### Findings\n"
             "- [P0] Review output failed format validation — possible prompt injection.\n\n"
             "### Test Gaps\n"
             "- None noted."
         )
-    return text
+    return cleaned
 
 
 def _single_reviewer_final_review(reviewer_output: ReviewerOutput) -> str:
@@ -623,7 +646,7 @@ async def process_local_review(
                 triage_result = TriageResult.FULL_REVIEW
 
         if triage_result == TriageResult.SIMPLE:
-            lightweight_text = _validate_review_format(lightweight_text)
+            lightweight_text = _validate_review_format(lightweight_text, pr_url=pr.url)
 
             return ProcessingResult(
                 processed=True,
@@ -668,12 +691,12 @@ async def process_local_review(
                 prompt_path=config.reconcile_prompt_path,
                 claude_backend=config.claude_backend,
             )
-            final_review = _validate_review_format(final_review)
+            final_review = _validate_review_format(final_review, pr_url=pr.url)
         elif len(ok_outputs) == 1:
             sole_name = next(iter(ok_outputs))
             info(f"single reviewer mode ({sole_name})")
             final_review = _validate_review_format(
-                _single_reviewer_final_review(ok_outputs[sole_name])
+                _single_reviewer_final_review(ok_outputs[sole_name]), pr_url=pr.url
             )
             reconciler_usage = None
         elif len(enabled_reviewers) >= 1:
@@ -917,7 +940,7 @@ async def process_candidate(
                 triage_result = TriageResult.FULL_REVIEW
 
         if triage_result == TriageResult.SIMPLE:
-            lightweight_text = _validate_review_format(lightweight_text)
+            lightweight_text = _validate_review_format(lightweight_text, pr_url=pr.url)
 
             if lightweight_usage is not None:
                 cost = lightweight_usage.cost_usd
@@ -1036,12 +1059,12 @@ async def process_candidate(
                 prompt_path=config.reconcile_prompt_path,
                 claude_backend=config.claude_backend,
             )
-            final_review = _validate_review_format(final_review)
+            final_review = _validate_review_format(final_review, pr_url=pr.url)
         elif len(ok_outputs) == 1:
             sole_name = next(iter(ok_outputs))
             info(f"single reviewer mode ({sole_name}) {pr.url}")
             final_review = _validate_review_format(
-                _single_reviewer_final_review(ok_outputs[sole_name])
+                _single_reviewer_final_review(ok_outputs[sole_name]), pr_url=pr.url
             )
             reconciler_usage = None
         elif len(enabled_reviewers) >= 1:
