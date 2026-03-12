@@ -85,6 +85,22 @@ def _single_reviewer_final_review(reviewer_output: ReviewerOutput) -> str:
     )
 
 
+def _successful_outputs(
+    active_outputs: dict[str, ReviewerOutput],
+) -> dict[str, ReviewerOutput]:
+    """Return only reviewer outputs with status 'ok'."""
+    return {name: out for name, out in active_outputs.items() if out.status == "ok"}
+
+
+def _all_failed_review() -> str:
+    return (
+        "### Findings\n"
+        "- All reviewer backends failed. No review could be produced.\n\n"
+        "### Test Gaps\n"
+        "- None noted."
+    )
+
+
 def _start_codex_review_task(config: AppConfig, pr: PRCandidate, workdir: Path) -> asyncio.Task:
     if config.codex_backend == "agents_sdk":
         return asyncio.create_task(
@@ -617,7 +633,12 @@ async def process_local_review(
             name: reviewer_outputs.get(name, _disabled_output(name)) for name in enabled_reviewers
         }
 
-        if len(enabled_reviewers) >= 2:
+        ok_outputs = _successful_outputs(active_outputs)
+        failed_names = [n for n in active_outputs if n not in ok_outputs]
+        if failed_names:
+            warn(f"excluding failed reviewers from reconciliation: {', '.join(failed_names)}")
+
+        if len(ok_outputs) >= 2:
             (
                 reconciler_backend,
                 reconciler_timeout_seconds,
@@ -628,7 +649,7 @@ async def process_local_review(
             final_review, reconciler_usage = await reconcile_reviews(
                 pr,
                 workdir,
-                list(active_outputs.values()),
+                list(ok_outputs.values()),
                 reconciler_timeout_seconds,
                 reconciler_backend=reconciler_backend,
                 reconciler_model=reconciler_model,
@@ -638,12 +659,16 @@ async def process_local_review(
                 prompt_path=config.reconcile_prompt_path,
             )
             final_review = _validate_review_format(final_review)
-        elif len(enabled_reviewers) == 1:
-            sole_reviewer = enabled_reviewers[0]
-            info(f"single reviewer mode ({sole_reviewer})")
+        elif len(ok_outputs) == 1:
+            sole_name = next(iter(ok_outputs))
+            info(f"single reviewer mode ({sole_name})")
             final_review = _validate_review_format(
-                _single_reviewer_final_review(active_outputs[sole_reviewer])
+                _single_reviewer_final_review(ok_outputs[sole_name])
             )
+            reconciler_usage = None
+        elif len(enabled_reviewers) >= 1:
+            warn("all reviewers failed, no review produced")
+            final_review = _all_failed_review()
             reconciler_usage = None
         else:
             raise RuntimeError("No enabled reviewers configured")
@@ -954,8 +979,16 @@ async def process_candidate(
             name: reviewer_outputs.get(name, _disabled_output(name)) for name in enabled_reviewers
         }
 
-        if len(enabled_reviewers) >= 2:
-            reviewer_names = " + ".join(enabled_reviewers)
+        ok_outputs = _successful_outputs(active_outputs)
+        failed_names = [n for n in active_outputs if n not in ok_outputs]
+        if failed_names:
+            warn(
+                f"excluding failed reviewers from reconciliation: "
+                f"{', '.join(failed_names)} {pr.url}"
+            )
+
+        if len(ok_outputs) >= 2:
+            reviewer_names = " + ".join(ok_outputs)
             (
                 reconciler_backend,
                 reconciler_timeout_seconds,
@@ -980,7 +1013,7 @@ async def process_candidate(
             final_review, reconciler_usage = await reconcile_reviews(
                 pr,
                 workdir,
-                list(active_outputs.values()),
+                list(ok_outputs.values()),
                 reconciler_timeout_seconds,
                 reconciler_backend=reconciler_backend,
                 pr_comments=pr_comments,
@@ -991,12 +1024,16 @@ async def process_candidate(
                 prompt_path=config.reconcile_prompt_path,
             )
             final_review = _validate_review_format(final_review)
-        elif len(enabled_reviewers) == 1:
-            sole_reviewer = enabled_reviewers[0]
-            info(f"single reviewer mode ({sole_reviewer}) {pr.url}")
+        elif len(ok_outputs) == 1:
+            sole_name = next(iter(ok_outputs))
+            info(f"single reviewer mode ({sole_name}) {pr.url}")
             final_review = _validate_review_format(
-                _single_reviewer_final_review(active_outputs[sole_reviewer])
+                _single_reviewer_final_review(ok_outputs[sole_name])
             )
+            reconciler_usage = None
+        elif len(enabled_reviewers) >= 1:
+            warn(f"all reviewers failed, no review produced {pr.url}")
+            final_review = _all_failed_review()
             reconciler_usage = None
         else:
             raise RuntimeError("No enabled reviewers configured")
