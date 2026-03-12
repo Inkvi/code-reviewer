@@ -125,6 +125,30 @@ def test_load_config_rejects_empty_enabled_reviewers(tmp_path: Path) -> None:
         load_config(path)
 
 
+def test_load_config_claude_backend_defaults_to_sdk(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text('github_orgs=["Inkvi"]\n', encoding="utf-8")
+    cfg = load_config(path)
+    assert cfg.claude_backend == "sdk"
+
+
+def test_load_config_accepts_claude_backend_cli(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text('github_orgs=["Inkvi"]\nclaude_backend = "cli"\n', encoding="utf-8")
+    cfg = load_config(path)
+    assert cfg.claude_backend == "cli"
+
+
+def test_load_config_rejects_invalid_claude_backend(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text(
+        'github_orgs=["polymerdao"]\nclaude_backend = "invalid"\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError):
+        load_config(path)
+
+
 def test_load_config_rejects_invalid_codex_backend(tmp_path: Path) -> None:
     path = tmp_path / "config.toml"
     path.write_text(

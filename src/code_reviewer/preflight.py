@@ -84,7 +84,8 @@ def run_preflight(config: AppConfig) -> PreflightResult:
     if uses_claude_runtime:
         run_command(["claude", "-v"])
 
-    if uses_claude_runtime:
+    uses_claude_sdk = uses_claude_runtime and config.claude_backend == "sdk"
+    if uses_claude_sdk:
         try:
             from claude_agent_sdk import query  # noqa: F401
         except Exception as exc:  # noqa: BLE001

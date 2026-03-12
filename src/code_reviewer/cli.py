@@ -68,6 +68,13 @@ CodexBackendOption = Annotated[
         help=("Override codex_backend from config. Allowed: cli, agents_sdk."),
     ),
 ]
+ClaudeBackendOption = Annotated[
+    str | None,
+    typer.Option(
+        "--claude-backend",
+        help=("Override claude_backend from config. Allowed: sdk, cli."),
+    ),
+]
 ClaudeModelOption = Annotated[
     str | None,
     typer.Option(
@@ -254,6 +261,10 @@ def _apply_codex_backend_override(config: AppConfig, codex_backend: str | None) 
     return _apply_field_override(config, "codex_backend", codex_backend, "--codex-backend")
 
 
+def _apply_claude_backend_override(config: AppConfig, claude_backend: str | None) -> AppConfig:
+    return _apply_field_override(config, "claude_backend", claude_backend, "--claude-backend")
+
+
 def _apply_field_override(
     config: AppConfig,
     field_name: str,
@@ -315,6 +326,7 @@ def _load_config_with_overrides(
     config_path: Path | None,
     enabled_reviewer: list[str] | None,
     codex_backend: str | None,
+    claude_backend: str | None,
     claude_model: str | None,
     claude_reasoning_effort: str | None,
     reconciler_backend: str | None,
@@ -334,6 +346,7 @@ def _load_config_with_overrides(
     config = _load_config_or_default(config_path)
     config = _apply_enabled_reviewer_override(config, enabled_reviewer)
     config = _apply_codex_backend_override(config, codex_backend)
+    config = _apply_claude_backend_override(config, claude_backend)
     config = _apply_field_override(config, "claude_model", claude_model, "--claude-model")
     config = _apply_field_override(
         config,
@@ -403,6 +416,7 @@ def _load_runtime(
     config_path: Path | None,
     enabled_reviewer: list[str] | None,
     codex_backend: str | None,
+    claude_backend: str | None,
     claude_model: str | None,
     claude_reasoning_effort: str | None,
     reconciler_backend: str | None,
@@ -423,6 +437,7 @@ def _load_runtime(
         config_path,
         enabled_reviewer,
         codex_backend,
+        claude_backend,
         claude_model,
         claude_reasoning_effort,
         reconciler_backend,
@@ -461,6 +476,7 @@ def check_command(
     config: ConfigOption = Path("config.toml"),
     enabled_reviewer: EnabledReviewerOption = None,
     codex_backend: CodexBackendOption = None,
+    claude_backend: ClaudeBackendOption = None,
     claude_model: ClaudeModelOption = None,
     claude_reasoning_effort: ClaudeReasoningEffortOption = None,
     reconciler_backend: ReconcilerBackendOption = None,
@@ -482,6 +498,7 @@ def check_command(
     _require_github_orgs(cfg)
     cfg = _apply_enabled_reviewer_override(cfg, enabled_reviewer)
     cfg = _apply_codex_backend_override(cfg, codex_backend)
+    cfg = _apply_claude_backend_override(cfg, claude_backend)
     cfg = _apply_field_override(cfg, "claude_model", claude_model, "--claude-model")
     cfg = _apply_field_override(
         cfg,
@@ -552,6 +569,7 @@ def check_command(
     table.add_row("Auto submit decision", str(cfg.auto_submit_review_decision))
     table.add_row("Include reviewer stderr", str(cfg.include_reviewer_stderr))
     table.add_row("Enabled reviewers", ", ".join(cfg.enabled_reviewers))
+    table.add_row("Claude backend", cfg.claude_backend)
     table.add_row("Claude model", cfg.claude_model or "default")
     table.add_row("Claude reasoning effort", cfg.claude_reasoning_effort or "default")
     reconciler_backend_value, reconciler_model_value, reconciler_effort_value = (
@@ -601,6 +619,7 @@ def run_once_command(
     config: OptionalConfigOption = None,
     enabled_reviewer: EnabledReviewerOption = None,
     codex_backend: CodexBackendOption = None,
+    claude_backend: ClaudeBackendOption = None,
     claude_model: ClaudeModelOption = None,
     claude_reasoning_effort: ClaudeReasoningEffortOption = None,
     reconciler_backend: ReconcilerBackendOption = None,
@@ -636,6 +655,7 @@ def run_once_command(
         config,
         enabled_reviewer,
         codex_backend,
+        claude_backend,
         claude_model,
         claude_reasoning_effort,
         reconciler_backend,
@@ -697,6 +717,7 @@ def start_command(
     config: ConfigOption = Path("config.toml"),
     enabled_reviewer: EnabledReviewerOption = None,
     codex_backend: CodexBackendOption = None,
+    claude_backend: ClaudeBackendOption = None,
     claude_model: ClaudeModelOption = None,
     claude_reasoning_effort: ClaudeReasoningEffortOption = None,
     reconciler_backend: ReconcilerBackendOption = None,
@@ -718,6 +739,7 @@ def start_command(
         config,
         enabled_reviewer,
         codex_backend,
+        claude_backend,
         claude_model,
         claude_reasoning_effort,
         reconciler_backend,
@@ -741,6 +763,7 @@ def start_command(
             config,
             enabled_reviewer,
             codex_backend,
+            claude_backend,
             claude_model,
             claude_reasoning_effort,
             reconciler_backend,
@@ -813,6 +836,7 @@ def _load_config_with_reviewer_overrides(
     config_path: Path | None,
     enabled_reviewer: list[str] | None,
     codex_backend: str | None,
+    claude_backend: str | None,
     claude_model: str | None,
     claude_reasoning_effort: str | None,
     reconciler_backend: str | None,
@@ -830,6 +854,7 @@ def _load_config_with_reviewer_overrides(
     cfg = _load_config_or_default(config_path)
     cfg = _apply_enabled_reviewer_override(cfg, enabled_reviewer)
     cfg = _apply_codex_backend_override(cfg, codex_backend)
+    cfg = _apply_claude_backend_override(cfg, claude_backend)
     cfg = _apply_field_override(cfg, "claude_model", claude_model, "--claude-model")
     cfg = _apply_field_override(
         cfg,
@@ -892,6 +917,7 @@ def review_command(
     output_format: OutputFormatOption = "text",
     enabled_reviewer: EnabledReviewerOption = None,
     codex_backend: CodexBackendOption = None,
+    claude_backend: ClaudeBackendOption = None,
     claude_model: ClaudeModelOption = None,
     claude_reasoning_effort: ClaudeReasoningEffortOption = None,
     reconciler_backend: ReconcilerBackendOption = None,
@@ -952,6 +978,7 @@ def review_command(
         config,
         enabled_reviewer,
         codex_backend,
+        claude_backend,
         claude_model,
         claude_reasoning_effort,
         reconciler_backend,

@@ -5,6 +5,7 @@ poll_interval_seconds = 60
 excluded_repos = []
 enabled_reviewers = ["claude", "codex"]
 # Optional Claude tuning:
+# claude_backend = "sdk"    # "sdk" (agent SDK, default) or "cli" (claude CLI)
 # claude_model = "claude-sonnet-4-5"
 # claude_reasoning_effort = "medium"
 # Reconciler backend — single string or priority list (tries in order on failure):

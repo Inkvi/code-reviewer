@@ -23,6 +23,7 @@ from code_reviewer.review_decision import infer_review_decision
 from code_reviewer.reviewers import (
     TriageResult,
     reconcile_reviews,
+    run_claude_cli_review,
     run_claude_review,
     run_codex_review,
     run_codex_review_via_agents_sdk,
@@ -120,6 +121,30 @@ def _start_codex_review_task(config: AppConfig, pr: PRCandidate, workdir: Path) 
             config.codex_timeout_seconds,
             model=config.codex_model,
             reasoning_effort=config.codex_reasoning_effort,
+            prompt_path=config.full_review_prompt_path,
+        )
+    )
+
+
+def _start_claude_review_task(config: AppConfig, pr: PRCandidate, workdir: Path) -> asyncio.Task:
+    if config.claude_backend == "cli":
+        return asyncio.create_task(
+            run_claude_cli_review(
+                pr,
+                workdir,
+                config.claude_timeout_seconds,
+                model=config.claude_model,
+                reasoning_effort=config.claude_reasoning_effort,
+                prompt_path=config.full_review_prompt_path,
+            )
+        )
+    return asyncio.create_task(
+        run_claude_review(
+            pr,
+            workdir,
+            config.claude_timeout_seconds,
+            model=config.claude_model,
+            reasoning_effort=config.claude_reasoning_effort,
             prompt_path=config.full_review_prompt_path,
         )
     )
@@ -344,19 +369,10 @@ async def _run_reviewers_with_monitoring(
     if "claude" in enabled_reviewer_set:
         info(
             f"starting Claude review "
-            f"(model={config.claude_model or 'default'}, "
+            f"(backend={config.claude_backend}, model={config.claude_model or 'default'}, "
             f"effort={config.claude_reasoning_effort or 'default'}) {pr.url}"
         )
-        pending_tasks["claude"] = asyncio.create_task(
-            run_claude_review(
-                pr,
-                workdir,
-                config.claude_timeout_seconds,
-                model=config.claude_model,
-                reasoning_effort=config.claude_reasoning_effort,
-                prompt_path=config.full_review_prompt_path,
-            )
-        )
+        pending_tasks["claude"] = _start_claude_review_task(config, pr, workdir)
     else:
         info(f"Claude reviewer disabled {pr.url}")
 
@@ -521,19 +537,10 @@ async def _run_local_reviewers(
     if "claude" in enabled_reviewer_set:
         info(
             f"starting Claude review "
-            f"(model={config.claude_model or 'default'}, "
+            f"(backend={config.claude_backend}, model={config.claude_model or 'default'}, "
             f"effort={config.claude_reasoning_effort or 'default'})"
         )
-        pending_tasks["claude"] = asyncio.create_task(
-            run_claude_review(
-                pr,
-                workdir,
-                config.claude_timeout_seconds,
-                model=config.claude_model,
-                reasoning_effort=config.claude_reasoning_effort,
-                prompt_path=config.full_review_prompt_path,
-            )
-        )
+        pending_tasks["claude"] = _start_claude_review_task(config, pr, workdir)
 
     if "codex" in enabled_reviewer_set:
         info(f"starting Codex review (backend={config.codex_backend}, model={config.codex_model})")
@@ -594,6 +601,7 @@ async def process_local_review(
             backend=config.triage_backend,
             model=config.triage_model,
             prompt_path=config.triage_prompt_path,
+            claude_backend=config.claude_backend,
         )
 
         if triage_result == TriageResult.SIMPLE:
@@ -606,6 +614,7 @@ async def process_local_review(
                     model=config.lightweight_review_model,
                     reasoning_effort=config.lightweight_review_reasoning_effort,
                     prompt_path=config.lightweight_review_prompt_path,
+                    claude_backend=config.claude_backend,
                 )
             except PromptOverrideError:
                 raise
@@ -657,6 +666,7 @@ async def process_local_review(
                 max_findings=config.max_findings,
                 max_test_gaps=config.max_test_gaps,
                 prompt_path=config.reconcile_prompt_path,
+                claude_backend=config.claude_backend,
             )
             final_review = _validate_review_format(final_review)
         elif len(ok_outputs) == 1:
@@ -872,6 +882,7 @@ async def process_candidate(
             backend=config.triage_backend,
             model=config.triage_model,
             prompt_path=config.triage_prompt_path,
+            claude_backend=config.claude_backend,
         )
 
         if triage_result == TriageResult.SIMPLE:
@@ -897,6 +908,7 @@ async def process_candidate(
                     model=config.lightweight_review_model,
                     reasoning_effort=config.lightweight_review_reasoning_effort,
                     prompt_path=config.lightweight_review_prompt_path,
+                    claude_backend=config.claude_backend,
                 )
             except PromptOverrideError:
                 raise
@@ -1022,6 +1034,7 @@ async def process_candidate(
                 max_findings=config.max_findings,
                 max_test_gaps=config.max_test_gaps,
                 prompt_path=config.reconcile_prompt_path,
+                claude_backend=config.claude_backend,
             )
             final_review = _validate_review_format(final_review)
         elif len(ok_outputs) == 1:

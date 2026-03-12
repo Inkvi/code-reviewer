@@ -70,15 +70,25 @@ def run_json(args: list[str], *, cwd: Path | None = None, timeout: int | None = 
 
 
 async def run_command_async(
-    args: list[str], *, cwd: Path | None = None, timeout: int | None = None
+    args: list[str],
+    *,
+    cwd: Path | None = None,
+    timeout: int | None = None,
+    env: dict[str, str] | None = None,
 ) -> tuple[int, str, str]:
     if args and args[0] == "gh":
         _gh_throttle()
+    merged_env = None
+    if env is not None:
+        import os
+
+        merged_env = {**os.environ, **env}
     proc = await asyncio.create_subprocess_exec(
         *args,
         cwd=str(cwd) if cwd else None,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
+        env=merged_env,
     )
 
     try:

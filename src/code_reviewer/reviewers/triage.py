@@ -11,6 +11,7 @@ from code_reviewer.models import PRCandidate
 from code_reviewer.prompts import build_triage_bundle
 from code_reviewer.reviewers._fallback import run_with_fallback
 from code_reviewer.reviewers._sanitize import _escape_delimiters
+from code_reviewer.reviewers.claude_cli import run_claude_cli_prompt
 from code_reviewer.reviewers.claude_sdk import _run_claude_prompt
 from code_reviewer.reviewers.codex_cli import run_codex_prompt
 from code_reviewer.reviewers.gemini_cli import run_gemini_prompt
@@ -96,6 +97,7 @@ async def run_triage(
     backend: list[str] | str = "gemini",
     model: str | None = None,
     prompt_path: str | None = None,
+    claude_backend: str = "sdk",
 ) -> TriageResult:
     backends = [backend] if isinstance(backend, str) else list(backend)
     diff_snippet = _get_diff_snippet(workspace, pr)
@@ -114,6 +116,16 @@ async def run_triage(
     async def _try(b: str) -> str:
         use_model = model if b == backends[0] else None
         if b == "claude":
+            if claude_backend == "cli":
+                text, _ = await run_claude_cli_prompt(
+                    prompt,
+                    workspace,
+                    timeout_seconds,
+                    system_prompt=bundle.system_prompt,
+                    max_turns=1,
+                    model=use_model,
+                )
+                return text
             text, _ = await _run_claude_prompt(
                 prompt,
                 workspace,

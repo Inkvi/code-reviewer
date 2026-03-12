@@ -12,6 +12,7 @@ from code_reviewer.processor import (
     _resolve_reconciler_settings,
     _run_reviewers_with_monitoring,
     _single_reviewer_final_review,
+    _start_claude_review_task,
     _start_codex_review_task,
     process_candidate,
 )
@@ -198,6 +199,66 @@ def test_start_codex_review_task_uses_agents_backend(monkeypatch) -> None:
 
     assert output.status == "ok"
     assert output.markdown == "codex output"
+
+
+def test_start_claude_review_task_uses_sdk_backend(monkeypatch) -> None:
+    async def fake_claude_sdk(  # noqa: ANN001
+        pr, workdir, timeout_seconds, *, model=None, reasoning_effort=None, prompt_path=None
+    ):
+        assert pr.number == 64
+        assert workdir == Path("/tmp/repo")
+        return await _ok_output("claude")
+
+    async def fake_claude_cli(*_args, **_kwargs):  # noqa: ANN001
+        raise AssertionError("cli backend should not be called")
+
+    monkeypatch.setattr("code_reviewer.processor.run_claude_review", fake_claude_sdk)
+    monkeypatch.setattr("code_reviewer.processor.run_claude_cli_review", fake_claude_cli)
+
+    cfg = AppConfig(
+        github_orgs=["polymerdao"],
+        enabled_reviewers=["claude"],
+        claude_backend="sdk",
+        claude_timeout_seconds=30,
+    )
+
+    async def _run() -> ReviewerOutput:
+        task = _start_claude_review_task(cfg, _sample_pr(), Path("/tmp/repo"))
+        return await task
+
+    output = asyncio.run(_run())
+    assert output.status == "ok"
+    assert output.markdown == "claude output"
+
+
+def test_start_claude_review_task_uses_cli_backend(monkeypatch) -> None:
+    async def fake_claude_sdk(*_args, **_kwargs):  # noqa: ANN001
+        raise AssertionError("sdk backend should not be called")
+
+    async def fake_claude_cli(  # noqa: ANN001
+        pr, workdir, timeout_seconds, *, model=None, reasoning_effort=None, prompt_path=None
+    ):
+        assert pr.number == 64
+        assert workdir == Path("/tmp/repo")
+        return await _ok_output("claude")
+
+    monkeypatch.setattr("code_reviewer.processor.run_claude_review", fake_claude_sdk)
+    monkeypatch.setattr("code_reviewer.processor.run_claude_cli_review", fake_claude_cli)
+
+    cfg = AppConfig(
+        github_orgs=["polymerdao"],
+        enabled_reviewers=["claude"],
+        claude_backend="cli",
+        claude_timeout_seconds=30,
+    )
+
+    async def _run() -> ReviewerOutput:
+        task = _start_claude_review_task(cfg, _sample_pr(), Path("/tmp/repo"))
+        return await task
+
+    output = asyncio.run(_run())
+    assert output.status == "ok"
+    assert output.markdown == "claude output"
 
 
 def test_resolve_reconciler_settings_defaults_to_claude_backend() -> None:

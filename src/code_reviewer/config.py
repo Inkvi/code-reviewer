@@ -50,6 +50,7 @@ class AppConfig(BaseModel):
     enabled_reviewers: list[str] = Field(default_factory=lambda: ["claude", "codex"])
     claude_model: str | None = None
     claude_reasoning_effort: str | None = None
+    claude_backend: str = "sdk"
     reconciler_backend: list[str] = Field(default_factory=lambda: ["claude"])
     reconciler_model: str | None = None
     reconciler_reasoning_effort: str | None = None
@@ -155,6 +156,14 @@ class AppConfig(BaseModel):
         normalized = value.strip().lower()
         if normalized not in {"cli", "agents_sdk"}:
             raise ValueError("codex_backend must be one of: cli, agents_sdk")
+        return normalized
+
+    @field_validator("claude_backend")
+    @classmethod
+    def validate_claude_backend(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in {"sdk", "cli"}:
+            raise ValueError("claude_backend must be one of: sdk, cli")
         return normalized
 
     @field_validator("reconciler_backend", mode="before")

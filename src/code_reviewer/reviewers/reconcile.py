@@ -6,6 +6,7 @@ from code_reviewer.models import PRCandidate, ReviewerOutput, TokenUsage
 from code_reviewer.prompts import build_reconcile_bundle
 from code_reviewer.reviewers._fallback import run_with_fallback
 from code_reviewer.reviewers._sanitize import _escape_delimiters
+from code_reviewer.reviewers.claude_cli import run_claude_cli_prompt
 from code_reviewer.reviewers.claude_sdk import _run_claude_prompt
 from code_reviewer.reviewers.codex_cli import run_codex_prompt
 from code_reviewer.reviewers.gemini_cli import run_gemini_prompt
@@ -55,6 +56,7 @@ async def reconcile_reviews(
     max_findings: int = 10,
     max_test_gaps: int = 3,
     prompt_path: str | None = None,
+    claude_backend: str = "sdk",
 ) -> tuple[str, TokenUsage | None]:
     backends = (
         [reconciler_backend] if isinstance(reconciler_backend, str) else list(reconciler_backend)
@@ -82,6 +84,16 @@ async def reconcile_reviews(
         use_effort = reconciler_reasoning_effort if is_primary else None
         t = _timeout_for(b)
         if b == "claude":
+            if claude_backend == "cli":
+                return await run_claude_cli_prompt(
+                    prompt,
+                    workspace,
+                    t,
+                    system_prompt=bundle.system_prompt,
+                    max_turns=1,
+                    model=use_model,
+                    reasoning_effort=use_effort,
+                )
             return await _run_claude_prompt(
                 prompt,
                 workspace,

@@ -6,6 +6,7 @@ from code_reviewer.logger import info
 from code_reviewer.models import PRCandidate, TokenUsage
 from code_reviewer.prompts import build_lightweight_bundle
 from code_reviewer.reviewers._fallback import run_with_fallback
+from code_reviewer.reviewers.claude_cli import run_claude_cli_prompt
 from code_reviewer.reviewers.claude_sdk import _run_claude_prompt
 from code_reviewer.reviewers.codex_cli import run_codex_prompt
 from code_reviewer.reviewers.gemini_cli import run_gemini_prompt
@@ -24,6 +25,7 @@ async def run_lightweight_review(
     model: str | None = None,
     reasoning_effort: str | None = None,
     prompt_path: str | None = None,
+    claude_backend: str = "sdk",
 ) -> tuple[str, TokenUsage | None]:
     backends = [backend] if isinstance(backend, str) else list(backend)
     bundle = build_lightweight_bundle(pr, workspace, prompt_path)
@@ -38,6 +40,16 @@ async def run_lightweight_review(
         use_model = model if is_primary else None
         use_effort = reasoning_effort if is_primary else None
         if b == "claude":
+            if claude_backend == "cli":
+                return await run_claude_cli_prompt(
+                    prompt,
+                    workspace,
+                    timeout_seconds,
+                    system_prompt=bundle.system_prompt,
+                    max_turns=1,
+                    model=use_model,
+                    reasoning_effort=use_effort,
+                )
             return await _run_claude_prompt(
                 prompt,
                 workspace,
