@@ -6,14 +6,27 @@ from code_reviewer.logger import info
 from code_reviewer.models import PRCandidate, TokenUsage
 from code_reviewer.prompts import build_lightweight_bundle
 from code_reviewer.reviewers._fallback import run_with_fallback
+from code_reviewer.reviewers._sanitize import _escape_delimiters
 from code_reviewer.reviewers.claude_cli import run_claude_cli_prompt
 from code_reviewer.reviewers.claude_sdk import _run_claude_prompt
 from code_reviewer.reviewers.codex_cli import run_codex_prompt
 from code_reviewer.reviewers.gemini_cli import run_gemini_prompt
+from code_reviewer.reviewers.triage import _get_diff_snippet
+
+
+def _build_diff_section(workspace: Path, pr: PRCandidate) -> str:
+    diff_snippet = _get_diff_snippet(workspace, pr)
+    if diff_snippet:
+        return (
+            "\n<untrusted_data type='diff'>\n"
+            f"{_escape_delimiters(diff_snippet)}\n"
+            "</untrusted_data>\n"
+        )
+    return ""
 
 
 def _build_lightweight_prompt(pr: PRCandidate) -> str:
-    return build_lightweight_bundle(pr, Path.cwd(), None).prompt
+    return build_lightweight_bundle(pr, Path.cwd(), "", None).prompt
 
 
 async def run_lightweight_review(
@@ -28,7 +41,8 @@ async def run_lightweight_review(
     claude_backend: str = "sdk",
 ) -> tuple[str, TokenUsage | None]:
     backends = [backend] if isinstance(backend, str) else list(backend)
-    bundle = build_lightweight_bundle(pr, workspace, prompt_path)
+    diff_section = _build_diff_section(workspace, pr)
+    bundle = build_lightweight_bundle(pr, workspace, diff_section, prompt_path)
     prompt = bundle.prompt
     info(
         f"running lightweight review "

@@ -72,7 +72,7 @@ def test_default_prompt_specs_live_in_visible_files() -> None:
 
 
 def test_default_lightweight_bundle_renders_expected_content(tmp_path: Path) -> None:
-    bundle = build_lightweight_bundle(_sample_pr(), tmp_path, None)
+    bundle = build_lightweight_bundle(_sample_pr(), tmp_path, "", None)
 
     assert "Review checklist" in bundle.prompt
     assert bundle.system_prompt is not None

@@ -63,6 +63,7 @@ _ALLOWED_PLACEHOLDERS: dict[PromptStep, set[str]] = {
         "additions",
         "deletions",
         "workspace",
+        "diff_section",
     },
     "full_review": {
         "url_label",
@@ -231,12 +232,12 @@ def build_triage_bundle(
 
 
 def build_lightweight_bundle(
-    pr: PRCandidate, workspace: Path, prompt_path: str | None
+    pr: PRCandidate, workspace: Path, diff_section: str, prompt_path: str | None
 ) -> PromptBundle:
     bundle = get_prompt_bundle("lightweight_review", prompt_path)
-    return render_prompt_bundle(
-        bundle, step="lightweight_review", values=_common_values(pr, workspace)
-    )
+    values = _common_values(pr, workspace)
+    values["diff_section"] = diff_section
+    return render_prompt_bundle(bundle, step="lightweight_review", values=values)
 
 
 def build_full_review_bundle(
