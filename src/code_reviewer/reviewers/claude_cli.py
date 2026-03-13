@@ -3,7 +3,6 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
-from code_reviewer.logger import warn
 from code_reviewer.models import PRCandidate, ReviewerOutput
 from code_reviewer.prompts import build_full_review_bundle
 from code_reviewer.shell import run_command_async
@@ -15,6 +14,7 @@ def _build_claude_cli_command(
     model: str | None = None,
     system_prompt: str | None = None,
     max_turns: int | None = None,
+    reasoning_effort: str | None = None,
 ) -> list[str]:
     args = ["claude", "-p", prompt, "--output-format", "text", "--dangerously-skip-permissions"]
     if model:
@@ -23,6 +23,8 @@ def _build_claude_cli_command(
         args.extend(["--system-prompt", system_prompt])
     if max_turns is not None:
         args.extend(["--max-turns", str(max_turns)])
+    if reasoning_effort:
+        args.extend(["--effort", reasoning_effort])
     return args
 
 
@@ -36,14 +38,13 @@ async def run_claude_cli_prompt(
     model: str | None = None,
     reasoning_effort: str | None = None,
 ) -> tuple[str, None]:
-    if reasoning_effort:
-        warn("claude CLI does not support --reasoning-effort; ignoring")
 
     args = _build_claude_cli_command(
         prompt,
         model=model,
         system_prompt=system_prompt,
         max_turns=max_turns,
+        reasoning_effort=reasoning_effort,
     )
 
     try:
