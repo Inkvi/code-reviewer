@@ -81,11 +81,11 @@ def test_default_lightweight_bundle_renders_expected_content(tmp_path: Path) -> 
 def test_default_full_review_bundle_renders_expected_content(tmp_path: Path) -> None:
     bundle = build_full_review_bundle(_sample_pr(), tmp_path, None)
 
-    assert "Run `git diff origin/main...HEAD` to inspect the diff." in bundle.prompt
+    assert "actionable bugs" in bundle.prompt
     assert bundle.system_prompt is not None
 
 
-def test_default_full_review_bundle_for_uncommitted_mentions_untracked_files(
+def test_default_full_review_bundle_for_uncommitted_renders(
     tmp_path: Path,
 ) -> None:
     bundle = build_full_review_bundle(
@@ -94,8 +94,7 @@ def test_default_full_review_bundle_for_uncommitted_mentions_untracked_files(
         None,
     )
 
-    assert "git diff HEAD" in bundle.prompt
-    assert "git ls-files --others --exclude-standard" in bundle.prompt
+    assert "actionable bugs" in bundle.prompt
 
 
 def test_default_reconcile_bundle_renders_expected_content(tmp_path: Path) -> None:
@@ -117,7 +116,7 @@ def test_default_reconcile_bundle_renders_expected_content(tmp_path: Path) -> No
 def test_load_prompt_bundle_accepts_override_with_system_prompt(tmp_path: Path) -> None:
     path = tmp_path / "full.toml"
     path.write_text(
-        'prompt = "Review {url}\\nRun {diff_command}"\nsystem_prompt = "System {base_ref}"\n',
+        'prompt = "Review {url}"\nsystem_prompt = "System {base_ref}"\n',
         encoding="utf-8",
     )
 
@@ -135,12 +134,10 @@ def test_load_prompt_bundle_accepts_override_with_system_prompt(tmp_path: Path) 
             "additions": 1,
             "deletions": 0,
             "workspace": str(tmp_path),
-            "diff_command": "git diff origin/main...HEAD",
-            "extra_context": "",
         },
     )
 
-    assert rendered.prompt == "Review https://example.com\nRun git diff origin/main...HEAD"
+    assert rendered.prompt == "Review https://example.com"
     assert rendered.system_prompt == "System main"
 
 

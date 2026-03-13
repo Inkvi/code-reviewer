@@ -120,4 +120,4 @@ def test_run_codex_review_uses_prompt_execution(monkeypatch, tmp_path: Path) -> 
     assert captured["timeout_seconds"] == 45
     assert captured["model"] == "gpt-5.3-codex"
     assert captured["reasoning_effort"] == "high"
-    assert "git diff origin/main...HEAD" in str(captured["prompt"])
+    assert "actionable bugs" in str(captured["prompt"])

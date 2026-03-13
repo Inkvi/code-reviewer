@@ -74,8 +74,6 @@ _ALLOWED_PLACEHOLDERS: dict[PromptStep, set[str]] = {
         "additions",
         "deletions",
         "workspace",
-        "diff_command",
-        "extra_context",
     },
     "reconcile": {
         "url_label",
@@ -245,23 +243,9 @@ def build_full_review_bundle(
     pr: PRCandidate, workspace: Path, prompt_path: str | None
 ) -> PromptBundle:
     bundle = get_prompt_bundle("full_review", prompt_path)
-    values = _common_values(pr, workspace)
-    if pr.review_mode == "uncommitted":
-        diff_command = "git diff HEAD"
-        extra_context = (
-            "Also run `git ls-files --others --exclude-standard` to find untracked new files.\n"
-            "Inspect the changed files directly in the workspace when needed."
-        )
-    elif pr.is_local:
-        diff_command = f"git diff {pr.base_ref}...{pr.head_sha}"
-        extra_context = "Inspect the changed files directly in the workspace when needed."
-    else:
-        diff_command = f"git diff origin/{pr.base_ref}...HEAD"
-        extra_context = "Inspect the changed files directly in the workspace when needed."
-
-    values["diff_command"] = diff_command
-    values["extra_context"] = extra_context
-    return render_prompt_bundle(bundle, step="full_review", values=values)
+    return render_prompt_bundle(
+        bundle, step="full_review", values=_common_values(pr, workspace)
+    )
 
 
 def _format_reviewer_sources(reviewer_outputs: list[ReviewerOutput]) -> str:

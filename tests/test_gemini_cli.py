@@ -149,7 +149,7 @@ def test_run_gemini_review_uses_prompt_execution_when_override_set(
     pr = _sample_pr()
     captured: dict[str, object] = {}
     prompt_path = tmp_path / "full.toml"
-    prompt_path.write_text('prompt = "Review {url}\\nRun {diff_command}"\n', encoding="utf-8")
+    prompt_path.write_text('prompt = "Review {url}"\n', encoding="utf-8")
 
     async def fake_run_gemini_prompt(prompt, workspace, timeout_seconds, *, model=None):  # noqa: ANN001
         captured["prompt"] = prompt
@@ -177,4 +177,4 @@ def test_run_gemini_review_uses_prompt_execution_when_override_set(
     assert captured["workspace"] == tmp_path
     assert captured["timeout_seconds"] == 45
     assert captured["model"] == "gemini-3.1-pro-preview"
-    assert "git diff origin/main...HEAD" in str(captured["prompt"])
+    assert "Review https://github.com/polymerdao/obul/pull/64" in str(captured["prompt"])

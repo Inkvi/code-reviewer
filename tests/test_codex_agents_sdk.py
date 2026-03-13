@@ -48,7 +48,7 @@ def _sample_pr() -> PRCandidate:
 def test_agents_sdk_uses_system_prompt_as_instructions(monkeypatch, tmp_path: Path) -> None:
     prompt_path = tmp_path / "full.toml"
     prompt_path.write_text(
-        'prompt = "Review {url} with {diff_command}"\nsystem_prompt = "Use {workspace}"\n',
+        'prompt = "Review {url}"\nsystem_prompt = "Use {workspace}"\n',
         encoding="utf-8",
     )
     monkeypatch.setattr(
