@@ -52,7 +52,7 @@ def _get_diff_snippet(workspace: Path, pr: PRCandidate) -> str:
 def _build_triage_prompt(pr: PRCandidate, diff_snippet: str = "") -> str:
     if diff_snippet:
         diff_section = (
-            "\n<untrusted_data type='diff'>\n"
+            "\n<untrusted_data>\n"
             f"{_escape_delimiters(diff_snippet)}\n"
             "</untrusted_data>\n"
         )
@@ -103,7 +103,7 @@ async def run_triage(
     diff_snippet = _get_diff_snippet(workspace, pr)
     if diff_snippet:
         diff_section = (
-            "\n<untrusted_data type='diff'>\n"
+            "\n<untrusted_data>\n"
             f"{_escape_delimiters(diff_snippet)}\n"
             "</untrusted_data>\n"
         )

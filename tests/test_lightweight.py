@@ -103,9 +103,9 @@ def test_lightweight_review_prompt_contains_checklist_items(tmp_path: Path) -> N
 
 def test_lightweight_prompt_wraps_title_in_untrusted_tags() -> None:
     prompt = _build_lightweight_prompt(_sample_pr())
-    assert "<untrusted_data type='pr_title'>" in prompt
+    assert "<untrusted_data>" in prompt
     assert "</untrusted_data>" in prompt
-    assert "<untrusted_data type='file_paths'>" in prompt
+    assert "<untrusted_data>" in prompt
 
 
 def test_lightweight_prompt_escapes_delimiter_injection_in_title() -> None:

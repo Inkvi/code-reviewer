@@ -18,7 +18,7 @@ def _build_diff_section(workspace: Path, pr: PRCandidate) -> str:
     diff_snippet = _get_diff_snippet(workspace, pr)
     if diff_snippet:
         return (
-            "\n<untrusted_data type='diff'>\n"
+            "\n<untrusted_data>\n"
             f"{_escape_delimiters(diff_snippet)}\n"
             "</untrusted_data>\n"
         )

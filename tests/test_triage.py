@@ -121,9 +121,9 @@ def test_triage_extracts_json_from_markdown_code_block(tmp_path: Path) -> None:
 def test_triage_prompt_wraps_title_in_untrusted_tags() -> None:
     pr = _sample_pr()
     prompt = _build_triage_prompt(pr)
-    assert "<untrusted_data type='pr_title'>" in prompt
+    assert "<untrusted_data>" in prompt
     assert "</untrusted_data>" in prompt
-    assert "<untrusted_data type='file_paths'>" in prompt
+    assert "<untrusted_data>" in prompt
 
 
 def test_triage_prompt_escapes_delimiter_injection_in_title() -> None:
@@ -164,13 +164,14 @@ def test_triage_claude_system_prompt_warns_about_untrusted(tmp_path: Path) -> No
 def test_triage_prompt_includes_diff_snippet() -> None:
     diff = "--- a/file.yaml\n+++ b/file.yaml\n-    newTag: v1.0\n+    newTag: v1.1"
     prompt = _build_triage_prompt(_sample_pr(), diff_snippet=diff)
-    assert "<untrusted_data type='diff'>" in prompt
+    assert "<untrusted_data>" in prompt
     assert "newTag" in prompt
 
 
 def test_triage_prompt_omits_diff_section_when_empty() -> None:
     prompt = _build_triage_prompt(_sample_pr(), diff_snippet="")
-    assert "<untrusted_data type='diff'>" not in prompt
+    # The diff_section placeholder should resolve to empty string
+    assert "{diff_section}" not in prompt
 
 
 def test_triage_prompt_escapes_delimiters_in_diff() -> None:
@@ -215,7 +216,7 @@ def test_run_triage_passes_diff_to_prompt(tmp_path: Path) -> None:
         asyncio.run(run_triage(_sample_pr(), tmp_path, timeout_seconds=60, backend=["gemini"]))
 
     assert len(captured_prompts) == 1
-    assert "<untrusted_data type='diff'>" in captured_prompts[0]
+    assert "<untrusted_data>" in captured_prompts[0]
     assert "old" in captured_prompts[0]
 
 

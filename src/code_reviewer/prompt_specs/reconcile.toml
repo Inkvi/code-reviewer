@@ -3,13 +3,14 @@ You are reconciling multiple code reviews into one final markdown review.
 
 Review target:
 - {url_label}: {url}
-<untrusted_data type='pr_title'>
+<untrusted_data>
 - Title: {title}
+- Description: {description}
 </untrusted_data>
 - Base: {base_ref}
 - Head SHA: {head_sha}
 
-<untrusted_data type='pr_comments'>
+<untrusted_data>
 PR issue-thread comments to consider for additional context:
 {pr_comments}
 </untrusted_data>

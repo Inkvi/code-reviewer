@@ -45,6 +45,7 @@ _ALLOWED_PLACEHOLDERS: dict[PromptStep, set[str]] = {
         "url_label",
         "url",
         "title",
+        "description",
         "base_ref",
         "head_sha",
         "changed_files",
@@ -57,6 +58,7 @@ _ALLOWED_PLACEHOLDERS: dict[PromptStep, set[str]] = {
         "url_label",
         "url",
         "title",
+        "description",
         "base_ref",
         "head_sha",
         "changed_files",
@@ -69,6 +71,7 @@ _ALLOWED_PLACEHOLDERS: dict[PromptStep, set[str]] = {
         "url_label",
         "url",
         "title",
+        "description",
         "base_ref",
         "head_sha",
         "changed_files",
@@ -80,6 +83,7 @@ _ALLOWED_PLACEHOLDERS: dict[PromptStep, set[str]] = {
         "url_label",
         "url",
         "title",
+        "description",
         "base_ref",
         "head_sha",
         "changed_files",
@@ -213,6 +217,7 @@ def _common_values(pr: PRCandidate, workspace: Path) -> dict[str, object]:
         "url_label": "Repository" if pr.is_local else "URL",
         "url": pr.url,
         "title": _escape_delimiters(pr.title),
+        "description": _escape_delimiters(pr.description.strip()),
         "base_ref": pr.base_ref,
         "head_sha": pr.head_sha,
         "changed_files": _escape_delimiters(changed_files),
@@ -244,9 +249,7 @@ def build_full_review_bundle(
     pr: PRCandidate, workspace: Path, prompt_path: str | None
 ) -> PromptBundle:
     bundle = get_prompt_bundle("full_review", prompt_path)
-    return render_prompt_bundle(
-        bundle, step="full_review", values=_common_values(pr, workspace)
-    )
+    return render_prompt_bundle(bundle, step="full_review", values=_common_values(pr, workspace))
 
 
 def _format_reviewer_sources(reviewer_outputs: list[ReviewerOutput]) -> str:
@@ -259,7 +262,7 @@ def _format_reviewer_sources(reviewer_outputs: list[ReviewerOutput]) -> str:
         else:
             formatted = output.markdown or f"{label} returned no content"
         source_sections.append(
-            f"<untrusted_data type='reviewer_output' source='{label}'>\n"
+            f"<untrusted_data>\n"
             f"Source {letter} ({label}):\n{_escape_delimiters(formatted)}\n"
             f"</untrusted_data>"
         )

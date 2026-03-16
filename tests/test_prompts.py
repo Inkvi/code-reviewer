@@ -54,12 +54,12 @@ def test_default_triage_bundle_renders_expected_content(tmp_path: Path) -> None:
     bundle = build_triage_bundle(
         _sample_pr(),
         tmp_path,
-        "\n<untrusted_data type='diff'>\n+new\n</untrusted_data>\n",
+        "\n<untrusted_data>\n+new\n</untrusted_data>\n",
         None,
     )
 
     assert 'classify it as either "simple" or "full_review"' in bundle.prompt
-    assert "<untrusted_data type='diff'>" in bundle.prompt
+    assert "<untrusted_data>" in bundle.prompt
     assert bundle.system_prompt is not None
 
 

@@ -27,6 +27,7 @@ class PRCandidate:
     trigger_metadata_version: int = 1
     additions: int = 0
     deletions: int = 0
+    description: str = ""
     changed_file_paths: list[str] = field(default_factory=list)
     slash_command_trigger: SlashCommandTrigger | None = None
     is_local: bool = False

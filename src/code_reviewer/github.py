@@ -210,7 +210,7 @@ class GitHubClient:
                         "view",
                         item["url"],
                         "--json",
-                        "baseRefName,headRefOid,additions,deletions,files",
+                        "baseRefName,headRefOid,additions,deletions,files,body",
                     ]
                 )
                 latest_direct_rerequest_at = None
@@ -235,6 +235,7 @@ class GitHubClient:
                     head_sha=details.get("headRefOid", ""),
                     updated_at=item.get("updatedAt", ""),
                     latest_direct_rerequest_at=latest_direct_rerequest_at,
+                    description=details.get("body", "") or "",
                     additions=int(details.get("additions", 0) or 0),
                     deletions=int(details.get("deletions", 0) or 0),
                     changed_file_paths=self._extract_changed_file_paths(details),
@@ -258,7 +259,7 @@ class GitHubClient:
                 "view",
                 pr_url,
                 "--json",
-                "number,url,title,author,baseRefName,headRefOid,updatedAt,additions,deletions,files",
+                "number,url,title,author,baseRefName,headRefOid,updatedAt,additions,deletions,files,body",
             ]
         )
         author = details.get("author") or {}
@@ -283,6 +284,7 @@ class GitHubClient:
             head_sha=details.get("headRefOid", ""),
             updated_at=details.get("updatedAt", ""),
             latest_direct_rerequest_at=latest_direct_rerequest_at,
+            description=details.get("body", "") or "",
             additions=int(details.get("additions", 0) or 0),
             deletions=int(details.get("deletions", 0) or 0),
             changed_file_paths=self._extract_changed_file_paths(details),
@@ -469,7 +471,7 @@ class GitHubClient:
                         "view",
                         item["url"],
                         "--json",
-                        "number,url,title,author,baseRefName,headRefOid,updatedAt,additions,deletions,files",
+                        "number,url,title,author,baseRefName,headRefOid,updatedAt,additions,deletions,files,body",
                     ]
                 )
                 det_author = (details.get("author") or {}).get("login", "")
@@ -483,6 +485,7 @@ class GitHubClient:
                     base_ref=details.get("baseRefName", "main"),
                     head_sha=details.get("headRefOid", ""),
                     updated_at=details.get("updatedAt", item.get("updatedAt", "")),
+                    description=details.get("body", "") or "",
                     additions=int(details.get("additions", 0) or 0),
                     deletions=int(details.get("deletions", 0) or 0),
                     changed_file_paths=self._extract_changed_file_paths(details),
