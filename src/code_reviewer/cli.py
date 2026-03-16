@@ -689,6 +689,16 @@ def run_once_command(
                 for index, url in enumerate(target_pr_urls, start=1):
                     info(f"PR {index}/{total}: {url}")
                     candidate = client.get_pr_candidate(url)
+                    if total > 1 and index > 1:
+                        ahead = index - 1
+                        try:
+                            client.post_pr_comment_inline(
+                                candidate,
+                                f"Queued for review (position {index} of {total}, "
+                                f"{ahead} ahead).",
+                            )
+                        except Exception as exc:  # noqa: BLE001
+                            warn(f"{candidate.key}: failed to post queue position: {exc}")
                     result = await process_candidate(
                         cfg,
                         client,
@@ -696,8 +706,6 @@ def run_once_command(
                         workspace_mgr,
                         candidate,
                         use_saved_review=use_saved_review,
-                        queue_position=index if total > 1 else None,
-                        queue_total=total if total > 1 else None,
                     )
                     run_results.append(result)
                 return run_results

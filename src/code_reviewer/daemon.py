@@ -60,6 +60,16 @@ async def run_cycle(
         for index, pr in enumerate(candidates, start=1):
             if verbose:
                 info(f"PR {index}/{total} {pr.url}")
+            if total > 1 and index > 1:
+                ahead = index - 1
+                try:
+                    client.post_pr_comment_inline(
+                        pr,
+                        f"Queued for review (position {index} of {total}, "
+                        f"{ahead} ahead).",
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    warn(f"{pr.key}: failed to post queue position comment: {exc}")
             result = await process_candidate(
                 config,
                 client,
@@ -67,8 +77,6 @@ async def run_cycle(
                 workspace_mgr,
                 pr,
                 verbose=verbose,
-                queue_position=index if total > 1 else None,
-                queue_total=total if total > 1 else None,
             )
             if result.processed:
                 processed += 1
