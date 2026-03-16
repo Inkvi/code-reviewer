@@ -684,8 +684,9 @@ def run_once_command(
 
             async def _run_targeted() -> list[ProcessingResult]:
                 run_results: list[ProcessingResult] = []
+                total = len(target_pr_urls)
                 for index, url in enumerate(target_pr_urls, start=1):
-                    info(f"PR {index}/{len(target_pr_urls)}: {url}")
+                    info(f"PR {index}/{total}: {url}")
                     candidate = client.get_pr_candidate(url)
                     result = await process_candidate(
                         cfg,
@@ -694,6 +695,8 @@ def run_once_command(
                         workspace_mgr,
                         candidate,
                         use_saved_review=use_saved_review,
+                        queue_position=index if total > 1 else None,
+                        queue_total=total if total > 1 else None,
                     )
                     run_results.append(result)
                 return run_results
