@@ -761,6 +761,8 @@ async def process_candidate(
     *,
     use_saved_review: bool = False,
     verbose: bool = True,
+    queue_position: int | None = None,
+    queue_total: int | None = None,
 ) -> ProcessingResult:
     def detail(message: str) -> None:
         if verbose:
@@ -909,6 +911,18 @@ async def process_candidate(
                 )
             except Exception as exc:  # noqa: BLE001
                 warn(f"{pr.key}: failed to post rerequest comment: {exc}")
+
+    # Post queue position if this PR is waiting behind others
+    if queue_position is not None and queue_total is not None and queue_position > 1:
+        ahead = queue_position - 1
+        try:
+            client.post_pr_comment_inline(
+                pr,
+                f"Queued for review (position {queue_position} of {queue_total}, "
+                f"{ahead} ahead).",
+            )
+        except Exception as exc:  # noqa: BLE001
+            warn(f"{pr.key}: failed to post queue position comment: {exc}")
 
     workdir: Path | None = None
     output_path: Path | None = None

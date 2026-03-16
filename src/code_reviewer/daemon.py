@@ -56,9 +56,10 @@ async def run_cycle(
         info(f"Found {len(candidates)} candidate PR(s)")
 
     if config.max_parallel_prs == 1:
+        total = len(candidates)
         for index, pr in enumerate(candidates, start=1):
             if verbose:
-                info(f"PR {index}/{len(candidates)} {pr.url}")
+                info(f"PR {index}/{total} {pr.url}")
             result = await process_candidate(
                 config,
                 client,
@@ -66,6 +67,8 @@ async def run_cycle(
                 workspace_mgr,
                 pr,
                 verbose=verbose,
+                queue_position=index if total > 1 else None,
+                queue_total=total if total > 1 else None,
             )
             if result.processed:
                 processed += 1
