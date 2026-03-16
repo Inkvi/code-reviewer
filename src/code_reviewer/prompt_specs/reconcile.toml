@@ -6,14 +6,12 @@ Review target:
 <untrusted_data>
 - Title: {title}
 - Description: {description}
+
+PR comments:
+{pr_comments}
 </untrusted_data>
 - Base: {base_ref}
 - Head SHA: {head_sha}
-
-<untrusted_data>
-PR issue-thread comments to consider for additional context:
-{pr_comments}
-</untrusted_data>
 
 {reviewer_sources}
 

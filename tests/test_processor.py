@@ -892,27 +892,27 @@ def test_process_candidate_reconcile_uses_enabled_reviewer_order(monkeypatch, tm
         return gemini_output
 
     seen_order: list[str] = []
-    seen_comments: list[str] = []
     seen_reconciler_backend: str | None = None
     seen_reconciler_model: str | None = None
     seen_reconciler_reasoning_effort: str | None = None
+    seen_pr: PRCandidate | None = None
 
     async def fake_reconcile(  # noqa: ANN001
-        _pr,
+        pr,
         _workdir,
         reviewer_outputs,
         _timeout,
         *,
         reconciler_backend="claude",
-        pr_comments=None,
         reconciler_model=None,
         reconciler_reasoning_effort=None,
         **_kwargs,
     ):
-        nonlocal seen_reconciler_backend, seen_reconciler_model, seen_reconciler_reasoning_effort
+        nonlocal seen_reconciler_backend, seen_reconciler_model
+        nonlocal seen_reconciler_reasoning_effort, seen_pr
         seen_reconciler_backend = reconciler_backend
         seen_order.extend(output.reviewer for output in reviewer_outputs)
-        seen_comments.extend(pr_comments or [])
+        seen_pr = pr
         seen_reconciler_model = reconciler_model
         seen_reconciler_reasoning_effort = reconciler_reasoning_effort
         return "### Findings\n- No material findings.\n\n### Test Gaps\n- None noted.", None
@@ -947,7 +947,8 @@ def test_process_candidate_reconcile_uses_enabled_reviewer_order(monkeypatch, tm
 
     assert result.processed is True
     assert seen_order == ["gemini", "codex"]
-    assert seen_comments == ["@alice (2026-03-03T00:00:00Z): please verify x"]
+    assert seen_pr is not None
+    assert seen_pr.pr_comments == ["@alice (2026-03-03T00:00:00Z): please verify x"]
     assert seen_reconciler_backend == ["codex"]
     assert seen_reconciler_model == "gpt-5.3-codex-mini"
     assert seen_reconciler_reasoning_effort == "high"
@@ -1001,7 +1002,6 @@ def test_process_candidate_reconcile_falls_back_to_claude_settings(monkeypatch, 
         _timeout,
         *,
         reconciler_backend="claude",
-        pr_comments=None,
         reconciler_model=None,
         reconciler_reasoning_effort=None,
         **_kwargs,
@@ -1009,7 +1009,6 @@ def test_process_candidate_reconcile_falls_back_to_claude_settings(monkeypatch, 
         nonlocal seen_reconciler_backend, seen_reconciler_model, seen_reconciler_reasoning_effort
         seen_reconciler_backend = reconciler_backend
         _ = reviewer_outputs
-        _ = pr_comments
         seen_reconciler_model = reconciler_model
         seen_reconciler_reasoning_effort = reconciler_reasoning_effort
         return "### Findings\n- No material findings.\n\n### Test Gaps\n- None noted.", None

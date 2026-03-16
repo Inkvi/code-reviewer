@@ -28,6 +28,7 @@ class PRCandidate:
     additions: int = 0
     deletions: int = 0
     description: str = ""
+    pr_comments: list[str] = field(default_factory=list)
     changed_file_paths: list[str] = field(default_factory=list)
     slash_command_trigger: SlashCommandTrigger | None = None
     is_local: bool = False

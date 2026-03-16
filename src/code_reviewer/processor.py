@@ -918,6 +918,13 @@ async def process_candidate(
         workdir = workspace_mgr.prepare(pr)
         info(f"workspace ready at {workdir} {pr.url}")
 
+        # Fetch PR comments for prompt context
+        if not pr.is_local and pr.number > 0:
+            try:
+                pr.pr_comments = client.get_pr_issue_comments(pr)
+            except Exception as exc:  # noqa: BLE001
+                warn(f"failed to fetch PR comments: {exc} {pr.url}")
+
         # Triage: classify PR as simple or full_review
         triage_result = await run_triage(
             pr,
@@ -1065,18 +1072,12 @@ async def process_candidate(
                 f"model={reconciler_model or 'default'}, "
                 f"effort={effort_label}) {pr.url}"
             )
-            pr_comments: list[str] = []
-            try:
-                pr_comments = client.get_pr_issue_comments(pr)
-            except Exception as exc:  # noqa: BLE001
-                warn(f"failed to fetch PR issue comments for reconciliation: {exc} {pr.url}")
             final_review, reconciler_usage = await reconcile_reviews(
                 pr,
                 workdir,
                 list(ok_outputs.values()),
                 reconciler_timeout_seconds,
                 reconciler_backend=reconciler_backend,
-                pr_comments=pr_comments,
                 reconciler_model=reconciler_model,
                 reconciler_reasoning_effort=reconciler_reasoning_effort,
                 max_findings=config.max_findings,

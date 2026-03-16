@@ -8,6 +8,9 @@ Review target:
 - Title: {title}
 - Description: {description}
 - Files changed: {changed_files}
+
+PR comments:
+{pr_comments}
 </untrusted_data>
 - Base: {base_ref}
 - Head SHA: {head_sha}

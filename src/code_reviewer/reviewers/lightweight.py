@@ -16,13 +16,7 @@ from code_reviewer.reviewers.triage import _get_diff_snippet
 
 def _build_diff_section(workspace: Path, pr: PRCandidate) -> str:
     diff_snippet = _get_diff_snippet(workspace, pr)
-    if diff_snippet:
-        return (
-            "\n<untrusted_data>\n"
-            f"{_escape_delimiters(diff_snippet)}\n"
-            "</untrusted_data>\n"
-        )
-    return ""
+    return _escape_delimiters(diff_snippet) if diff_snippet else ""
 
 
 def _build_lightweight_prompt(pr: PRCandidate) -> str:

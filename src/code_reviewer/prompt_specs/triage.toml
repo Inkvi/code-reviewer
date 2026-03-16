@@ -8,10 +8,16 @@ PR:
 - Title: {title}
 - Description: {description}
 - Files changed: {changed_files}
+
+PR comments:
+{pr_comments}
+
+Diff:
+{diff_section}
 </untrusted_data>
 - Base: {base_ref}
 - Lines added: {additions}, deleted: {deletions}
-{diff_section}
+
 A PR is "simple" if ALL of the following are true:
 - Changes are limited to configuration values, version bumps, image tags, feature flags, environment variables, or dependency versions
 - No new files containing business logic, application code, or algorithms

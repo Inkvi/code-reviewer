@@ -32,6 +32,13 @@ def _escape_delimiters(text: str) -> str:
     )
 
 
+def _format_pr_comments(pr_comments: list[str]) -> str:
+    if not pr_comments:
+        return "_None provided._"
+    sections = [f"- {_escape_delimiters(entry)}" for entry in pr_comments]
+    return "\n".join(sections)
+
+
 _DEFAULT_PROMPT_SPEC_DIR = Path(__file__).with_name("prompt_specs")
 _DEFAULT_PROMPT_SPEC_FILES: dict[PromptStep, str] = {
     "triage": "triage.toml",
@@ -53,6 +60,7 @@ _ALLOWED_PLACEHOLDERS: dict[PromptStep, set[str]] = {
         "deletions",
         "workspace",
         "diff_section",
+        "pr_comments",
     },
     "lightweight_review": {
         "url_label",
@@ -66,6 +74,7 @@ _ALLOWED_PLACEHOLDERS: dict[PromptStep, set[str]] = {
         "deletions",
         "workspace",
         "diff_section",
+        "pr_comments",
     },
     "full_review": {
         "url_label",
@@ -78,6 +87,7 @@ _ALLOWED_PLACEHOLDERS: dict[PromptStep, set[str]] = {
         "additions",
         "deletions",
         "workspace",
+        "pr_comments",
     },
     "reconcile": {
         "url_label",
@@ -224,6 +234,7 @@ def _common_values(pr: PRCandidate, workspace: Path) -> dict[str, object]:
         "additions": pr.additions,
         "deletions": pr.deletions,
         "workspace": str(workspace.resolve()),
+        "pr_comments": _format_pr_comments(pr.pr_comments),
     }
 
 
@@ -273,7 +284,6 @@ def build_reconcile_bundle(
     pr: PRCandidate,
     workspace: Path,
     reviewer_outputs: list[ReviewerOutput],
-    pr_comments: str,
     max_findings: int,
     max_test_gaps: int,
     prompt_path: str | None,
@@ -282,7 +292,6 @@ def build_reconcile_bundle(
     values = _common_values(pr, workspace)
     values.update(
         {
-            "pr_comments": pr_comments,
             "reviewer_sources": _format_reviewer_sources(reviewer_outputs),
             "max_findings": max_findings,
             "max_test_gaps": max_test_gaps,

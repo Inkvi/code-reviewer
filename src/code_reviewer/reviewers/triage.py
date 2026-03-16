@@ -50,15 +50,7 @@ def _get_diff_snippet(workspace: Path, pr: PRCandidate) -> str:
 
 
 def _build_triage_prompt(pr: PRCandidate, diff_snippet: str = "") -> str:
-    if diff_snippet:
-        diff_section = (
-            "\n<untrusted_data>\n"
-            f"{_escape_delimiters(diff_snippet)}\n"
-            "</untrusted_data>\n"
-        )
-    else:
-        diff_section = ""
-
+    diff_section = _escape_delimiters(diff_snippet) if diff_snippet else ""
     return build_triage_bundle(pr, Path.cwd(), diff_section, None).prompt
 
 
@@ -101,14 +93,7 @@ async def run_triage(
 ) -> TriageResult:
     backends = [backend] if isinstance(backend, str) else list(backend)
     diff_snippet = _get_diff_snippet(workspace, pr)
-    if diff_snippet:
-        diff_section = (
-            "\n<untrusted_data>\n"
-            f"{_escape_delimiters(diff_snippet)}\n"
-            "</untrusted_data>\n"
-        )
-    else:
-        diff_section = ""
+    diff_section = _escape_delimiters(diff_snippet) if diff_snippet else ""
     bundle = build_triage_bundle(pr, workspace, diff_section, prompt_path)
     prompt = bundle.prompt
     info(f"running triage (backends={' > '.join(backends)}, model={model or 'default'}) {pr.url}")

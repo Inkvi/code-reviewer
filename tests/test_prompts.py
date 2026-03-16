@@ -54,7 +54,7 @@ def test_default_triage_bundle_renders_expected_content(tmp_path: Path) -> None:
     bundle = build_triage_bundle(
         _sample_pr(),
         tmp_path,
-        "\n<untrusted_data>\n+new\n</untrusted_data>\n",
+        "+new",
         None,
     )
 
@@ -98,11 +98,12 @@ def test_default_full_review_bundle_for_uncommitted_renders(
 
 
 def test_default_reconcile_bundle_renders_expected_content(tmp_path: Path) -> None:
+    pr = _sample_pr()
+    pr.pr_comments = ["@bob (2026-01-01T00:00:00Z): looks good"]
     bundle = build_reconcile_bundle(
-        _sample_pr(),
+        pr,
         tmp_path,
         [_sample_output("claude"), _sample_output("codex")],
-        "- looks good",
         10,
         3,
         None,

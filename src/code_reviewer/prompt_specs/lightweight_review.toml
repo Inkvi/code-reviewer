@@ -8,11 +8,17 @@ PR:
 - Title: {title}
 - Description: {description}
 - Files changed: {changed_files}
+
+PR comments:
+{pr_comments}
+
+Diff:
+{diff_section}
 </untrusted_data>
 - Base: {base_ref}
 - Head SHA: {head_sha}
 - Lines added: {additions}, deleted: {deletions}
-{diff_section}
+
 Review checklist — evaluate each item:
 1. **Syntax & format**: Are the changed files valid and well-formed? (YAML indentation, JSON brackets, TOML syntax, etc.)
 2. **Secrets & credentials**: Are there any hardcoded secrets, API keys, passwords, or tokens?
