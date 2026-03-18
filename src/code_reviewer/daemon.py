@@ -32,14 +32,16 @@ async def run_cycle(
 
     processed = 0
     try:
-        candidates = client.discover_pr_candidates(config)
+        candidates = await asyncio.to_thread(client.discover_pr_candidates, config)
     except Exception as exc:  # noqa: BLE001
         warn(f"Failed to discover PRs: {exc}")
         return 0
 
     if config.slash_command_enabled:
         try:
-            slash_candidates = client.discover_slash_command_candidates(config, store)
+            slash_candidates = await asyncio.to_thread(
+                client.discover_slash_command_candidates, config, store
+            )
         except Exception as exc:  # noqa: BLE001
             warn(f"Failed to discover slash command PRs: {exc}")
             slash_candidates = []
@@ -67,7 +69,8 @@ async def run_cycle(
             if total > 1 and index > 1:
                 ahead = index - 1
                 try:
-                    client.post_pr_comment_inline(
+                    await asyncio.to_thread(
+                        client.post_pr_comment_inline,
                         pr,
                         f"Queued for review (position {index} of {total}, {ahead} ahead).",
                     )

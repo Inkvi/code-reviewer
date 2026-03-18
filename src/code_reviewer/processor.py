@@ -460,7 +460,7 @@ async def _run_reviewers_with_monitoring(
                     and polls_since_last_sha_check >= sha_check_interval
                 ):
                     polls_since_last_sha_check = 0
-                    new_sha = _check_pr_head_changed(client, pr)
+                    new_sha = await asyncio.to_thread(_check_pr_head_changed, client, pr)
                     if new_sha is not None:
                         info(
                             f"new commit detected mid-review "
@@ -795,7 +795,8 @@ async def process_candidate(
             )
         detail(f"using saved review file ({saved_review_path}) {pr.url}")
         review_text_for_decision = saved_review_path.read_text(encoding="utf-8")
-        _publish_and_persist(
+        await asyncio.to_thread(
+            _publish_and_persist,
             config,
             client,
             store,
@@ -826,7 +827,8 @@ async def process_candidate(
         if saved_path.exists():
             info(f"reusing previously generated review (submission retry) {pr.url}")
             review_text = saved_path.read_text(encoding="utf-8")
-            _publish_and_persist(
+            await asyncio.to_thread(
+                _publish_and_persist,
                 config,
                 client,
                 store,
@@ -850,7 +852,9 @@ async def process_candidate(
         trigger = pr.slash_command_trigger
 
         try:
-            client.add_reaction_to_comment(pr.owner, pr.repo, trigger.comment_id, "eyes")
+            await asyncio.to_thread(
+                client.add_reaction_to_comment, pr.owner, pr.repo, trigger.comment_id, "eyes"
+            )
         except Exception as exc:  # noqa: BLE001
             warn(f"{pr.key}: failed to react to /review comment: {exc}")
 
@@ -861,7 +865,8 @@ async def process_candidate(
         )
         if already_reviewed:
             try:
-                client.post_pr_comment_inline(
+                await asyncio.to_thread(
+                    client.post_pr_comment_inline,
                     pr,
                     "Already reviewed at this commit. Push new changes or use "
                     "`/review force` to re-review.",
@@ -897,13 +902,14 @@ async def process_candidate(
             )
 
         try:
-            client.add_eyes_reaction(pr)
+            await asyncio.to_thread(client.add_eyes_reaction, pr)
         except Exception as exc:  # noqa: BLE001
             warn(f"{pr.key}: failed to add eyes reaction: {exc}")
 
         if decision.reason == "new_rerequest" and config.post_rerequest_comment:
             try:
-                client.post_pr_comment_inline(
+                await asyncio.to_thread(
+                    client.post_pr_comment_inline,
                     pr,
                     "Starting review of the latest changes…",
                 )
@@ -915,13 +921,13 @@ async def process_candidate(
     restarts_remaining = config.max_mid_review_restarts
     try:
         info(f"preparing workspace {pr.url}")
-        workdir = workspace_mgr.prepare(pr)
+        workdir = await asyncio.to_thread(workspace_mgr.prepare, pr)
         info(f"workspace ready at {workdir} {pr.url}")
 
         # Fetch PR comments for prompt context
         if not pr.is_local and pr.number > 0:
             try:
-                pr.pr_comments = client.get_pr_issue_comments(pr)
+                pr.pr_comments = await asyncio.to_thread(client.get_pr_issue_comments, pr)
             except Exception as exc:  # noqa: BLE001
                 warn(f"failed to fetch PR comments: {exc} {pr.url}")
 
@@ -941,7 +947,7 @@ async def process_candidate(
             try:
                 # Check for new commits before starting lightweight review
                 if config.max_mid_review_restarts > 0:
-                    new_sha = _check_pr_head_changed(client, pr)
+                    new_sha = await asyncio.to_thread(_check_pr_head_changed, client, pr)
                     if new_sha is not None:
                         info(
                             f"new commit detected before lightweight review "
@@ -949,7 +955,7 @@ async def process_candidate(
                             f"updating {pr.url}"
                         )
                         pr.head_sha = new_sha
-                        workspace_mgr.update_to_latest(workdir, pr)
+                        await asyncio.to_thread(workspace_mgr.update_to_latest, workdir, pr)
 
                 lightweight_text, lightweight_usage = await run_lightweight_review(
                     pr,
@@ -1001,7 +1007,8 @@ async def process_candidate(
             )
             info(f"Lightweight review ready: {output_path.resolve()}")
 
-            _publish_and_persist(
+            await asyncio.to_thread(
+                _publish_and_persist,
                 config,
                 client,
                 store,
@@ -1044,7 +1051,7 @@ async def process_candidate(
                     f"({restarts_remaining} restart(s) remaining) {pr.url}"
                 )
                 pr.head_sha = ncd.new_sha
-                workspace_mgr.update_to_latest(workdir, pr)
+                await asyncio.to_thread(workspace_mgr.update_to_latest, workdir, pr)
                 info(f"workspace updated to {ncd.new_sha[:12]} {pr.url}")
 
         enabled_reviewers = list(config.enabled_reviewers)
@@ -1134,7 +1141,8 @@ async def process_candidate(
             )
         info(f"Final review ready: {output_path.resolve()}")
 
-        _publish_and_persist(
+        await asyncio.to_thread(
+            _publish_and_persist,
             config,
             client,
             store,
@@ -1178,4 +1186,4 @@ async def process_candidate(
         )
     finally:
         if workdir is not None:
-            workspace_mgr.cleanup(workdir)
+            await asyncio.to_thread(workspace_mgr.cleanup, workdir)
