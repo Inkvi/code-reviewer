@@ -1,3 +1,10 @@
+FROM node:22-slim AS web-builder
+WORKDIR /web
+COPY web/package.json web/package-lock.json ./
+RUN npm ci
+COPY web/ ./
+RUN npm run build
+
 FROM python:3.12-slim AS base
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -45,6 +52,9 @@ RUN uv sync --no-dev --no-install-project
 COPY src/ src/
 COPY config.example.toml config.example.toml
 RUN uv sync --no-dev
+
+# Copy built frontend
+COPY --from=web-builder /web/dist web/dist/
 
 # Set ownership for non-root user
 RUN chown -R 1000:1000 /app
