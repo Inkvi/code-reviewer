@@ -251,11 +251,126 @@ def _output_version_label(pr: PRCandidate, *, now: datetime | None = None) -> st
     return f"{timestamp}-{short_sha}"
 
 
-def _build_review_meta(pr: PRCandidate) -> dict[str, str]:
+def _build_review_meta(
+    pr: PRCandidate,
+    config: AppConfig,
+    review_type: str,
+    *,
+    triage_result: str | None = None,
+    reviewer_outputs: dict[str, ReviewerOutput] | None = None,
+    lightweight_usage: TokenUsage | None = None,
+    started_at: datetime | None = None,
+) -> dict:
     """Build metadata dict for a review artifact."""
-    meta: dict[str, str] = {"author": pr.author_login}
+    meta: dict = {
+        "author": pr.author_login,
+        "review_type": review_type,
+    }
     if pr.title:
         meta["title"] = pr.title
+    if not pr.is_local and pr.url:
+        meta["url"] = pr.url
+    meta["base_ref"] = pr.base_ref
+    meta["head_sha"] = pr.head_sha
+    meta["additions"] = pr.additions
+    meta["deletions"] = pr.deletions
+    if pr.changed_file_paths:
+        meta["changed_files"] = pr.changed_file_paths
+    if triage_result:
+        meta["triage_result"] = triage_result
+
+    # Trigger info
+    if pr.slash_command_trigger:
+        meta["trigger"] = {
+            "type": "slash_command",
+            "by": pr.slash_command_trigger.comment_author,
+            "at": pr.slash_command_trigger.comment_created_at,
+            "force": pr.slash_command_trigger.force,
+        }
+    if pr.review_mode:
+        meta["review_mode"] = pr.review_mode
+
+    # Timing
+    if started_at:
+        ended = datetime.now(UTC)
+        meta["total_duration_seconds"] = round((ended - started_at).total_seconds(), 1)
+
+    # Triage config (common to both paths)
+    meta["triage_backend"] = config.triage_backend
+    if config.triage_model:
+        meta["triage_model"] = config.triage_model
+
+    # Custom prompt paths
+    prompt_paths: dict = {}
+    if config.triage_prompt_path:
+        prompt_paths["triage"] = config.triage_prompt_path
+    if config.lightweight_review_prompt_path:
+        prompt_paths["lightweight"] = config.lightweight_review_prompt_path
+    if config.full_review_prompt_path:
+        prompt_paths["full_review"] = config.full_review_prompt_path
+    if config.reconcile_prompt_path:
+        prompt_paths["reconcile"] = config.reconcile_prompt_path
+    if prompt_paths:
+        meta["custom_prompt_paths"] = prompt_paths
+
+    if review_type == "lightweight":
+        meta["lightweight_backend"] = config.lightweight_review_backend
+        if config.lightweight_review_model:
+            meta["lightweight_model"] = config.lightweight_review_model
+        if lightweight_usage:
+            tokens: dict = {
+                "input": lightweight_usage.input_tokens,
+                "output": lightweight_usage.output_tokens,
+            }
+            if lightweight_usage.cost_usd is not None:
+                tokens["cost_usd"] = round(lightweight_usage.cost_usd, 4)
+            meta["total_tokens"] = tokens
+    elif review_type == "full":
+        meta["enabled_reviewers"] = list(config.enabled_reviewers)
+        reviewers: dict = {}
+        for name in config.enabled_reviewers:
+            r: dict = {}
+            if name == "claude":
+                if config.claude_model:
+                    r["model"] = config.claude_model
+                r["backend"] = config.claude_backend
+            elif name == "codex":
+                r["model"] = config.codex_model
+                r["backend"] = config.codex_backend
+            elif name == "gemini":
+                if config.gemini_model:
+                    r["model"] = config.gemini_model
+            if reviewer_outputs and name in reviewer_outputs:
+                out = reviewer_outputs[name]
+                r["status"] = out.status
+                r["duration_seconds"] = round(out.duration_seconds, 1)
+                if out.token_usage:
+                    r["tokens"] = {
+                        "input": out.token_usage.input_tokens,
+                        "output": out.token_usage.output_tokens,
+                    }
+                    if out.token_usage.cost_usd is not None:
+                        r["tokens"]["cost_usd"] = round(out.token_usage.cost_usd, 4)
+            if r:
+                reviewers[name] = r
+        if reviewers:
+            meta["reviewers"] = reviewers
+        meta["reconciler_backend"] = config.reconciler_backend
+        if config.reconciler_model:
+            meta["reconciler_model"] = config.reconciler_model
+
+        # Aggregate total tokens across all reviewers
+        if reviewer_outputs:
+            total = TokenUsage()
+            for out in reviewer_outputs.values():
+                if out.token_usage:
+                    total = total + out.token_usage
+            if total.input_tokens > 0 or total.output_tokens > 0:
+                t: dict = {"input": total.input_tokens, "output": total.output_tokens}
+                if total.cost_usd is not None:
+                    t["cost_usd"] = round(total.cost_usd, 4)
+                meta["total_tokens"] = t
+
     return meta
 
 
@@ -950,6 +1065,7 @@ async def process_candidate(
     workdir: Path | None = None
     output_path: Path | None = None
     restarts_remaining = config.max_mid_review_restarts
+    review_started_at = datetime.now(UTC)
     try:
         info(f"preparing workspace {pr.url}")
         workdir = await asyncio.to_thread(workspace_mgr.prepare, pr)
@@ -1046,7 +1162,14 @@ async def process_candidate(
                 write_review_meta,
                 Path(config.output_dir),
                 pr,
-                _build_review_meta(pr),
+                _build_review_meta(
+                    pr,
+                    config,
+                    "lightweight",
+                    triage_result="simple",
+                    lightweight_usage=lightweight_usage,
+                    started_at=review_started_at,
+                ),
                 version_label=version_label,
             )
             info(f"Lightweight review ready: {output_path.resolve()}")
@@ -1207,7 +1330,14 @@ async def process_candidate(
             write_review_meta,
             output_dir,
             pr,
-            _build_review_meta(pr),
+            _build_review_meta(
+                pr,
+                config,
+                "full",
+                triage_result="complex",
+                reviewer_outputs=active_outputs,
+                started_at=review_started_at,
+            ),
             version_label=version_label,
         )
         # Save prompts

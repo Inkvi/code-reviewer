@@ -4,6 +4,7 @@ import {
   fetchPRDetail,
   fetchVersionDetail,
   type PRDetailData,
+  type ReviewMeta,
   type VersionDetailData,
 } from "../api";
 import { DecisionBadge, TypeBadge } from "../components/Badge";
@@ -171,6 +172,145 @@ function PromptDisclosure({ content }: { content: string }) {
   );
 }
 
+/* ── review metadata panel ── */
+
+function MetaItem({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-baseline gap-2">
+      <span className="text-gray-500 text-xs">{label}</span>
+      <span className="text-gray-300 text-xs font-mono">{value}</span>
+    </div>
+  );
+}
+
+function ReviewMetaPanel({ meta }: { meta: ReviewMeta }) {
+  const [open, setOpen] = useState(false);
+
+  type ReviewerInfo = { model?: string; backend?: string; status?: string; duration_seconds?: number; tokens?: { input: number; output: number; cost_usd?: number } };
+  type TriggerInfo = { type?: string; by?: string; at?: string; force?: boolean };
+  type TokenInfo = { input: number; output: number; cost_usd?: number };
+  const reviewers = meta.reviewers as Record<string, ReviewerInfo> | undefined;
+  const trigger = meta.trigger as TriggerInfo | undefined;
+  const totalTokens = meta.total_tokens as TokenInfo | undefined;
+  const changedFiles = meta.changed_files as string[] | undefined;
+
+  const items: { label: string; value: string }[] = [];
+
+  if (meta.review_type) items.push({ label: "Type", value: String(meta.review_type) });
+  if (meta.triage_result) items.push({ label: "Triage", value: String(meta.triage_result) });
+  if (meta.triage_backend)
+    items.push({ label: "Triage Backend", value: `${(meta.triage_backend as string[]).join(", ")}${meta.triage_model ? ` (${meta.triage_model})` : ""}` });
+  if (meta.review_type === "lightweight" && meta.lightweight_backend)
+    items.push({ label: "Reviewer", value: `${(meta.lightweight_backend as string[]).join(", ")}${meta.lightweight_model ? ` (${meta.lightweight_model})` : ""}` });
+  if (meta.reconciler_backend)
+    items.push({ label: "Reconciler", value: `${(meta.reconciler_backend as string[]).join(", ")}${meta.reconciler_model ? ` (${meta.reconciler_model})` : ""}` });
+  if (meta.base_ref) items.push({ label: "Base", value: String(meta.base_ref) });
+  if (meta.head_sha) items.push({ label: "SHA", value: String(meta.head_sha).slice(0, 12) });
+  if (meta.additions != null || meta.deletions != null)
+    items.push({ label: "Size", value: `+${meta.additions ?? 0} / -${meta.deletions ?? 0}` });
+  if (meta.total_duration_seconds != null) items.push({ label: "Duration", value: `${meta.total_duration_seconds}s` });
+  if (trigger) {
+    const parts = [trigger.type || "unknown"];
+    if (trigger.by) parts.push(`by ${trigger.by}`);
+    if (trigger.force) parts.push("(forced)");
+    items.push({ label: "Trigger", value: parts.join(" ") });
+  }
+  if (meta.review_mode) items.push({ label: "Mode", value: String(meta.review_mode) });
+
+  if (items.length === 0 && !reviewers) return null;
+
+  return (
+    <div className="mb-6">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="flex items-center gap-2 text-xs text-gray-500 hover:text-gray-300 transition-colors"
+      >
+        <svg
+          className={`w-3 h-3 transition-transform duration-200 ${open ? "rotate-90" : ""}`}
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          strokeWidth={2.5}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+        </svg>
+        Review Parameters
+      </button>
+      {open && (
+        <div className="mt-2 px-4 py-3 rounded-lg bg-surface-3/40 border border-surface-border animate-fade-in">
+          <div className="flex flex-wrap gap-x-6 gap-y-1.5">
+            {items.map((item) => (
+              <MetaItem key={item.label} label={item.label} value={item.value} />
+            ))}
+          </div>
+          {reviewers && (
+            <div className="mt-3 pt-2.5 border-t border-surface-border/50">
+              <div className="grid gap-2">
+                {Object.entries(reviewers).map(([name, info]) => (
+                  <div key={name} className="flex items-center gap-3 text-xs">
+                    <span className={`font-medium ${getTheme(name).activeText}`}>
+                      {getTheme(name).label}
+                    </span>
+                    {info.model && <span className="text-gray-400 font-mono">{info.model}</span>}
+                    {info.backend && <span className="text-gray-600">{info.backend}</span>}
+                    {info.status && (
+                      <span className={info.status === "ok" ? "text-emerald-500" : "text-rose-400"}>
+                        {info.status}
+                      </span>
+                    )}
+                    {info.duration_seconds != null && (
+                      <span className="text-gray-600">{info.duration_seconds}s</span>
+                    )}
+                    {info.tokens && (
+                      <span className="text-gray-600 font-mono">
+                        {info.tokens.input.toLocaleString()}→{info.tokens.output.toLocaleString()} tok
+                        {info.tokens.cost_usd != null && (
+                          <> · ${info.tokens.cost_usd}</>
+                        )}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {totalTokens && (
+            <div className="mt-2.5 pt-2 border-t border-surface-border/50 flex items-center gap-3 text-xs">
+              <span className="text-gray-500">Total</span>
+              <span className="text-gray-400 font-mono">
+                {totalTokens.input.toLocaleString()}→{totalTokens.output.toLocaleString()} tok
+                {totalTokens.cost_usd != null && <> · ${totalTokens.cost_usd}</>}
+              </span>
+            </div>
+          )}
+          {changedFiles && changedFiles.length > 0 && (
+            <details className="mt-2.5 pt-2 border-t border-surface-border/50">
+              <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-300 transition-colors">
+                {changedFiles.length} file{changedFiles.length !== 1 ? "s" : ""} changed
+              </summary>
+              <div className="mt-1.5 text-xs font-mono text-gray-500 space-y-0.5 max-h-40 overflow-y-auto">
+                {changedFiles.map((f) => <div key={f}>{f}</div>)}
+              </div>
+            </details>
+          )}
+          {!!meta.custom_prompt_paths && (
+            <div className="mt-2.5 pt-2 border-t border-surface-border/50 flex flex-wrap gap-x-4 gap-y-1 text-xs">
+              <span className="text-gray-500">Custom prompts:</span>
+              {Object.entries(meta.custom_prompt_paths as Record<string, string>).map(([stage, path]) => (
+                <span key={stage} className="text-gray-500">
+                  <span className="text-gray-400">{stage}</span> → <span className="font-mono text-gray-600">{path}</span>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ── main component ── */
 
 export default function PRDetail({ isHistorical }: Props) {
@@ -258,8 +398,10 @@ export default function PRDetail({ isHistorical }: Props) {
       )}
 
       {isHistorical && version && (
-        <p className="text-sm font-mono text-gray-500 mb-6">{version}</p>
+        <p className="text-sm font-mono text-gray-500 mb-4">{version}</p>
       )}
+
+      {data.meta && <ReviewMetaPanel meta={data.meta} />}
 
       {!isHistorical && "versions" in data && data.versions.length > 0 && (
         <div className="mb-6">

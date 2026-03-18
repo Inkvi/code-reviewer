@@ -16,6 +16,8 @@ export interface PRSummary {
   title: string | null;
 }
 
+export type ReviewMeta = Record<string, unknown>;
+
 export interface PRDetailData {
   number: number;
   org: string;
@@ -28,6 +30,7 @@ export interface PRDetailData {
   versions: VersionSummary[];
   author: string | null;
   title: string | null;
+  meta: ReviewMeta | null;
 }
 
 export interface VersionSummary {
@@ -49,6 +52,7 @@ export interface VersionDetailData {
   review_type: string;
   author: string | null;
   title: string | null;
+  meta: ReviewMeta | null;
 }
 
 async function fetchJSON<T>(path: string): Promise<T> {

@@ -134,6 +134,7 @@ def _pr_summary(repo_dir: Path, number: int) -> dict[str, Any]:
         "version_count": version_count,
         "author": meta.get("author"),
         "title": meta.get("title"),
+        "meta": meta or None,
     }
 
 
@@ -177,6 +178,7 @@ def get_pr_detail(reviews_dir: Path, org: str, repo: str, number: int) -> dict[s
         "versions": versions,
         "author": meta.get("author"),
         "title": meta.get("title"),
+        "meta": meta or None,
     }
 
 
@@ -259,6 +261,7 @@ def get_version_detail(
         "stage_contents": stage_contents,
         "author": meta.get("author"),
         "title": meta.get("title"),
+        "meta": meta or None,
         "decision": infer_review_decision(final_review),
         "review_type": _detect_review_type(stages),
     }
