@@ -160,11 +160,7 @@ async def run_gemini_review(
 
     try:
         if prompt_path is None:
-            prompt_text = (
-                f"Gemini built-in `/code-review` extension invocation.\n\n"
-                f"The actual prompt is constructed internally by the Gemini CLI "
-                f"`-e {_CODE_REVIEW_EXTENSION}` flag and is not available for capture."
-            )
+            prompt_text = _CODE_REVIEW_PROMPT
             args = _build_gemini_review_command(pr, model=model)
             code, raw_stdout, stderr = await run_command_async(
                 args,
