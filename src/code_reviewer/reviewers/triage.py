@@ -8,7 +8,7 @@ from pathlib import Path
 
 from code_reviewer.logger import info, warn
 from code_reviewer.models import PRCandidate
-from code_reviewer.prompts import build_triage_bundle
+from code_reviewer.prompts import PromptBundle, build_triage_bundle
 from code_reviewer.reviewers._fallback import run_with_fallback
 from code_reviewer.reviewers._sanitize import _escape_delimiters
 from code_reviewer.reviewers.claude_cli import run_claude_cli_prompt
@@ -90,7 +90,7 @@ async def run_triage(
     model: str | None = None,
     prompt_path: str | None = None,
     claude_backend: str = "sdk",
-) -> TriageResult:
+) -> tuple[TriageResult, PromptBundle]:
     backends = [backend] if isinstance(backend, str) else list(backend)
     diff_snippet = _get_diff_snippet(workspace, pr)
     diff_section = _escape_delimiters(diff_snippet) if diff_snippet else ""
@@ -140,8 +140,8 @@ async def run_triage(
         text = await run_with_fallback(backends, _try, "triage", pr.url)
     except Exception as exc:  # noqa: BLE001
         warn(f"triage failed, falling back to full review: {exc} {pr.url}")
-        return TriageResult.FULL_REVIEW
+        return TriageResult.FULL_REVIEW, bundle
 
     result = _parse_triage_response(text)
     info(f"triage result: {result.value} {pr.url}")
-    return result
+    return result, bundle

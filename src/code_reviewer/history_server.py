@@ -21,7 +21,19 @@ from code_reviewer.review_decision import infer_review_decision
 
 logger = logging.getLogger(__name__)
 
-KNOWN_STAGES = ("lightweight", "claude", "codex", "gemini", "reconcile")
+KNOWN_STAGES = (
+    "lightweight",
+    "claude",
+    "codex",
+    "gemini",
+    "reconcile",
+    "triage.prompt",
+    "lightweight.prompt",
+    "claude.prompt",
+    "codex.prompt",
+    "gemini.prompt",
+    "reconcile.prompt",
+)
 _VERSION_RE = re.compile(r"^(\d{8}T\d{6}Z)-([a-f0-9]+)$")
 
 

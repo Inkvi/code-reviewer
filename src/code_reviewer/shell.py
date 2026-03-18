@@ -3,21 +3,24 @@ from __future__ import annotations
 import asyncio
 import json
 import subprocess
+import threading
 import time
 from pathlib import Path
 
 # Minimum seconds between consecutive gh CLI calls to avoid GitHub rate limits.
 _GH_MIN_INTERVAL = 0.2
 _gh_last_call: float = 0.0
+_gh_lock = threading.Lock()
 
 
 def _gh_throttle() -> None:
     global _gh_last_call
-    now = time.monotonic()
-    wait = _GH_MIN_INTERVAL - (now - _gh_last_call)
-    if wait > 0:
-        time.sleep(wait)
-    _gh_last_call = time.monotonic()
+    with _gh_lock:
+        now = time.monotonic()
+        wait = _GH_MIN_INTERVAL - (now - _gh_last_call)
+        if wait > 0:
+            time.sleep(wait)
+        _gh_last_call = time.monotonic()
 
 
 class CommandError(RuntimeError):
@@ -94,6 +97,11 @@ async def run_command_async(
     try:
         stdout_b, stderr_b = await asyncio.wait_for(proc.communicate(), timeout=timeout)
     except TimeoutError:
+        proc.kill()
+        await proc.wait()
+        raise
+    except BaseException:
+        # Kill subprocess on task cancellation or any other exception.
         proc.kill()
         await proc.wait()
         raise

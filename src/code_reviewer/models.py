@@ -67,6 +67,8 @@ class ReviewerOutput:
     started_at: datetime
     ended_at: datetime
     token_usage: TokenUsage | None = None
+    prompt: str = ""
+    system_prompt: str | None = None
 
     @property
     def duration_seconds(self) -> float:

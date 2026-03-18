@@ -4,7 +4,7 @@ from pathlib import Path
 
 from code_reviewer.logger import info
 from code_reviewer.models import PRCandidate, TokenUsage
-from code_reviewer.prompts import build_lightweight_bundle
+from code_reviewer.prompts import PromptBundle, build_lightweight_bundle
 from code_reviewer.reviewers._fallback import run_with_fallback
 from code_reviewer.reviewers._sanitize import _escape_delimiters
 from code_reviewer.reviewers.claude_cli import run_claude_cli_prompt
@@ -33,7 +33,7 @@ async def run_lightweight_review(
     reasoning_effort: str | None = None,
     prompt_path: str | None = None,
     claude_backend: str = "sdk",
-) -> tuple[str, TokenUsage | None]:
+) -> tuple[str, TokenUsage | None, PromptBundle]:
     backends = [backend] if isinstance(backend, str) else list(backend)
     diff_section = _build_diff_section(workspace, pr)
     bundle = build_lightweight_bundle(pr, workspace, diff_section, prompt_path)
@@ -86,4 +86,5 @@ async def run_lightweight_review(
             return text, None
         raise RuntimeError(f"Unsupported lightweight review backend: {b}")
 
-    return await run_with_fallback(backends, _try, "lightweight", pr.url)
+    text, usage = await run_with_fallback(backends, _try, "lightweight", pr.url)
+    return text, usage, bundle

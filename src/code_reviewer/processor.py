@@ -19,7 +19,7 @@ from code_reviewer.models import (
     TokenUsage,
 )
 from code_reviewer.output import write_review_markdown, write_stage_markdown
-from code_reviewer.prompts import PromptOverrideError
+from code_reviewer.prompts import PromptBundle, PromptOverrideError, format_prompt_bundle
 from code_reviewer.review_decision import infer_review_decision
 from code_reviewer.reviewers import (
     TriageResult,
@@ -460,7 +460,7 @@ async def _run_reviewers_with_monitoring(
                     and polls_since_last_sha_check >= sha_check_interval
                 ):
                     polls_since_last_sha_check = 0
-                    new_sha = _check_pr_head_changed(client, pr)
+                    new_sha = await asyncio.to_thread(_check_pr_head_changed, client, pr)
                     if new_sha is not None:
                         info(
                             f"new commit detected mid-review "
@@ -620,6 +620,23 @@ async def _run_local_reviewers(
     return reviewer_outputs
 
 
+def _save_prompt(
+    output_dir: Path,
+    pr: PRCandidate,
+    stage: str,
+    bundle: PromptBundle,
+    version_label: str,
+) -> None:
+    """Save a rendered prompt bundle as a stage markdown file."""
+    write_stage_markdown(
+        output_dir,
+        pr,
+        f"{stage}.prompt",
+        format_prompt_bundle(bundle),
+        version_label=version_label,
+    )
+
+
 async def process_local_review(
     config: AppConfig,
     pr: PRCandidate,
@@ -630,7 +647,7 @@ async def process_local_review(
 
     try:
         # Triage
-        triage_result = await run_triage(
+        triage_result, triage_bundle = await run_triage(
             pr,
             workdir,
             config.triage_timeout_seconds,
@@ -642,7 +659,11 @@ async def process_local_review(
 
         if triage_result == TriageResult.SIMPLE:
             try:
-                lightweight_text, lightweight_usage = await run_lightweight_review(
+                (
+                    lightweight_text,
+                    lightweight_usage,
+                    lightweight_bundle,
+                ) = await run_lightweight_review(
                     pr,
                     workdir,
                     config.lightweight_review_timeout_seconds,
@@ -695,7 +716,7 @@ async def process_local_review(
                 reconciler_reasoning_effort,
             ) = _resolve_reconciler_settings(config)
             info(f"reconciling outputs (backend={' > '.join(reconciler_backend)})")
-            final_review, reconciler_usage = await reconcile_reviews(
+            final_review, reconciler_usage, reconcile_bundle = await reconcile_reviews(
                 pr,
                 workdir,
                 list(ok_outputs.values()),
@@ -786,7 +807,7 @@ async def process_candidate(
             previous.last_status = "skipped_missing_saved_review"
             previous.trigger_mode = config.trigger_mode
             store.set(pr.key, previous)
-            store.save()
+            await asyncio.to_thread(store.save)
             return ProcessingResult(
                 processed=False,
                 pr_url=pr.url,
@@ -794,8 +815,11 @@ async def process_candidate(
                 status="skipped_missing_saved_review",
             )
         detail(f"using saved review file ({saved_review_path}) {pr.url}")
-        review_text_for_decision = saved_review_path.read_text(encoding="utf-8")
-        _publish_and_persist(
+        review_text_for_decision = await asyncio.to_thread(
+            saved_review_path.read_text, encoding="utf-8"
+        )
+        await asyncio.to_thread(
+            _publish_and_persist,
             config,
             client,
             store,
@@ -825,8 +849,9 @@ async def process_candidate(
         saved_path = Path(previous.last_output_file)
         if saved_path.exists():
             info(f"reusing previously generated review (submission retry) {pr.url}")
-            review_text = saved_path.read_text(encoding="utf-8")
-            _publish_and_persist(
+            review_text = await asyncio.to_thread(saved_path.read_text, encoding="utf-8")
+            await asyncio.to_thread(
+                _publish_and_persist,
                 config,
                 client,
                 store,
@@ -850,7 +875,9 @@ async def process_candidate(
         trigger = pr.slash_command_trigger
 
         try:
-            client.add_reaction_to_comment(pr.owner, pr.repo, trigger.comment_id, "eyes")
+            await asyncio.to_thread(
+                client.add_reaction_to_comment, pr.owner, pr.repo, trigger.comment_id, "eyes"
+            )
         except Exception as exc:  # noqa: BLE001
             warn(f"{pr.key}: failed to react to /review comment: {exc}")
 
@@ -861,7 +888,8 @@ async def process_candidate(
         )
         if already_reviewed:
             try:
-                client.post_pr_comment_inline(
+                await asyncio.to_thread(
+                    client.post_pr_comment_inline,
                     pr,
                     "Already reviewed at this commit. Push new changes or use "
                     "`/review force` to re-review.",
@@ -871,7 +899,7 @@ async def process_candidate(
 
             previous.last_slash_command_id = trigger.comment_id
             store.set(pr.key, previous)
-            store.save()
+            await asyncio.to_thread(store.save)
             return ProcessingResult(
                 processed=False,
                 pr_url=pr.url,
@@ -888,7 +916,7 @@ async def process_candidate(
             previous.last_status = f"skipped_{decision.reason}"
             previous.trigger_mode = config.trigger_mode
             store.set(pr.key, previous)
-            store.save()
+            await asyncio.to_thread(store.save)
             return ProcessingResult(
                 processed=False,
                 pr_url=pr.url,
@@ -897,13 +925,14 @@ async def process_candidate(
             )
 
         try:
-            client.add_eyes_reaction(pr)
+            await asyncio.to_thread(client.add_eyes_reaction, pr)
         except Exception as exc:  # noqa: BLE001
             warn(f"{pr.key}: failed to add eyes reaction: {exc}")
 
         if decision.reason == "new_rerequest" and config.post_rerequest_comment:
             try:
-                client.post_pr_comment_inline(
+                await asyncio.to_thread(
+                    client.post_pr_comment_inline,
                     pr,
                     "Starting review of the latest changes…",
                 )
@@ -915,18 +944,18 @@ async def process_candidate(
     restarts_remaining = config.max_mid_review_restarts
     try:
         info(f"preparing workspace {pr.url}")
-        workdir = workspace_mgr.prepare(pr)
+        workdir = await asyncio.to_thread(workspace_mgr.prepare, pr)
         info(f"workspace ready at {workdir} {pr.url}")
 
         # Fetch PR comments for prompt context
         if not pr.is_local and pr.number > 0:
             try:
-                pr.pr_comments = client.get_pr_issue_comments(pr)
+                pr.pr_comments = await asyncio.to_thread(client.get_pr_issue_comments, pr)
             except Exception as exc:  # noqa: BLE001
                 warn(f"failed to fetch PR comments: {exc} {pr.url}")
 
         # Triage: classify PR as simple or full_review
-        triage_result = await run_triage(
+        triage_result, triage_bundle = await run_triage(
             pr,
             workdir,
             config.triage_timeout_seconds,
@@ -941,7 +970,7 @@ async def process_candidate(
             try:
                 # Check for new commits before starting lightweight review
                 if config.max_mid_review_restarts > 0:
-                    new_sha = _check_pr_head_changed(client, pr)
+                    new_sha = await asyncio.to_thread(_check_pr_head_changed, client, pr)
                     if new_sha is not None:
                         info(
                             f"new commit detected before lightweight review "
@@ -949,9 +978,13 @@ async def process_candidate(
                             f"updating {pr.url}"
                         )
                         pr.head_sha = new_sha
-                        workspace_mgr.update_to_latest(workdir, pr)
+                        await asyncio.to_thread(workspace_mgr.update_to_latest, workdir, pr)
 
-                lightweight_text, lightweight_usage = await run_lightweight_review(
+                (
+                    lightweight_text,
+                    lightweight_usage,
+                    lightweight_bundle,
+                ) = await run_lightweight_review(
                     pr,
                     workdir,
                     config.lightweight_review_timeout_seconds,
@@ -986,13 +1019,15 @@ async def process_candidate(
 
             info(f"writing lightweight review output {pr.url}")
             version_label = _output_version_label(pr)
-            output_path = write_review_markdown(
+            output_path = await asyncio.to_thread(
+                write_review_markdown,
                 Path(config.output_dir),
                 pr,
                 lightweight_text,
                 version_label=version_label,
             )
-            write_stage_markdown(
+            await asyncio.to_thread(
+                write_stage_markdown,
                 Path(config.output_dir),
                 pr,
                 "lightweight",
@@ -1001,7 +1036,17 @@ async def process_candidate(
             )
             info(f"Lightweight review ready: {output_path.resolve()}")
 
-            _publish_and_persist(
+            # Save prompts
+            output_dir = Path(config.output_dir)
+            await asyncio.to_thread(
+                _save_prompt, output_dir, pr, "triage", triage_bundle, version_label
+            )
+            await asyncio.to_thread(
+                _save_prompt, output_dir, pr, "lightweight", lightweight_bundle, version_label
+            )
+
+            await asyncio.to_thread(
+                _publish_and_persist,
                 config,
                 client,
                 store,
@@ -1044,7 +1089,7 @@ async def process_candidate(
                     f"({restarts_remaining} restart(s) remaining) {pr.url}"
                 )
                 pr.head_sha = ncd.new_sha
-                workspace_mgr.update_to_latest(workdir, pr)
+                await asyncio.to_thread(workspace_mgr.update_to_latest, workdir, pr)
                 info(f"workspace updated to {ncd.new_sha[:12]} {pr.url}")
 
         enabled_reviewers = list(config.enabled_reviewers)
@@ -1079,7 +1124,7 @@ async def process_candidate(
                 f"model={reconciler_model or 'default'}, "
                 f"effort={effort_label}) {pr.url}"
             )
-            final_review, reconciler_usage = await reconcile_reviews(
+            final_review, reconciler_usage, reconcile_bundle = await reconcile_reviews(
                 pr,
                 workdir,
                 list(ok_outputs.values()),
@@ -1114,7 +1159,8 @@ async def process_candidate(
         _log_token_usage(active_outputs, reconciler_usage, pr.url)
         info(f"writing final markdown output {pr.url}")
         version_label = _output_version_label(pr)
-        output_path = write_review_markdown(
+        output_path = await asyncio.to_thread(
+            write_review_markdown,
             Path(config.output_dir),
             pr,
             final_review,
@@ -1124,17 +1170,46 @@ async def process_candidate(
         output_dir = Path(config.output_dir)
         for name, output in active_outputs.items():
             if output.status == "ok":
-                write_stage_markdown(
-                    output_dir, pr, name, output.markdown, version_label=version_label
+                await asyncio.to_thread(
+                    write_stage_markdown,
+                    output_dir,
+                    pr,
+                    name,
+                    output.markdown,
+                    version_label=version_label,
                 )
         # Write reconciliation output when multiple reviewers contributed
         if len(ok_outputs) >= 2:
-            write_stage_markdown(
-                output_dir, pr, "reconcile", final_review, version_label=version_label
+            await asyncio.to_thread(
+                write_stage_markdown,
+                output_dir,
+                pr,
+                "reconcile",
+                final_review,
+                version_label=version_label,
+            )
+        # Save prompts
+        await asyncio.to_thread(
+            _save_prompt, output_dir, pr, "triage", triage_bundle, version_label
+        )
+        for name, output in active_outputs.items():
+            if output.status == "ok" and output.prompt:
+                await asyncio.to_thread(
+                    _save_prompt,
+                    output_dir,
+                    pr,
+                    name,
+                    PromptBundle(prompt=output.prompt, system_prompt=output.system_prompt),
+                    version_label,
+                )
+        if len(ok_outputs) >= 2:
+            await asyncio.to_thread(
+                _save_prompt, output_dir, pr, "reconcile", reconcile_bundle, version_label
             )
         info(f"Final review ready: {output_path.resolve()}")
 
-        _publish_and_persist(
+        await asyncio.to_thread(
+            _publish_and_persist,
             config,
             client,
             store,
@@ -1168,7 +1243,7 @@ async def process_candidate(
             state.last_reviewed_head_sha = pr.head_sha
             state.last_processed_at = ProcessedState.now_iso()
         store.set(pr.key, state)
-        store.save()
+        await asyncio.to_thread(store.save)
         return ProcessingResult(
             processed=False,
             pr_url=pr.url,
@@ -1178,4 +1253,4 @@ async def process_candidate(
         )
     finally:
         if workdir is not None:
-            workspace_mgr.cleanup(workdir)
+            await asyncio.to_thread(workspace_mgr.cleanup, workdir)

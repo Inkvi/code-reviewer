@@ -155,9 +155,16 @@ async def run_gemini_review(
     prompt_path: str | None = None,
 ) -> ReviewerOutput:
     started = datetime.now(UTC)
+    prompt_text = ""
+    system_prompt_text: str | None = None
 
     try:
         if prompt_path is None:
+            prompt_text = (
+                f"Gemini built-in `/code-review` extension invocation.\n\n"
+                f"The actual prompt is constructed internally by the Gemini CLI "
+                f"`-e {_CODE_REVIEW_EXTENSION}` flag and is not available for capture."
+            )
             args = _build_gemini_review_command(pr, model=model)
             code, raw_stdout, stderr = await run_command_async(
                 args,
@@ -174,6 +181,8 @@ async def run_gemini_review(
             stdout = raw_stdout
         else:
             bundle = build_full_review_bundle(pr, workspace, prompt_path)
+            prompt_text = bundle.prompt
+            system_prompt_text = bundle.system_prompt
             markdown = await run_gemini_prompt(
                 bundle.prompt,
                 workspace,
@@ -207,6 +216,8 @@ async def run_gemini_review(
         error=error,
         started_at=started,
         ended_at=ended,
+        prompt=prompt_text,
+        system_prompt=system_prompt_text,
     )
 
 

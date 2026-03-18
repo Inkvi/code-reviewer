@@ -144,7 +144,12 @@ async def run_codex_review_via_agents_sdk(
 ) -> ReviewerOutput:
     started = datetime.now(UTC)
     token_usage: TokenUsage | None = None
+    prompt_text = ""
+    system_prompt_text: str | None = None
     try:
+        bundle = build_full_review_bundle(pr, workspace, prompt_path)
+        prompt_text = bundle.prompt
+        system_prompt_text = bundle.system_prompt
         markdown, token_usage = await asyncio.wait_for(
             asyncio.to_thread(
                 _run_agents_codex_review_sync,
@@ -181,4 +186,6 @@ async def run_codex_review_via_agents_sdk(
         started_at=started,
         ended_at=ended,
         token_usage=token_usage,
+        prompt=prompt_text,
+        system_prompt=system_prompt_text,
     )

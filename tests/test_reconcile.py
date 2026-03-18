@@ -62,7 +62,7 @@ async def test_reconcile_reviews_uses_codex_backend(monkeypatch, tmp_path: Path)
         reconciler_reasoning_effort="high",
     )
 
-    text, usage = result
+    text, usage, _bundle = result
     assert "No material findings" in text
     assert usage is None
     assert captured["workspace"] == tmp_path
@@ -94,7 +94,7 @@ async def test_reconcile_reviews_uses_gemini_backend(monkeypatch, tmp_path: Path
         reconciler_reasoning_effort="high",
     )
 
-    text, usage = result
+    text, usage, _bundle = result
     assert "No material findings" in text
     assert usage is None
     assert captured["workspace"] == tmp_path
@@ -125,7 +125,7 @@ async def test_reconcile_reviews_falls_back_on_failure(monkeypatch, tmp_path: Pa
     monkeypatch.setattr("code_reviewer.reviewers.reconcile._run_claude_prompt", failing_claude)
     monkeypatch.setattr("code_reviewer.reviewers.reconcile.run_gemini_prompt", ok_gemini)
 
-    text, usage = await reconcile_reviews(
+    text, usage, _bundle = await reconcile_reviews(
         _sample_pr(),
         tmp_path,
         [_sample_output("claude"), _sample_output("codex")],

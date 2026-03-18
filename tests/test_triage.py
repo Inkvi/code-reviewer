@@ -34,7 +34,7 @@ def test_triage_returns_simple_when_model_says_simple(tmp_path: Path) -> None:
         return '{"classification": "simple"}', None
 
     with patch("code_reviewer.reviewers.triage._run_claude_prompt", side_effect=fake_claude_prompt):
-        result = asyncio.run(
+        result, _bundle = asyncio.run(
             run_triage(_sample_pr(), tmp_path, timeout_seconds=60, backend=["claude"])
         )
     assert result == TriageResult.SIMPLE
@@ -45,7 +45,7 @@ def test_triage_returns_full_review_when_model_says_full(tmp_path: Path) -> None
         return '{"classification": "full_review"}', None
 
     with patch("code_reviewer.reviewers.triage._run_claude_prompt", side_effect=fake_claude_prompt):
-        result = asyncio.run(
+        result, _bundle = asyncio.run(
             run_triage(_sample_pr(), tmp_path, timeout_seconds=60, backend=["claude"])
         )
     assert result == TriageResult.FULL_REVIEW
@@ -56,7 +56,7 @@ def test_triage_falls_back_to_full_review_on_parse_error(tmp_path: Path) -> None
         return "not valid json", None
 
     with patch("code_reviewer.reviewers.triage._run_claude_prompt", side_effect=fake_claude_prompt):
-        result = asyncio.run(
+        result, _bundle = asyncio.run(
             run_triage(_sample_pr(), tmp_path, timeout_seconds=60, backend=["claude"])
         )
     assert result == TriageResult.FULL_REVIEW
@@ -67,7 +67,7 @@ def test_triage_falls_back_to_full_review_on_exception(tmp_path: Path) -> None:
         raise RuntimeError("timeout")
 
     with patch("code_reviewer.reviewers.triage._run_claude_prompt", side_effect=fake_claude_prompt):
-        result = asyncio.run(
+        result, _bundle = asyncio.run(
             run_triage(_sample_pr(), tmp_path, timeout_seconds=60, backend=["claude"])
         )
     assert result == TriageResult.FULL_REVIEW
@@ -78,7 +78,7 @@ def test_triage_gemini_backend(tmp_path: Path) -> None:
         return '{"classification": "simple"}'
 
     with patch("code_reviewer.reviewers.triage.run_gemini_prompt", side_effect=fake_gemini_prompt):
-        result = asyncio.run(
+        result, _bundle = asyncio.run(
             run_triage(_sample_pr(), tmp_path, timeout_seconds=60, backend=["gemini"])
         )
     assert result == TriageResult.SIMPLE
@@ -89,7 +89,7 @@ def test_triage_codex_backend(tmp_path: Path) -> None:
         return '{"classification": "simple"}'
 
     with patch("code_reviewer.reviewers.triage.run_codex_prompt", side_effect=fake_codex_prompt):
-        result = asyncio.run(
+        result, _bundle = asyncio.run(
             run_triage(_sample_pr(), tmp_path, timeout_seconds=60, backend=["codex"])
         )
     assert result == TriageResult.SIMPLE
@@ -112,7 +112,7 @@ def test_triage_extracts_json_from_markdown_code_block(tmp_path: Path) -> None:
         return '```json\n{"classification": "simple"}\n```', None
 
     with patch("code_reviewer.reviewers.triage._run_claude_prompt", side_effect=fake_claude_prompt):
-        result = asyncio.run(
+        result, _bundle = asyncio.run(
             run_triage(_sample_pr(), tmp_path, timeout_seconds=60, backend=["claude"])
         )
     assert result == TriageResult.SIMPLE
@@ -231,7 +231,7 @@ def test_triage_falls_back_to_second_backend(tmp_path: Path) -> None:
         patch("code_reviewer.reviewers.triage.run_gemini_prompt", side_effect=failing_gemini),
         patch("code_reviewer.reviewers.triage._run_claude_prompt", side_effect=ok_claude),
     ):
-        result = asyncio.run(
+        result, _bundle = asyncio.run(
             run_triage(_sample_pr(), tmp_path, timeout_seconds=60, backend=["gemini", "claude"])
         )
     assert result == TriageResult.SIMPLE
@@ -248,7 +248,7 @@ def test_triage_all_backends_fail_returns_full_review(tmp_path: Path) -> None:
         patch("code_reviewer.reviewers.triage.run_gemini_prompt", side_effect=failing_gemini),
         patch("code_reviewer.reviewers.triage._run_claude_prompt", side_effect=failing_claude),
     ):
-        result = asyncio.run(
+        result, _bundle = asyncio.run(
             run_triage(_sample_pr(), tmp_path, timeout_seconds=60, backend=["gemini", "claude"])
         )
     assert result == TriageResult.FULL_REVIEW

@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from code_reviewer.models import PRCandidate, ReviewerOutput, TokenUsage
-from code_reviewer.prompts import build_reconcile_bundle
+from code_reviewer.prompts import PromptBundle, build_reconcile_bundle
 from code_reviewer.reviewers._fallback import run_with_fallback
 from code_reviewer.reviewers.claude_cli import run_claude_cli_prompt
 from code_reviewer.reviewers.claude_sdk import _run_claude_prompt
@@ -24,7 +24,7 @@ async def reconcile_reviews(
     max_test_gaps: int = 3,
     prompt_path: str | None = None,
     claude_backend: str = "sdk",
-) -> tuple[str, TokenUsage | None]:
+) -> tuple[str, TokenUsage | None, PromptBundle]:
     backends = (
         [reconciler_backend] if isinstance(reconciler_backend, str) else list(reconciler_backend)
     )
@@ -87,4 +87,5 @@ async def reconcile_reviews(
             return text, None
         raise RuntimeError(f"Unsupported reconciler backend: {b}")
 
-    return await run_with_fallback(backends, _try, "reconcile", pr.url)
+    text, usage = await run_with_fallback(backends, _try, "reconcile", pr.url)
+    return text, usage, bundle

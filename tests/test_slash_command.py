@@ -6,6 +6,7 @@ from code_reviewer.config import AppConfig
 from code_reviewer.github import GitHubClient
 from code_reviewer.models import PRCandidate, ProcessedState, ReviewerOutput, SlashCommandTrigger
 from code_reviewer.processor import process_candidate
+from code_reviewer.prompts import PromptBundle
 from code_reviewer.reviewers.triage import TriageResult
 
 
@@ -112,7 +113,7 @@ def _sample_pr_with_slash_command(*, force: bool = False) -> PRCandidate:
 
 def _mock_triage_full_review(monkeypatch) -> None:
     async def fake_triage(*args, **kwargs):
-        return TriageResult.FULL_REVIEW
+        return TriageResult.FULL_REVIEW, PromptBundle(prompt="mock triage")
 
     monkeypatch.setattr("code_reviewer.processor.run_triage", fake_triage)
 

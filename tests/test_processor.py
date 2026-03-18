@@ -18,7 +18,7 @@ from code_reviewer.processor import (
     _validate_review_format,
     process_candidate,
 )
-from code_reviewer.prompts import PromptOverrideError
+from code_reviewer.prompts import PromptBundle, PromptOverrideError
 from code_reviewer.reviewers.triage import TriageResult
 from code_reviewer.shell import CommandError
 
@@ -356,7 +356,7 @@ def _mock_triage_full_review(monkeypatch) -> None:
     """Add run_triage mock that returns FULL_REVIEW to a test."""
 
     async def fake_triage(*args, **kwargs):
-        return TriageResult.FULL_REVIEW
+        return TriageResult.FULL_REVIEW, PromptBundle(prompt="mock triage")
 
     monkeypatch.setattr("code_reviewer.processor.run_triage", fake_triage)
 
@@ -915,7 +915,11 @@ def test_process_candidate_reconcile_uses_enabled_reviewer_order(monkeypatch, tm
         seen_pr = pr
         seen_reconciler_model = reconciler_model
         seen_reconciler_reasoning_effort = reconciler_reasoning_effort
-        return "### Findings\n- No material findings.\n\n### Test Gaps\n- None noted.", None
+        return (
+            "### Findings\n- No material findings.\n\n### Test Gaps\n- None noted.",
+            None,
+            PromptBundle(prompt="mock reconcile"),
+        )
 
     monkeypatch.setattr("code_reviewer.processor.run_codex_review", fake_codex)
     monkeypatch.setattr("code_reviewer.processor.run_gemini_review", fake_gemini)
@@ -1011,7 +1015,11 @@ def test_process_candidate_reconcile_falls_back_to_claude_settings(monkeypatch, 
         _ = reviewer_outputs
         seen_reconciler_model = reconciler_model
         seen_reconciler_reasoning_effort = reconciler_reasoning_effort
-        return "### Findings\n- No material findings.\n\n### Test Gaps\n- None noted.", None
+        return (
+            "### Findings\n- No material findings.\n\n### Test Gaps\n- None noted.",
+            None,
+            PromptBundle(prompt="mock reconcile"),
+        )
 
     monkeypatch.setattr("code_reviewer.processor.run_codex_review", fake_codex)
     monkeypatch.setattr("code_reviewer.processor.run_gemini_review", fake_gemini)
@@ -1253,7 +1261,7 @@ def test_process_candidate_triage_simple_runs_lightweight(monkeypatch, tmp_path)
 
     # Mock triage to return SIMPLE
     async def fake_triage(*args, **kwargs):
-        return TriageResult.SIMPLE
+        return TriageResult.SIMPLE, PromptBundle(prompt="mock triage")
 
     monkeypatch.setattr("code_reviewer.processor.run_triage", fake_triage)
 
@@ -1262,6 +1270,7 @@ def test_process_candidate_triage_simple_runs_lightweight(monkeypatch, tmp_path)
         return (
             "### Findings\n- No material findings.\n\n### Test Gaps\n- None noted.",
             None,
+            PromptBundle(prompt="mock lightweight"),
         )
 
     monkeypatch.setattr("code_reviewer.processor.run_lightweight_review", fake_lightweight)
@@ -1297,7 +1306,7 @@ def test_process_candidate_triage_full_runs_normal_pipeline(monkeypatch, tmp_pat
     monkeypatch.setattr(GitHubClient, "add_eyes_reaction", lambda _self, _pr: None)
 
     async def fake_triage(*args, **kwargs):
-        return TriageResult.FULL_REVIEW
+        return TriageResult.FULL_REVIEW, PromptBundle(prompt="mock triage")
 
     monkeypatch.setattr("code_reviewer.processor.run_triage", fake_triage)
 
@@ -1312,7 +1321,11 @@ def test_process_candidate_triage_full_runs_normal_pipeline(monkeypatch, tmp_pat
     monkeypatch.setattr("code_reviewer.processor.run_codex_review", fake_codex)
 
     async def fake_reconcile(*args, **kwargs):
-        return "### Findings\n- No material findings.\n\n### Test Gaps\n- None noted.", None
+        return (
+            "### Findings\n- No material findings.\n\n### Test Gaps\n- None noted.",
+            None,
+            PromptBundle(prompt="mock reconcile"),
+        )
 
     monkeypatch.setattr("code_reviewer.processor.reconcile_reviews", fake_reconcile)
     monkeypatch.setattr(GitHubClient, "get_pr_issue_comments", lambda _self, _pr: [])
@@ -1342,7 +1355,7 @@ def test_process_candidate_triage_failure_falls_through_to_full(monkeypatch, tmp
     monkeypatch.setattr(GitHubClient, "add_eyes_reaction", lambda _self, _pr: None)
 
     async def fake_triage(*args, **kwargs):
-        return TriageResult.FULL_REVIEW
+        return TriageResult.FULL_REVIEW, PromptBundle(prompt="mock triage")
 
     monkeypatch.setattr("code_reviewer.processor.run_triage", fake_triage)
 
@@ -1356,7 +1369,11 @@ def test_process_candidate_triage_failure_falls_through_to_full(monkeypatch, tmp
     monkeypatch.setattr("code_reviewer.processor.run_codex_review", fake_codex)
 
     async def fake_reconcile(*args, **kwargs):
-        return "### Findings\n- No material findings.\n\n### Test Gaps\n- None noted.", None
+        return (
+            "### Findings\n- No material findings.\n\n### Test Gaps\n- None noted.",
+            None,
+            PromptBundle(prompt="mock reconcile"),
+        )
 
     monkeypatch.setattr("code_reviewer.processor.reconcile_reviews", fake_reconcile)
     monkeypatch.setattr(GitHubClient, "get_pr_issue_comments", lambda _self, _pr: [])
@@ -1385,7 +1402,7 @@ def test_process_candidate_lightweight_failure_falls_back_to_full(monkeypatch, t
     monkeypatch.setattr(GitHubClient, "add_eyes_reaction", lambda _self, _pr: None)
 
     async def fake_triage(*args, **kwargs):
-        return TriageResult.SIMPLE
+        return TriageResult.SIMPLE, PromptBundle(prompt="mock triage")
 
     monkeypatch.setattr("code_reviewer.processor.run_triage", fake_triage)
 
@@ -1400,7 +1417,11 @@ def test_process_candidate_lightweight_failure_falls_back_to_full(monkeypatch, t
     monkeypatch.setattr("code_reviewer.processor.run_codex_review", fake_codex)
 
     async def fake_reconcile(*args, **kwargs):
-        return "### Findings\n- No material findings.\n\n### Test Gaps\n- None noted.", None
+        return (
+            "### Findings\n- No material findings.\n\n### Test Gaps\n- None noted.",
+            None,
+            PromptBundle(prompt="mock reconcile"),
+        )
 
     monkeypatch.setattr("code_reviewer.processor.reconcile_reviews", fake_reconcile)
     monkeypatch.setattr(GitHubClient, "get_pr_issue_comments", lambda _self, _pr: [])
@@ -1429,7 +1450,7 @@ def test_process_candidate_prompt_override_error_does_not_fallback(monkeypatch, 
     monkeypatch.setattr(GitHubClient, "add_eyes_reaction", lambda _self, _pr: None)
 
     async def fake_triage(*args, **kwargs):  # noqa: ANN002, ANN003
-        return TriageResult.SIMPLE
+        return TriageResult.SIMPLE, PromptBundle(prompt="mock triage")
 
     async def fake_lightweight(*args, **kwargs):  # noqa: ANN002, ANN003
         raise PromptOverrideError("lightweight_review: invalid prompt override")

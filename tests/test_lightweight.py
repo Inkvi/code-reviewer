@@ -34,7 +34,7 @@ def test_lightweight_review_claude_returns_formatted_output(tmp_path: Path) -> N
         "code_reviewer.reviewers.lightweight._run_claude_prompt",
         side_effect=fake_claude_prompt,
     ):
-        text, usage = asyncio.run(
+        text, usage, _bundle = asyncio.run(
             run_lightweight_review(_sample_pr(), tmp_path, timeout_seconds=300, backend=["claude"])
         )
 
@@ -53,7 +53,7 @@ def test_lightweight_review_gemini_backend(tmp_path: Path) -> None:
         "code_reviewer.reviewers.lightweight.run_gemini_prompt",
         side_effect=fake_gemini_prompt,
     ):
-        text, usage = asyncio.run(
+        text, usage, _bundle = asyncio.run(
             run_lightweight_review(_sample_pr(), tmp_path, timeout_seconds=300, backend=["gemini"])
         )
 
@@ -71,7 +71,7 @@ def test_lightweight_review_codex_backend(tmp_path: Path) -> None:
         "code_reviewer.reviewers.lightweight.run_codex_prompt",
         side_effect=fake_codex_prompt,
     ):
-        text, usage = asyncio.run(
+        text, usage, _bundle = asyncio.run(
             run_lightweight_review(_sample_pr(), tmp_path, timeout_seconds=300, backend=["codex"])
         )
 
@@ -159,7 +159,7 @@ def test_lightweight_falls_back_to_second_backend(tmp_path: Path) -> None:
             side_effect=ok_claude,
         ),
     ):
-        text, usage = asyncio.run(
+        text, usage, _bundle = asyncio.run(
             run_lightweight_review(
                 _sample_pr(), tmp_path, timeout_seconds=300, backend=["gemini", "claude"]
             )

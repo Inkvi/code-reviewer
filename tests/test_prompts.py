@@ -11,6 +11,7 @@ from code_reviewer.prompts import (
     build_lightweight_bundle,
     build_reconcile_bundle,
     build_triage_bundle,
+    format_prompt_bundle,
     get_default_prompt_spec_path,
     load_prompt_bundle,
     render_prompt_bundle,
@@ -155,3 +156,24 @@ def test_render_prompt_bundle_raises_when_required_value_missing() -> None:
 
     with pytest.raises(PromptOverrideError, match="Missing placeholder value"):
         render_prompt_bundle(bundle, step="full_review", values={})
+
+
+def test_format_prompt_bundle_with_system_prompt() -> None:
+    bundle = PromptBundle(prompt="Do the review.", system_prompt="You are a code reviewer.")
+
+    result = format_prompt_bundle(bundle)
+
+    assert "## System Prompt" in result
+    assert "You are a code reviewer." in result
+    assert "## Prompt" in result
+    assert "Do the review." in result
+
+
+def test_format_prompt_bundle_without_system_prompt() -> None:
+    bundle = PromptBundle(prompt="Do the review.")
+
+    result = format_prompt_bundle(bundle)
+
+    assert "## System Prompt" not in result
+    assert "## Prompt" in result
+    assert "Do the review." in result

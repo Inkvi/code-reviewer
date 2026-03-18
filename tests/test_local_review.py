@@ -15,6 +15,7 @@ from code_reviewer.local_review import (
 )
 from code_reviewer.models import PRCandidate, ReviewerOutput
 from code_reviewer.processor import process_local_review
+from code_reviewer.prompts import PromptBundle
 from code_reviewer.reviewers.claude_sdk import run_claude_review
 
 
@@ -299,7 +300,7 @@ def test_process_local_review_runs_pipeline(
     from code_reviewer.reviewers import triage
 
     async def mock_triage(*args, **kwargs):  # noqa: ANN002, ANN003
-        return triage.TriageResult.FULL_REVIEW
+        return triage.TriageResult.FULL_REVIEW, PromptBundle(prompt="mock triage")
 
     monkeypatch.setattr("code_reviewer.processor.run_triage", mock_triage)
 
@@ -342,12 +343,16 @@ def test_process_local_review_lightweight_path(
     from code_reviewer.reviewers import triage
 
     async def mock_triage(*args, **kwargs):  # noqa: ANN002, ANN003
-        return triage.TriageResult.SIMPLE
+        return triage.TriageResult.SIMPLE, PromptBundle(prompt="mock triage")
 
     monkeypatch.setattr("code_reviewer.processor.run_triage", mock_triage)
 
     async def mock_lightweight(*args, **kwargs):  # noqa: ANN002, ANN003
-        return "### Findings\n- No material findings.\n\n### Test Gaps\n- None noted.", None
+        return (
+            "### Findings\n- No material findings.\n\n### Test Gaps\n- None noted.",
+            None,
+            PromptBundle(prompt="mock lightweight"),
+        )
 
     monkeypatch.setattr("code_reviewer.processor.run_lightweight_review", mock_lightweight)
 
@@ -394,7 +399,7 @@ def test_process_local_review_reconciler_path(
     from code_reviewer.reviewers import triage
 
     async def mock_triage(*args, **kwargs):  # noqa: ANN002, ANN003
-        return triage.TriageResult.FULL_REVIEW
+        return triage.TriageResult.FULL_REVIEW, PromptBundle(prompt="mock triage")
 
     monkeypatch.setattr("code_reviewer.processor.run_triage", mock_triage)
 
@@ -405,7 +410,11 @@ def test_process_local_review_reconciler_path(
         return _ok_reviewer_output("gemini")
 
     async def mock_reconcile(*args, **kwargs):  # noqa: ANN002, ANN003
-        return "### Findings\n- No material findings.\n\n### Test Gaps\n- None noted.", None
+        return (
+            "### Findings\n- No material findings.\n\n### Test Gaps\n- None noted.",
+            None,
+            PromptBundle(prompt="mock reconcile"),
+        )
 
     monkeypatch.setattr("code_reviewer.processor.run_claude_review", mock_claude_review)
     monkeypatch.setattr("code_reviewer.processor.run_gemini_review", mock_gemini_review)

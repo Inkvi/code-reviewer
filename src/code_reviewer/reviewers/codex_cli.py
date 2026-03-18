@@ -156,9 +156,13 @@ async def run_codex_review(
     prompt_path: str | None = None,
 ) -> ReviewerOutput:
     started = datetime.now(UTC)
+    prompt_text = ""
+    system_prompt_text: str | None = None
 
     try:
         bundle = build_full_review_bundle(pr, workspace, prompt_path)
+        prompt_text = bundle.prompt
+        system_prompt_text = bundle.system_prompt
         markdown = await run_codex_prompt(
             bundle.prompt,
             workspace,
@@ -193,4 +197,6 @@ async def run_codex_review(
         error=error,
         started_at=started,
         ended_at=ended,
+        prompt=prompt_text,
+        system_prompt=system_prompt_text,
     )

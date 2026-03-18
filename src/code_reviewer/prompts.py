@@ -298,3 +298,15 @@ def build_reconcile_bundle(
         }
     )
     return render_prompt_bundle(bundle, step="reconcile", values=values)
+
+
+def format_prompt_bundle(bundle: PromptBundle) -> str:
+    """Format a PromptBundle as readable markdown for display/persistence."""
+    parts: list[str] = []
+    if bundle.system_prompt:
+        parts.append("## System Prompt\n")
+        parts.append(bundle.system_prompt)
+        parts.append("\n\n---\n")
+    parts.append("## Prompt\n")
+    parts.append(bundle.prompt)
+    return "\n".join(parts)

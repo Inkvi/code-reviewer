@@ -30,6 +30,9 @@ def _setup_reviews(tmp_path: Path) -> Path:
     (repo_dir / "pr-2.claude.md").write_text("Claude: [P1] Security issue.\n")
     (repo_dir / "pr-2.codex.md").write_text("Codex: Looks fine.\n")
     (repo_dir / "pr-2.reconcile.md").write_text("[P1] Security issue found.\n")
+    (repo_dir / "pr-2.triage.prompt.md").write_text("## Prompt\nClassify this PR.\n")
+    (repo_dir / "pr-2.claude.prompt.md").write_text("## Prompt\nReview this PR.\n")
+    (repo_dir / "pr-2.reconcile.prompt.md").write_text("## Prompt\nReconcile these reviews.\n")
 
     # Double-digit PR number to verify numeric ordering in the UI/API.
     (repo_dir / "pr-10.md").write_text("Needs follow-up.\n")
@@ -42,6 +45,12 @@ def _setup_reviews(tmp_path: Path) -> Path:
     (history_dir / "20260318T130000Z-def987654321.md").write_text("[P1] Security issue.\n")
     (history_dir / "20260318T130000Z-def987654321.claude.md").write_text("Claude v2.\n")
     (history_dir / "20260318T130000Z-def987654321.reconcile.md").write_text("Reconciled v2.\n")
+    (history_dir / "20260318T130000Z-def987654321.triage.prompt.md").write_text(
+        "## Prompt\nClassify v2.\n"
+    )
+    (history_dir / "20260318T130000Z-def987654321.claude.prompt.md").write_text(
+        "## Prompt\nReview v2.\n"
+    )
 
     # Second repo with one PR
     repo2_dir = reviews / "myorg" / "other-repo"
@@ -293,3 +302,29 @@ def test_static_spa_fallback(tmp_path: Path) -> None:
     resp = client.get("/some/spa/route")
     assert resp.status_code == 200
     assert "SPA" in resp.text
+
+
+def test_get_pr_detail_includes_prompt_stages(tmp_path: Path) -> None:
+    reviews = _setup_reviews(tmp_path)
+    detail = get_pr_detail(reviews, "myorg", "myrepo", 2)
+    assert detail is not None
+    assert "triage.prompt" in detail["stages"]
+    assert "claude.prompt" in detail["stages"]
+    assert "reconcile.prompt" in detail["stages"]
+    assert "Classify this PR" in detail["stage_contents"]["triage.prompt"]
+
+
+def test_get_version_detail_includes_prompt_stages(tmp_path: Path) -> None:
+    reviews = _setup_reviews(tmp_path)
+    v = get_version_detail(reviews, "myorg", "myrepo", 2, "20260318T130000Z-def987654321")
+    assert v is not None
+    assert "triage.prompt" in v["stages"]
+    assert "claude.prompt" in v["stages"]
+    assert "Classify v2" in v["stage_contents"]["triage.prompt"]
+
+
+def test_get_stage_content_returns_prompt(tmp_path: Path) -> None:
+    reviews = _setup_reviews(tmp_path)
+    content = get_stage_content(reviews, "myorg", "myrepo", 2, "triage.prompt")
+    assert content is not None
+    assert "Classify this PR" in content
