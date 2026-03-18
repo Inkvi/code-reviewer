@@ -63,6 +63,30 @@ def _detect_review_type(stages: list[str]) -> str:
     return "unknown"
 
 
+def _resolve_repo_dir(reviews_dir: Path, org: str, repo: str) -> Path | None:
+    """Resolve an org/repo path and reject traversal outside the reviews root."""
+    try:
+        reviews_root = reviews_dir.resolve()
+        repo_dir = (reviews_dir / org / repo).resolve()
+    except OSError:
+        return None
+    if not repo_dir.is_relative_to(reviews_root):
+        return None
+    return repo_dir
+
+
+def _iter_pr_numbers(repo_dir: Path) -> list[int]:
+    """Return PR numbers sorted numerically for stable history browsing."""
+    pr_numbers: list[int] = []
+    for file_path in repo_dir.iterdir():
+        if not file_path.is_file():
+            continue
+        match = re.match(r"^pr-(\d+)\.md$", file_path.name)
+        if match:
+            pr_numbers.append(int(match.group(1)))
+    return sorted(pr_numbers)
+
+
 def _pr_summary(repo_dir: Path, number: int) -> dict[str, Any]:
     """Build summary dict for a single PR."""
     final_path = repo_dir / f"pr-{number}.md"
@@ -89,20 +113,17 @@ def _pr_summary(repo_dir: Path, number: int) -> dict[str, Any]:
 
 def list_prs(reviews_dir: Path, org: str, repo: str) -> list[dict[str, Any]]:
     """Return PR summaries for a given org/repo."""
-    repo_dir = reviews_dir / org / repo
-    if not repo_dir.is_dir():
+    repo_dir = _resolve_repo_dir(reviews_dir, org, repo)
+    if repo_dir is None or not repo_dir.is_dir():
         return []
-    prs: list[dict[str, Any]] = []
-    for f in sorted(repo_dir.iterdir()):
-        m = re.match(r"^pr-(\d+)\.md$", f.name)
-        if m and f.is_file():
-            prs.append(_pr_summary(repo_dir, int(m.group(1))))
-    return prs
+    return [_pr_summary(repo_dir, number) for number in _iter_pr_numbers(repo_dir)]
 
 
 def get_pr_detail(reviews_dir: Path, org: str, repo: str, number: int) -> dict[str, Any] | None:
     """Return full PR detail including stage contents."""
-    repo_dir = reviews_dir / org / repo
+    repo_dir = _resolve_repo_dir(reviews_dir, org, repo)
+    if repo_dir is None:
+        return None
     final_path = repo_dir / f"pr-{number}.md"
     if not final_path.is_file():
         return None
@@ -128,6 +149,15 @@ def get_pr_detail(reviews_dir: Path, org: str, repo: str, number: int) -> dict[s
         "stage_contents": stage_contents,
         "versions": versions,
     }
+
+
+def get_pr_history(reviews_dir: Path, org: str, repo: str, number: int) -> list[dict[str, Any]]:
+    """Return historical versions for a PR."""
+    repo_dir = _resolve_repo_dir(reviews_dir, org, repo)
+    if repo_dir is None:
+        return []
+    history_dir = repo_dir / f"pr-{number}"
+    return _list_versions(history_dir)
 
 
 def _parse_version_stem(stem: str) -> tuple[str, str] | None:
@@ -172,7 +202,10 @@ def get_version_detail(
     reviews_dir: Path, org: str, repo: str, number: int, version: str
 ) -> dict[str, Any] | None:
     """Return contents for a specific historical version."""
-    history_dir = reviews_dir / org / repo / f"pr-{number}"
+    repo_dir = _resolve_repo_dir(reviews_dir, org, repo)
+    if repo_dir is None:
+        return None
+    history_dir = repo_dir / f"pr-{number}"
     if not history_dir.is_dir():
         return None
     final_path = history_dir / f"{version}.md"
@@ -205,7 +238,10 @@ def get_stage_content(
     """Return content for a specific stage of the latest review."""
     if stage not in KNOWN_STAGES:
         return None
-    stage_path = reviews_dir / org / repo / f"pr-{number}.{stage}.md"
+    repo_dir = _resolve_repo_dir(reviews_dir, org, repo)
+    if repo_dir is None:
+        return None
+    stage_path = repo_dir / f"pr-{number}.{stage}.md"
     if not stage_path.is_file():
         return None
     return stage_path.read_text(encoding="utf-8")
@@ -274,8 +310,7 @@ def _make_handler(
                 data = result
             elif route == "pr_history":
                 org, repo, num = groups[0], groups[1], int(groups[2])
-                history_dir = reviews_dir / org / repo / f"pr-{num}"
-                data = _list_versions(history_dir)
+                data = get_pr_history(reviews_dir, org, repo, num)
             elif route == "version_detail":
                 org, repo, num, version = groups[0], groups[1], int(groups[2]), groups[3]
                 result = get_version_detail(reviews_dir, org, repo, num, version)
