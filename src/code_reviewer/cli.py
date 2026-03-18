@@ -13,7 +13,6 @@ from code_reviewer.config import AppConfig, default_config, load_config
 from code_reviewer.daemon import run_cycle, start_daemon
 from code_reviewer.github import GitHubClient
 from code_reviewer.github_app_auth import refresh_github_token
-from code_reviewer.history_server import run_history_server
 from code_reviewer.local_review import (
     build_local_candidate,
     gather_diff_metadata,
@@ -744,6 +743,12 @@ def start_command(
     lightweight_review_backend: LightweightReviewBackendOption = None,
     lightweight_review_model: LightweightReviewModelOption = None,
     lightweight_review_reasoning_effort: LightweightReviewReasoningEffortOption = None,
+    web_port: Annotated[
+        int | None,
+        typer.Option(
+            "--web-port", help="Port for the history web UI. Enables embedded web server."
+        ),  # noqa: E501
+    ] = None,
 ) -> None:
     """Run daemon forever."""
     cfg, store = _load_runtime(
@@ -795,7 +800,24 @@ def start_command(
     try:
         refresh_github_token()
         preflight = run_preflight(cfg)
-        asyncio.run(start_daemon(cfg, preflight, store, reload_config=reload_config))
+        if web_port is not None:
+            import uvicorn
+
+            from code_reviewer.daemon import create_daemon_app
+
+            resolved_static = _resolve_static_dir()
+            app = create_daemon_app(
+                config=cfg,
+                preflight=preflight,
+                store=store,
+                reviews_dir=Path("./reviews"),
+                static_dir=resolved_static,
+                reload_config=reload_config,
+            )
+            info(f"Starting daemon with web UI on port {web_port}")
+            uvicorn.run(app, host="0.0.0.0", port=web_port, log_level="warning")
+        else:
+            asyncio.run(start_daemon(cfg, preflight, store, reload_config=reload_config))
     except KeyboardInterrupt:
         info("Shutting down daemon")
     except Exception as exc:  # noqa: BLE001
@@ -1105,6 +1127,11 @@ def webhook_command(
     run_server(cfg)
 
 
+def _resolve_static_dir() -> Path | None:
+    default_static = Path(__file__).resolve().parent.parent.parent / "web" / "dist"
+    return default_static if default_static.is_dir() else None
+
+
 HistoryHostOption = Annotated[
     str,
     typer.Option("--host", help="Host to bind the history server to."),
@@ -1142,25 +1169,26 @@ def history_command(
     """
     import logging
 
+    import uvicorn
+
+    from code_reviewer.history_server import create_history_app
+
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(message)s",
     )
     resolved_static = static_dir
     if resolved_static is None:
-        default_static = Path(__file__).resolve().parent.parent.parent / "web" / "dist"
-        if default_static.is_dir():
-            resolved_static = default_static
+        resolved_static = _resolve_static_dir()
     info(f"Starting history server on {host}:{port}")
     info(f"Reviews directory: {reviews_dir.resolve()}")
     if resolved_static:
         info(f"Serving frontend from: {resolved_static.resolve()}")
     elif not dev:
         warn("No static directory found. Run 'npm run build' in web/ to enable the frontend.")
-    run_history_server(
-        host=host,
-        port=port,
+    app = create_history_app(
         reviews_dir=reviews_dir,
         static_dir=resolved_static,
         enable_cors=dev,
     )
+    uvicorn.run(app, host=host, port=port, log_level="info")

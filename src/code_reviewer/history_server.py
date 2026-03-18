@@ -6,14 +6,16 @@ directory, and optionally serves a built React frontend as static files.
 
 from __future__ import annotations
 
-import json
 import logging
-import mimetypes
 import re
-from http import HTTPStatus
-from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from typing import Any
+
+from starlette.applications import Starlette
+from starlette.middleware import Middleware
+from starlette.requests import Request
+from starlette.responses import HTMLResponse, JSONResponse, Response
+from starlette.routing import Mount, Route
 
 from code_reviewer.review_decision import infer_review_decision
 
@@ -248,161 +250,110 @@ def get_stage_content(
 
 
 # ---------------------------------------------------------------------------
-# HTTP server
+# HTTP server (Starlette ASGI)
 # ---------------------------------------------------------------------------
 
-_API_ROUTES: list[tuple[re.Pattern[str], str]] = [
-    (re.compile(r"^/api/repos$"), "repos"),
-    (re.compile(r"^/api/repos/([^/]+)/([^/]+)/prs$"), "prs"),
-    (re.compile(r"^/api/repos/([^/]+)/([^/]+)/prs/(\d+)$"), "pr_detail"),
-    (re.compile(r"^/api/repos/([^/]+)/([^/]+)/prs/(\d+)/history$"), "pr_history"),
-    (re.compile(r"^/api/repos/([^/]+)/([^/]+)/prs/(\d+)/history/([^/]+)$"), "version_detail"),
-    (re.compile(r"^/api/repos/([^/]+)/([^/]+)/prs/(\d+)/stages/([^/]+)$"), "stage_content"),
-]
+
+def _json(data: Any, status: int = 200) -> Response:
+    return JSONResponse(data, status_code=status)
 
 
-def _make_handler(
-    reviews_dir: Path,
-    static_dir: Path | None,
-    enable_cors: bool = False,
-) -> type[BaseHTTPRequestHandler]:
-    """Create a request handler class bound to the given config."""
-
-    class HistoryHandler(BaseHTTPRequestHandler):
-        def do_GET(self) -> None:  # noqa: N802
-            path = self.path.split("?")[0]
-
-            if path == "/healthz":
-                self._json_response(HTTPStatus.OK, {"status": "ok"})
-                return
-
-            for pattern, route_name in _API_ROUTES:
-                m = pattern.match(path)
-                if m:
-                    self._handle_api(route_name, m.groups())
-                    return
-
-            if static_dir:
-                self._serve_static(path)
-            else:
-                self.send_error(HTTPStatus.NOT_FOUND)
-
-        def do_OPTIONS(self) -> None:  # noqa: N802
-            if enable_cors:
-                self.send_response(HTTPStatus.NO_CONTENT)
-                self._add_cors_headers()
-                self.end_headers()
-            else:
-                self.send_error(HTTPStatus.METHOD_NOT_ALLOWED)
-
-        def _handle_api(self, route: str, groups: tuple[str, ...]) -> None:
-            if route == "repos":
-                data = list_repos(reviews_dir)
-            elif route == "prs":
-                org, repo = groups[0], groups[1]
-                data = list_prs(reviews_dir, org, repo)
-            elif route == "pr_detail":
-                org, repo, num = groups[0], groups[1], int(groups[2])
-                result = get_pr_detail(reviews_dir, org, repo, num)
-                if result is None:
-                    self.send_error(HTTPStatus.NOT_FOUND)
-                    return
-                data = result
-            elif route == "pr_history":
-                org, repo, num = groups[0], groups[1], int(groups[2])
-                data = get_pr_history(reviews_dir, org, repo, num)
-            elif route == "version_detail":
-                org, repo, num, version = groups[0], groups[1], int(groups[2]), groups[3]
-                result = get_version_detail(reviews_dir, org, repo, num, version)
-                if result is None:
-                    self.send_error(HTTPStatus.NOT_FOUND)
-                    return
-                data = result
-            elif route == "stage_content":
-                org, repo, num, stage = groups[0], groups[1], int(groups[2]), groups[3]
-                content = get_stage_content(reviews_dir, org, repo, num, stage)
-                if content is None:
-                    self.send_error(HTTPStatus.NOT_FOUND)
-                    return
-                data = {"stage": stage, "content": content}
-            else:
-                self.send_error(HTTPStatus.NOT_FOUND)
-                return
-            self._json_response(HTTPStatus.OK, data)
-
-        def _serve_static(self, path: str) -> None:
-            assert static_dir is not None
-            if path == "/":
-                path = "/index.html"
-            file_path = static_dir / path.lstrip("/")
-            try:
-                file_path = file_path.resolve()
-                if not file_path.is_relative_to(static_dir.resolve()):
-                    self.send_error(HTTPStatus.FORBIDDEN)
-                    return
-            except (ValueError, OSError):
-                self.send_error(HTTPStatus.BAD_REQUEST)
-                return
-            if file_path.is_file():
-                content_type, _ = mimetypes.guess_type(str(file_path))
-                body = file_path.read_bytes()
-                self.send_response(HTTPStatus.OK)
-                self.send_header("Content-Type", content_type or "application/octet-stream")
-                self.send_header("Content-Length", str(len(body)))
-                self.end_headers()
-                self.wfile.write(body)
-            else:
-                # SPA fallback: serve index.html for client-side routing
-                index_path = static_dir / "index.html"
-                if index_path.is_file():
-                    body = index_path.read_bytes()
-                    self.send_response(HTTPStatus.OK)
-                    self.send_header("Content-Type", "text/html")
-                    self.send_header("Content-Length", str(len(body)))
-                    self.end_headers()
-                    self.wfile.write(body)
-                else:
-                    self.send_error(HTTPStatus.NOT_FOUND)
-
-        def _json_response(self, status: HTTPStatus, data: Any) -> None:
-            body = json.dumps(data).encode()
-            self.send_response(status)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(body)))
-            if enable_cors:
-                self._add_cors_headers()
-            self.end_headers()
-            self.wfile.write(body)
-
-        def _add_cors_headers(self) -> None:
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
-            self.send_header("Access-Control-Allow-Headers", "Content-Type")
-
-        def log_message(self, format: str, *args: Any) -> None:  # noqa: A002
-            logger.info(format, *args)
-
-    return HistoryHandler
-
-
-def run_history_server(
+def create_history_app(
     *,
-    host: str = "127.0.0.1",
-    port: int = 8080,
     reviews_dir: Path = Path("./reviews"),
     static_dir: Path | None = None,
     enable_cors: bool = False,
-) -> None:
-    """Start the history API server (blocks forever)."""
-    handler_cls = _make_handler(reviews_dir, static_dir, enable_cors)
-    server = HTTPServer((host, port), handler_cls)
-    logger.info("History server listening on %s:%d", host, port)
-    logger.info("Reviews directory: %s", reviews_dir.resolve())
-    if static_dir:
-        logger.info("Serving static files from: %s", static_dir.resolve())
-    try:
-        server.serve_forever()
-    except KeyboardInterrupt:
-        logger.info("Shutting down history server")
-    finally:
-        server.server_close()
+) -> Starlette:
+    """Create a Starlette ASGI app for the history API."""
+
+    async def healthz(request: Request) -> Response:
+        return _json({"status": "ok"})
+
+    async def api_repos(request: Request) -> Response:
+        return _json(list_repos(reviews_dir))
+
+    async def api_prs(request: Request) -> Response:
+        org = request.path_params["org"]
+        repo = request.path_params["repo"]
+        return _json(list_prs(reviews_dir, org, repo))
+
+    async def api_pr_detail(request: Request) -> Response:
+        org = request.path_params["org"]
+        repo = request.path_params["repo"]
+        number = int(request.path_params["number"])
+        result = get_pr_detail(reviews_dir, org, repo, number)
+        if result is None:
+            return _json({"error": "not found"}, 404)
+        return _json(result)
+
+    async def api_pr_history(request: Request) -> Response:
+        org = request.path_params["org"]
+        repo = request.path_params["repo"]
+        number = int(request.path_params["number"])
+        return _json(get_pr_history(reviews_dir, org, repo, number))
+
+    async def api_version_detail(request: Request) -> Response:
+        org = request.path_params["org"]
+        repo = request.path_params["repo"]
+        number = int(request.path_params["number"])
+        version = request.path_params["version"]
+        result = get_version_detail(reviews_dir, org, repo, number, version)
+        if result is None:
+            return _json({"error": "not found"}, 404)
+        return _json(result)
+
+    async def api_stage_content(request: Request) -> Response:
+        org = request.path_params["org"]
+        repo = request.path_params["repo"]
+        number = int(request.path_params["number"])
+        stage = request.path_params["stage"]
+        content = get_stage_content(reviews_dir, org, repo, number, stage)
+        if content is None:
+            return _json({"error": "not found"}, 404)
+        return _json({"stage": stage, "content": content})
+
+    async def spa_fallback(request: Request) -> Response:
+        if static_dir is None:
+            return _json({"error": "not found"}, 404)
+        # Try to serve the exact file first
+        rel = request.path_params.get("path", "").lstrip("/")
+        if rel:
+            file_path = (static_dir / rel).resolve()
+            if not file_path.is_relative_to(static_dir.resolve()):
+                return _json({"error": "not found"}, 404)
+            if file_path.is_file():
+                import mimetypes
+
+                content_type, _ = mimetypes.guess_type(str(file_path))
+                from starlette.responses import FileResponse
+
+                return FileResponse(str(file_path), media_type=content_type)
+        # SPA fallback: serve index.html for client-side routing
+        index = static_dir / "index.html"
+        if index.is_file():
+            return HTMLResponse(index.read_text(encoding="utf-8"))
+        return _json({"error": "not found"}, 404)
+
+    routes: list[Route | Mount] = [
+        Route("/healthz", healthz),
+        Route("/api/repos", api_repos),
+        Route("/api/repos/{org}/{repo}/prs", api_prs),
+        Route("/api/repos/{org}/{repo}/prs/{number:int}", api_pr_detail),
+        Route("/api/repos/{org}/{repo}/prs/{number:int}/history", api_pr_history),
+        Route("/api/repos/{org}/{repo}/prs/{number:int}/history/{version}", api_version_detail),
+        Route("/api/repos/{org}/{repo}/prs/{number:int}/stages/{stage}", api_stage_content),
+    ]
+
+    # SPA fallback handles both static file serving and client-side routing
+    routes.append(Route("/{path:path}", spa_fallback))
+    routes.append(Route("/", spa_fallback))
+
+    middleware = []
+    if enable_cors:
+        from starlette.middleware.cors import CORSMiddleware
+
+        middleware.append(
+            Middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["GET", "OPTIONS"])
+        )
+
+    return Starlette(routes=routes, middleware=middleware)

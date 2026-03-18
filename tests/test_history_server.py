@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from starlette.testclient import TestClient
+
 from code_reviewer.history_server import (
+    create_history_app,
     get_pr_detail,
     get_pr_history,
     get_stage_content,
@@ -190,3 +193,103 @@ def test_repo_lookup_rejects_path_traversal(tmp_path: Path) -> None:
     assert get_pr_history(reviews, "..", "escape", 7) == []
     assert get_version_detail(reviews, "..", "escape", 7, "20260318T140000Z-abc123456789") is None
     assert get_stage_content(reviews, "..", "escape", 7, "claude") is None
+
+
+# ---------------------------------------------------------------------------
+# HTTP-level tests (Starlette TestClient)
+# ---------------------------------------------------------------------------
+
+
+def test_healthz_endpoint(tmp_path: Path) -> None:
+    reviews = _setup_reviews(tmp_path)
+    app = create_history_app(reviews_dir=reviews)
+    client = TestClient(app)
+    resp = client.get("/healthz")
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "ok"
+
+
+def test_api_repos_endpoint(tmp_path: Path) -> None:
+    reviews = _setup_reviews(tmp_path)
+    app = create_history_app(reviews_dir=reviews)
+    client = TestClient(app)
+    resp = client.get("/api/repos")
+    assert resp.status_code == 200
+    repos = resp.json()
+    assert len(repos) == 2
+    assert repos[0]["org"] == "myorg"
+
+
+def test_api_prs_endpoint(tmp_path: Path) -> None:
+    reviews = _setup_reviews(tmp_path)
+    app = create_history_app(reviews_dir=reviews)
+    client = TestClient(app)
+    resp = client.get("/api/repos/myorg/myrepo/prs")
+    assert resp.status_code == 200
+    prs = resp.json()
+    assert [pr["number"] for pr in prs] == [1, 2, 10]
+
+
+def test_api_pr_detail_endpoint(tmp_path: Path) -> None:
+    reviews = _setup_reviews(tmp_path)
+    app = create_history_app(reviews_dir=reviews)
+    client = TestClient(app)
+    resp = client.get("/api/repos/myorg/myrepo/prs/2")
+    assert resp.status_code == 200
+    detail = resp.json()
+    assert detail["number"] == 2
+    assert detail["review_type"] == "full"
+
+
+def test_api_pr_detail_not_found(tmp_path: Path) -> None:
+    reviews = _setup_reviews(tmp_path)
+    app = create_history_app(reviews_dir=reviews)
+    client = TestClient(app)
+    resp = client.get("/api/repos/myorg/myrepo/prs/999")
+    assert resp.status_code == 404
+
+
+def test_api_stage_content_endpoint(tmp_path: Path) -> None:
+    reviews = _setup_reviews(tmp_path)
+    app = create_history_app(reviews_dir=reviews)
+    client = TestClient(app)
+    resp = client.get("/api/repos/myorg/myrepo/prs/2/stages/claude")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "Security issue" in data["content"]
+
+
+def test_api_history_endpoint(tmp_path: Path) -> None:
+    reviews = _setup_reviews(tmp_path)
+    app = create_history_app(reviews_dir=reviews)
+    client = TestClient(app)
+    resp = client.get("/api/repos/myorg/myrepo/prs/2/history")
+    assert resp.status_code == 200
+    history = resp.json()
+    assert len(history) == 2
+
+
+def test_api_version_detail_endpoint(tmp_path: Path) -> None:
+    reviews = _setup_reviews(tmp_path)
+    app = create_history_app(reviews_dir=reviews)
+    client = TestClient(app)
+    resp = client.get("/api/repos/myorg/myrepo/prs/2/history/20260318T130000Z-def987654321")
+    assert resp.status_code == 200
+    v = resp.json()
+    assert v["sha"] == "def987654321"
+
+
+def test_static_spa_fallback(tmp_path: Path) -> None:
+    reviews = _setup_reviews(tmp_path)
+    static = tmp_path / "static"
+    static.mkdir()
+    (static / "index.html").write_text("<html>SPA</html>")
+    app = create_history_app(reviews_dir=reviews, static_dir=static)
+    client = TestClient(app)
+    resp = client.get("/")
+    assert resp.status_code == 200
+    assert "SPA" in resp.text
+    # SPA fallback for unknown route
+    resp = client.get("/some/spa/route")
+    assert resp.status_code == 200
+    assert "SPA" in resp.text

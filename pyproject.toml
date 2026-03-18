@@ -10,7 +10,9 @@ dependencies = [
   "pydantic>=2.8.0",
   "PyJWT[crypto]>=2.8.0",
   "rich>=13.7.0",
+  "starlette>=0.44.0",
   "typer>=0.12.3",
+  "uvicorn>=0.34.0",
 ]
 
 [project.optional-dependencies]
@@ -26,6 +28,12 @@ code-reviewer = "code_reviewer.cli:app"
 [build-system]
 requires = ["hatchling>=1.25.0"]
 build-backend = "hatchling.build"
+
+[tool.uv]
+required-environments = [
+  "sys_platform == 'linux' and platform_machine == 'x86_64'",
+  "sys_platform == 'darwin' and platform_machine == 'arm64'",
+]
 
 [tool.ruff]
 line-length = 100

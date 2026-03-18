@@ -4,6 +4,10 @@ import asyncio
 import signal
 from collections.abc import Callable
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from starlette.applications import Starlette
 
 from code_reviewer.config import AppConfig
 from code_reviewer.github import GitHubClient
@@ -112,6 +116,7 @@ async def start_daemon(
     store: StateStore,
     *,
     reload_config: Callable[[], AppConfig] | None = None,
+    shutdown_event: asyncio.Event | None = None,
 ) -> None:
     info(
         "Starting daemon with "
@@ -120,10 +125,13 @@ async def start_daemon(
     if is_github_app_auth():
         info("GitHub App auth detected — tokens will refresh each cycle")
 
-    shutdown = asyncio.Event()
-    loop = asyncio.get_running_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, shutdown.set)
+    shutdown = shutdown_event or asyncio.Event()
+    if shutdown_event is None:
+        # Only register signal handlers when we own the event loop (standalone mode).
+        # When embedded in uvicorn via lifespan, uvicorn handles signals.
+        loop = asyncio.get_running_loop()
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            loop.add_signal_handler(sig, shutdown.set)
 
     while not shutdown.is_set():
         if reload_config is not None:
@@ -143,3 +151,38 @@ async def start_daemon(
             pass
 
     info("Shutting down daemon")
+
+
+def create_daemon_app(
+    *,
+    config: AppConfig,
+    preflight: PreflightResult,
+    store: StateStore,
+    reviews_dir: Path = Path("./reviews"),
+    static_dir: Path | None = None,
+    reload_config: Callable[[], AppConfig] | None = None,
+) -> Starlette:
+    """Create a Starlette app that runs the daemon as a background task."""
+    from contextlib import asynccontextmanager
+
+    from code_reviewer.history_server import create_history_app
+
+    @asynccontextmanager
+    async def lifespan(_app: Starlette):
+        shutdown = asyncio.Event()
+        task = asyncio.create_task(
+            start_daemon(
+                config,
+                preflight,
+                store,
+                reload_config=reload_config,
+                shutdown_event=shutdown,
+            )
+        )
+        yield
+        shutdown.set()
+        await task
+
+    history_app = create_history_app(reviews_dir=reviews_dir, static_dir=static_dir)
+    history_app.router.lifespan_context = lifespan
+    return history_app
