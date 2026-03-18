@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
-from code_reviewer.models import PRCandidate, ReviewerOutput
+from code_reviewer.models import PRCandidate
 
 
 def _versioned_stem(pr: PRCandidate, now: datetime | None = None) -> str:
@@ -51,88 +51,30 @@ def write_review_markdown(
     return stable_path
 
 
-def _section_text(value: str) -> str:
-    text = value.strip()
-    return text if text else "_No output_"
-
-
-def _error_text(value: str | None) -> str:
-    if value is None:
-        return "_None_"
-    cleaned = value.strip()
-    return cleaned if cleaned else "_None_"
-
-
-def _render_reviewer_section(
-    name: str,
-    output: ReviewerOutput,
-    include_stderr: bool,
-) -> str:
-    display_name = name.capitalize()
-    stderr_section = (
-        f"##### {display_name} STDERR\n\n{_section_text(output.stderr)}\n"
-        if include_stderr
-        else f"##### {display_name} STDERR\n\n_omitted by config_\n"
-    )
-
-    return f"""#### {display_name}
-
-- Status: `{output.status}`
-- Duration: `{output.duration_seconds:.1f}s`
-- Error: {_error_text(output.error)}
-
-##### {display_name} Markdown
-
-{_section_text(output.markdown)}
-
-##### {display_name} STDOUT
-
-{_section_text(output.stdout)}
-
-{stderr_section}
-"""
-
-
-def write_reviewer_sidecar_markdown(
+def write_stage_markdown(
     output_root: Path,
     pr: PRCandidate,
-    reviewer_outputs: dict[str, ReviewerOutput],
-    include_stderr: bool = True,
+    stage: str,
+    content: str,
     *,
     version_label: str | None = None,
 ) -> Path:
-    if pr.is_local:
-        target_dir, history_dir, stable_name = _local_output_dirs(output_root, pr)
-    else:
-        target_dir, history_dir, stable_name = _pr_output_dirs(output_root, pr)
+    """Write a per-stage review output to its own markdown file.
+
+    ``stage`` identifies the pipeline step, e.g. "lightweight", "claude",
+    "codex", "gemini", or "reconcile".  Files are written as
+    ``pr-{number}.{stage}.md`` (stable) and
+    ``{version}.{stage}.md`` (versioned history).
+    """
+    target_dir, history_dir, stable_name = _pr_output_dirs(output_root, pr)
     target_dir.mkdir(parents=True, exist_ok=True)
     history_dir.mkdir(parents=True, exist_ok=True)
-    stable_path = target_dir / f"{stable_name}.raw.md"
+    stable_path = target_dir / f"{stable_name}.{stage}.md"
     stem = version_label or _versioned_stem(pr)
-    versioned_path = history_dir / f"{stem}.raw.md"
+    versioned_path = history_dir / f"{stem}.{stage}.md"
 
-    # Render in a stable order: claude, codex, gemini, then any others alphabetically
-    preferred_order = ["claude", "codex", "gemini"]
-    ordered_names = [n for n in preferred_order if n in reviewer_outputs]
-    ordered_names += sorted(n for n in reviewer_outputs if n not in preferred_order)
+    text = f"{content.strip()}\n"
 
-    sections: list[str] = []
-    for name in ordered_names:
-        sections.append(_render_reviewer_section(name, reviewer_outputs[name], include_stderr))
-
-    if pr.is_local:
-        header = f"### Reviewer Raw Outputs: {pr.repo} ({pr.title})"
-        url_line = f"- Repository: {pr.url}"
-    else:
-        header = f"### Reviewer Raw Outputs: {pr.owner}/{pr.repo}#{pr.number}"
-        url_line = f"- URL: {pr.url}"
-
-    content = f"""{header}
-
-{url_line}
-
-{"".join(sections)}"""
-
-    versioned_path.write_text(content, encoding="utf-8")
-    stable_path.write_text(content, encoding="utf-8")
+    versioned_path.write_text(text, encoding="utf-8")
+    stable_path.write_text(text, encoding="utf-8")
     return stable_path

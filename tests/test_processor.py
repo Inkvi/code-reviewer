@@ -391,8 +391,8 @@ def test_processes_on_bootstrap_when_state_missing(monkeypatch, tmp_path) -> Non
         lambda *_args, **_kwargs: tmp_path / "out.md",
     )
     monkeypatch.setattr(
-        "code_reviewer.processor.write_reviewer_sidecar_markdown",
-        lambda *_args, **_kwargs: tmp_path / "out.raw.md",
+        "code_reviewer.processor.write_stage_markdown",
+        lambda *_args, **_kwargs: tmp_path / "out.stage.md",
     )
 
     cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["codex"])
@@ -441,8 +441,8 @@ def test_process_candidate_adds_eyes_reaction(monkeypatch, tmp_path) -> None:
         lambda *_args, **_kwargs: tmp_path / "out.md",
     )
     monkeypatch.setattr(
-        "code_reviewer.processor.write_reviewer_sidecar_markdown",
-        lambda *_args, **_kwargs: tmp_path / "out.raw.md",
+        "code_reviewer.processor.write_stage_markdown",
+        lambda *_args, **_kwargs: tmp_path / "out.stage.md",
     )
 
     cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["codex"])
@@ -521,8 +521,8 @@ def test_processes_on_newer_direct_rerequest(monkeypatch, tmp_path) -> None:
         lambda *_args, **_kwargs: tmp_path / "out.md",
     )
     monkeypatch.setattr(
-        "code_reviewer.processor.write_reviewer_sidecar_markdown",
-        lambda *_args, **_kwargs: tmp_path / "out.raw.md",
+        "code_reviewer.processor.write_stage_markdown",
+        lambda *_args, **_kwargs: tmp_path / "out.stage.md",
     )
 
     cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["codex"])
@@ -583,8 +583,8 @@ def test_rerequest_posts_starting_review_comment(monkeypatch, tmp_path) -> None:
         lambda *_args, **_kwargs: tmp_path / "out.md",
     )
     monkeypatch.setattr(
-        "code_reviewer.processor.write_reviewer_sidecar_markdown",
-        lambda *_args, **_kwargs: tmp_path / "out.raw.md",
+        "code_reviewer.processor.write_stage_markdown",
+        lambda *_args, **_kwargs: tmp_path / "out.stage.md",
     )
 
     cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["codex"])
@@ -641,8 +641,8 @@ def test_bootstrap_does_not_post_rerequest_comment(monkeypatch, tmp_path) -> Non
         lambda *_args, **_kwargs: tmp_path / "out.md",
     )
     monkeypatch.setattr(
-        "code_reviewer.processor.write_reviewer_sidecar_markdown",
-        lambda *_args, **_kwargs: tmp_path / "out.raw.md",
+        "code_reviewer.processor.write_stage_markdown",
+        lambda *_args, **_kwargs: tmp_path / "out.stage.md",
     )
 
     cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["codex"])
@@ -693,8 +693,8 @@ def test_rerequest_comment_disabled_by_config(monkeypatch, tmp_path) -> None:
         lambda *_args, **_kwargs: tmp_path / "out.md",
     )
     monkeypatch.setattr(
-        "code_reviewer.processor.write_reviewer_sidecar_markdown",
-        lambda *_args, **_kwargs: tmp_path / "out.raw.md",
+        "code_reviewer.processor.write_stage_markdown",
+        lambda *_args, **_kwargs: tmp_path / "out.stage.md",
     )
 
     cfg = AppConfig(
@@ -839,8 +839,8 @@ def test_saved_review_existing_does_not_skip_normal_flow(monkeypatch, tmp_path) 
         lambda *_args, **_kwargs: tmp_path / "out.md",
     )
     monkeypatch.setattr(
-        "code_reviewer.processor.write_reviewer_sidecar_markdown",
-        lambda *_args, **_kwargs: tmp_path / "out.raw.md",
+        "code_reviewer.processor.write_stage_markdown",
+        lambda *_args, **_kwargs: tmp_path / "out.stage.md",
     )
 
     cfg = AppConfig(
@@ -930,8 +930,8 @@ def test_process_candidate_reconcile_uses_enabled_reviewer_order(monkeypatch, tm
         lambda *_args, **_kwargs: tmp_path / "out.md",
     )
     monkeypatch.setattr(
-        "code_reviewer.processor.write_reviewer_sidecar_markdown",
-        lambda *_args, **_kwargs: tmp_path / "out.raw.md",
+        "code_reviewer.processor.write_stage_markdown",
+        lambda *_args, **_kwargs: tmp_path / "out.stage.md",
     )
 
     cfg = AppConfig(
@@ -1022,8 +1022,8 @@ def test_process_candidate_reconcile_falls_back_to_claude_settings(monkeypatch, 
         lambda *_args, **_kwargs: tmp_path / "out.md",
     )
     monkeypatch.setattr(
-        "code_reviewer.processor.write_reviewer_sidecar_markdown",
-        lambda *_args, **_kwargs: tmp_path / "out.raw.md",
+        "code_reviewer.processor.write_stage_markdown",
+        lambda *_args, **_kwargs: tmp_path / "out.stage.md",
     )
 
     cfg = AppConfig(
@@ -1120,8 +1120,8 @@ def test_process_candidate_restarts_on_new_commit(monkeypatch, tmp_path) -> None
         lambda *_args, **_kwargs: tmp_path / "out.md",
     )
     monkeypatch.setattr(
-        "code_reviewer.processor.write_reviewer_sidecar_markdown",
-        lambda *_args, **_kwargs: tmp_path / "out.raw.md",
+        "code_reviewer.processor.write_stage_markdown",
+        lambda *_args, **_kwargs: tmp_path / "out.stage.md",
     )
 
     # Make _run_reviewers_with_monitoring detect a new commit on the first attempt.
@@ -1173,8 +1173,8 @@ def test_process_candidate_exhausts_restarts(monkeypatch, tmp_path) -> None:
         lambda *_args, **_kwargs: tmp_path / "out.md",
     )
     monkeypatch.setattr(
-        "code_reviewer.processor.write_reviewer_sidecar_markdown",
-        lambda *_args, **_kwargs: tmp_path / "out.raw.md",
+        "code_reviewer.processor.write_stage_markdown",
+        lambda *_args, **_kwargs: tmp_path / "out.stage.md",
     )
 
     cfg = AppConfig(
@@ -1228,8 +1228,8 @@ def test_process_candidate_no_restart_when_disabled(monkeypatch, tmp_path) -> No
         lambda *_args, **_kwargs: tmp_path / "out.md",
     )
     monkeypatch.setattr(
-        "code_reviewer.processor.write_reviewer_sidecar_markdown",
-        lambda *_args, **_kwargs: tmp_path / "out.raw.md",
+        "code_reviewer.processor.write_stage_markdown",
+        lambda *_args, **_kwargs: tmp_path / "out.stage.md",
     )
 
     cfg = AppConfig(
@@ -1321,8 +1321,8 @@ def test_process_candidate_triage_full_runs_normal_pipeline(monkeypatch, tmp_pat
         lambda *_args, **_kwargs: tmp_path / "out.md",
     )
     monkeypatch.setattr(
-        "code_reviewer.processor.write_reviewer_sidecar_markdown",
-        lambda *_args, **_kwargs: tmp_path / "out.raw.md",
+        "code_reviewer.processor.write_stage_markdown",
+        lambda *_args, **_kwargs: tmp_path / "out.stage.md",
     )
 
     cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["claude", "codex"])
@@ -1365,8 +1365,8 @@ def test_process_candidate_triage_failure_falls_through_to_full(monkeypatch, tmp
         lambda *_args, **_kwargs: tmp_path / "out.md",
     )
     monkeypatch.setattr(
-        "code_reviewer.processor.write_reviewer_sidecar_markdown",
-        lambda *_args, **_kwargs: tmp_path / "out.raw.md",
+        "code_reviewer.processor.write_stage_markdown",
+        lambda *_args, **_kwargs: tmp_path / "out.stage.md",
     )
 
     cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["claude", "codex"])
@@ -1409,8 +1409,8 @@ def test_process_candidate_lightweight_failure_falls_back_to_full(monkeypatch, t
         lambda *_args, **_kwargs: tmp_path / "out.md",
     )
     monkeypatch.setattr(
-        "code_reviewer.processor.write_reviewer_sidecar_markdown",
-        lambda *_args, **_kwargs: tmp_path / "out.raw.md",
+        "code_reviewer.processor.write_stage_markdown",
+        lambda *_args, **_kwargs: tmp_path / "out.stage.md",
     )
 
     cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["codex"])
@@ -1482,8 +1482,8 @@ def test_submit_own_pr_falls_back_to_comment(monkeypatch, tmp_path) -> None:
         lambda *_args, **_kwargs: tmp_path / "out.md",
     )
     monkeypatch.setattr(
-        "code_reviewer.processor.write_reviewer_sidecar_markdown",
-        lambda *_args, **_kwargs: tmp_path / "out.raw.md",
+        "code_reviewer.processor.write_stage_markdown",
+        lambda *_args, **_kwargs: tmp_path / "out.stage.md",
     )
 
     def raise_own_pr(*_args, **_kwargs):
@@ -1595,8 +1595,8 @@ def test_error_handler_saves_output_file_when_exists(monkeypatch, tmp_path) -> N
         lambda *_args, **_kwargs: out_file,
     )
     monkeypatch.setattr(
-        "code_reviewer.processor.write_reviewer_sidecar_markdown",
-        lambda *_args, **_kwargs: tmp_path / "out.raw.md",
+        "code_reviewer.processor.write_stage_markdown",
+        lambda *_args, **_kwargs: tmp_path / "out.stage.md",
     )
 
     # Make _publish_and_persist raise after the review is written
