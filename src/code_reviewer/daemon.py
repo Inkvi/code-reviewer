@@ -143,7 +143,7 @@ async def start_daemon(
             except Exception as exc:  # noqa: BLE001
                 warn(f"Config reload failed, using previous config: {exc}")
         try:
-            refresh_github_token()
+            await asyncio.to_thread(refresh_github_token)
             processed = await run_cycle(config, preflight, store, verbose=False)
             info(f"Cycle complete. Processed {processed} PR(s)")
         except Exception as exc:  # noqa: BLE001

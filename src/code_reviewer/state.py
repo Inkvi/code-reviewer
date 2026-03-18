@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 from pathlib import Path
 
 from code_reviewer.models import ProcessedState
@@ -13,6 +14,7 @@ class StateStore:
         self.lock_path = Path(f"{state_path}.lock")
         self._data: dict[str, dict[str, str | None]] = {}
         self._owns_lock = False
+        self._mutex = threading.Lock()
 
     def _read_lock_pid(self) -> int | None:
         if not self.lock_path.exists():
@@ -70,23 +72,26 @@ class StateStore:
         self._owns_lock = False
 
     def load(self) -> None:
-        if not self.state_path.exists():
-            self._data = {}
-            return
-        with self.state_path.open("r", encoding="utf-8") as handle:
-            parsed = json.load(handle)
-        self._data = parsed if isinstance(parsed, dict) else {}
+        with self._mutex:
+            if not self.state_path.exists():
+                self._data = {}
+                return
+            with self.state_path.open("r", encoding="utf-8") as handle:
+                parsed = json.load(handle)
+            self._data = parsed if isinstance(parsed, dict) else {}
 
     def save(self) -> None:
-        self.state_path.parent.mkdir(parents=True, exist_ok=True)
-        tmp_path = self.state_path.with_suffix(self.state_path.suffix + ".tmp")
-        with tmp_path.open("w", encoding="utf-8") as handle:
-            json.dump(self._data, handle, indent=2, sort_keys=True)
-            handle.write("\n")
-        tmp_path.replace(self.state_path)
+        with self._mutex:
+            self.state_path.parent.mkdir(parents=True, exist_ok=True)
+            tmp_path = self.state_path.with_suffix(f".tmp.{os.getpid()}.{threading.get_ident()}")
+            with tmp_path.open("w", encoding="utf-8") as handle:
+                json.dump(self._data, handle, indent=2, sort_keys=True)
+                handle.write("\n")
+            tmp_path.replace(self.state_path)
 
     def get(self, key: str) -> ProcessedState:
-        item = self._data.get(key, {})
+        with self._mutex:
+            item = self._data.get(key, {})
         _raw_cmd_id = item.get("last_slash_command_id")
         return ProcessedState(
             last_reviewed_head_sha=item.get("last_reviewed_head_sha"),
@@ -100,13 +105,14 @@ class StateStore:
         )
 
     def set(self, key: str, state: ProcessedState) -> None:
-        self._data[key] = {
-            "last_reviewed_head_sha": state.last_reviewed_head_sha,
-            "last_processed_at": state.last_processed_at,
-            "last_seen_rerequest_at": state.last_seen_rerequest_at,
-            "trigger_mode": state.trigger_mode,
-            "last_output_file": state.last_output_file,
-            "last_status": state.last_status,
-            "last_posted_at": state.last_posted_at,
-            "last_slash_command_id": state.last_slash_command_id,
-        }
+        with self._mutex:
+            self._data[key] = {
+                "last_reviewed_head_sha": state.last_reviewed_head_sha,
+                "last_processed_at": state.last_processed_at,
+                "last_seen_rerequest_at": state.last_seen_rerequest_at,
+                "trigger_mode": state.trigger_mode,
+                "last_output_file": state.last_output_file,
+                "last_status": state.last_status,
+                "last_posted_at": state.last_posted_at,
+                "last_slash_command_id": state.last_slash_command_id,
+            }

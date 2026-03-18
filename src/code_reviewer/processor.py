@@ -786,7 +786,7 @@ async def process_candidate(
             previous.last_status = "skipped_missing_saved_review"
             previous.trigger_mode = config.trigger_mode
             store.set(pr.key, previous)
-            store.save()
+            await asyncio.to_thread(store.save)
             return ProcessingResult(
                 processed=False,
                 pr_url=pr.url,
@@ -794,7 +794,9 @@ async def process_candidate(
                 status="skipped_missing_saved_review",
             )
         detail(f"using saved review file ({saved_review_path}) {pr.url}")
-        review_text_for_decision = saved_review_path.read_text(encoding="utf-8")
+        review_text_for_decision = await asyncio.to_thread(
+            saved_review_path.read_text, encoding="utf-8"
+        )
         await asyncio.to_thread(
             _publish_and_persist,
             config,
@@ -826,7 +828,7 @@ async def process_candidate(
         saved_path = Path(previous.last_output_file)
         if saved_path.exists():
             info(f"reusing previously generated review (submission retry) {pr.url}")
-            review_text = saved_path.read_text(encoding="utf-8")
+            review_text = await asyncio.to_thread(saved_path.read_text, encoding="utf-8")
             await asyncio.to_thread(
                 _publish_and_persist,
                 config,
@@ -876,7 +878,7 @@ async def process_candidate(
 
             previous.last_slash_command_id = trigger.comment_id
             store.set(pr.key, previous)
-            store.save()
+            await asyncio.to_thread(store.save)
             return ProcessingResult(
                 processed=False,
                 pr_url=pr.url,
@@ -893,7 +895,7 @@ async def process_candidate(
             previous.last_status = f"skipped_{decision.reason}"
             previous.trigger_mode = config.trigger_mode
             store.set(pr.key, previous)
-            store.save()
+            await asyncio.to_thread(store.save)
             return ProcessingResult(
                 processed=False,
                 pr_url=pr.url,
@@ -992,13 +994,15 @@ async def process_candidate(
 
             info(f"writing lightweight review output {pr.url}")
             version_label = _output_version_label(pr)
-            output_path = write_review_markdown(
+            output_path = await asyncio.to_thread(
+                write_review_markdown,
                 Path(config.output_dir),
                 pr,
                 lightweight_text,
                 version_label=version_label,
             )
-            write_stage_markdown(
+            await asyncio.to_thread(
+                write_stage_markdown,
                 Path(config.output_dir),
                 pr,
                 "lightweight",
@@ -1121,7 +1125,8 @@ async def process_candidate(
         _log_token_usage(active_outputs, reconciler_usage, pr.url)
         info(f"writing final markdown output {pr.url}")
         version_label = _output_version_label(pr)
-        output_path = write_review_markdown(
+        output_path = await asyncio.to_thread(
+            write_review_markdown,
             Path(config.output_dir),
             pr,
             final_review,
@@ -1131,13 +1136,23 @@ async def process_candidate(
         output_dir = Path(config.output_dir)
         for name, output in active_outputs.items():
             if output.status == "ok":
-                write_stage_markdown(
-                    output_dir, pr, name, output.markdown, version_label=version_label
+                await asyncio.to_thread(
+                    write_stage_markdown,
+                    output_dir,
+                    pr,
+                    name,
+                    output.markdown,
+                    version_label=version_label,
                 )
         # Write reconciliation output when multiple reviewers contributed
         if len(ok_outputs) >= 2:
-            write_stage_markdown(
-                output_dir, pr, "reconcile", final_review, version_label=version_label
+            await asyncio.to_thread(
+                write_stage_markdown,
+                output_dir,
+                pr,
+                "reconcile",
+                final_review,
+                version_label=version_label,
             )
         info(f"Final review ready: {output_path.resolve()}")
 
@@ -1176,7 +1191,7 @@ async def process_candidate(
             state.last_reviewed_head_sha = pr.head_sha
             state.last_processed_at = ProcessedState.now_iso()
         store.set(pr.key, state)
-        store.save()
+        await asyncio.to_thread(store.save)
         return ProcessingResult(
             processed=False,
             pr_url=pr.url,
