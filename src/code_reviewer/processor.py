@@ -18,7 +18,7 @@ from code_reviewer.models import (
     ReviewerOutputSummary,
     TokenUsage,
 )
-from code_reviewer.output import write_review_markdown, write_stage_markdown
+from code_reviewer.output import write_review_markdown, write_review_meta, write_stage_markdown
 from code_reviewer.prompts import PromptBundle, PromptOverrideError, format_prompt_bundle
 from code_reviewer.review_decision import infer_review_decision
 from code_reviewer.reviewers import (
@@ -249,6 +249,14 @@ def _output_version_label(pr: PRCandidate, *, now: datetime | None = None) -> st
     timestamp = created_at.strftime("%Y%m%dT%H%M%SZ")
     short_sha = pr.head_sha[:12] if pr.head_sha else "nohead"
     return f"{timestamp}-{short_sha}"
+
+
+def _build_review_meta(pr: PRCandidate) -> dict[str, str]:
+    """Build metadata dict for a review artifact."""
+    meta: dict[str, str] = {"author": pr.author_login}
+    if pr.title:
+        meta["title"] = pr.title
+    return meta
 
 
 def _compute_processing_decision(
@@ -1034,6 +1042,13 @@ async def process_candidate(
                 lightweight_text,
                 version_label=version_label,
             )
+            await asyncio.to_thread(
+                write_review_meta,
+                Path(config.output_dir),
+                pr,
+                _build_review_meta(pr),
+                version_label=version_label,
+            )
             info(f"Lightweight review ready: {output_path.resolve()}")
 
             # Save prompts
@@ -1188,6 +1203,13 @@ async def process_candidate(
                 final_review,
                 version_label=version_label,
             )
+        await asyncio.to_thread(
+            write_review_meta,
+            output_dir,
+            pr,
+            _build_review_meta(pr),
+            version_label=version_label,
+        )
         # Save prompts
         await asyncio.to_thread(
             _save_prompt, output_dir, pr, "triage", triage_bundle, version_label

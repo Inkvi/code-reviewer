@@ -70,9 +70,21 @@ export default function PRList() {
                 <td className="px-5 py-3.5">
                   <Link
                     to={`/${org}/${repo}/${pr.number}`}
-                    className="text-accent-blue hover:text-blue-300 font-mono font-semibold transition-colors"
+                    className="group"
                   >
-                    #{pr.number}
+                    <span className="text-accent-blue group-hover:text-blue-300 font-mono font-semibold transition-colors">
+                      #{pr.number}
+                    </span>
+                    {pr.title && (
+                      <span className="ml-2 text-sm text-gray-400 group-hover:text-gray-300 transition-colors">
+                        {pr.title}
+                      </span>
+                    )}
+                    {pr.author && (
+                      <span className="ml-1.5 text-xs text-gray-600 font-mono">
+                        {pr.author}
+                      </span>
+                    )}
                   </Link>
                 </td>
                 <td className="px-5 py-3.5">

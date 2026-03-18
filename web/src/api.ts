@@ -12,6 +12,8 @@ export interface PRSummary {
   decision: string | null;
   stages: string[];
   version_count: number;
+  author: string | null;
+  title: string | null;
 }
 
 export interface PRDetailData {
@@ -24,6 +26,8 @@ export interface PRDetailData {
   stages: string[];
   stage_contents: Record<string, string>;
   versions: VersionSummary[];
+  author: string | null;
+  title: string | null;
 }
 
 export interface VersionSummary {
@@ -43,6 +47,8 @@ export interface VersionDetailData {
   stage_contents: Record<string, string>;
   decision: string;
   review_type: string;
+  author: string | null;
+  title: string | null;
 }
 
 async function fetchJSON<T>(path: string): Promise<T> {

@@ -6,6 +6,7 @@ directory, and optionally serves a built React frontend as static files.
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from pathlib import Path
@@ -35,6 +36,14 @@ KNOWN_STAGES = (
     "reconcile.prompt",
 )
 _VERSION_RE = re.compile(r"^(\d{8}T\d{6}Z)-([a-f0-9]+)$")
+
+
+def _read_meta(path: Path) -> dict[str, Any]:
+    """Read a meta.json file, returning an empty dict on any failure."""
+    try:
+        return json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
+    except (json.JSONDecodeError, OSError):
+        return {}
 
 
 # ---------------------------------------------------------------------------
@@ -108,6 +117,7 @@ def _pr_summary(repo_dir: Path, number: int) -> dict[str, Any]:
     stages = _detect_stages(repo_dir, number)
     review_type = _detect_review_type(stages)
     decision = infer_review_decision(final_review) if final_review else None
+    meta = _read_meta(repo_dir / f"pr-{number}.meta.json")
     history_dir = repo_dir / f"pr-{number}"
     version_count = 0
     if history_dir.is_dir():
@@ -122,6 +132,8 @@ def _pr_summary(repo_dir: Path, number: int) -> dict[str, Any]:
         "decision": decision,
         "stages": stages,
         "version_count": version_count,
+        "author": meta.get("author"),
+        "title": meta.get("title"),
     }
 
 
@@ -150,6 +162,7 @@ def get_pr_detail(reviews_dir: Path, org: str, repo: str, number: int) -> dict[s
         stage_path = repo_dir / f"pr-{number}.{stage}.md"
         if stage_path.is_file():
             stage_contents[stage] = stage_path.read_text(encoding="utf-8")
+    meta = _read_meta(repo_dir / f"pr-{number}.meta.json")
     history_dir = repo_dir / f"pr-{number}"
     versions = _list_versions(history_dir) if history_dir.is_dir() else []
     return {
@@ -162,6 +175,8 @@ def get_pr_detail(reviews_dir: Path, org: str, repo: str, number: int) -> dict[s
         "stages": stages,
         "stage_contents": stage_contents,
         "versions": versions,
+        "author": meta.get("author"),
+        "title": meta.get("title"),
     }
 
 
@@ -233,6 +248,7 @@ def get_version_detail(
         if stage_path.is_file():
             stages.append(stage)
             stage_contents[stage] = stage_path.read_text(encoding="utf-8")
+    meta = _read_meta(history_dir / f"{version}.meta.json")
     parsed = _parse_version_stem(version)
     return {
         "version": version,
@@ -241,6 +257,8 @@ def get_version_detail(
         "final_review": final_review,
         "stages": stages,
         "stage_contents": stage_contents,
+        "author": meta.get("author"),
+        "title": meta.get("title"),
         "decision": infer_review_decision(final_review),
         "review_type": _detect_review_type(stages),
     }

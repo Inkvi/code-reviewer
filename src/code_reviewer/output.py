@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from code_reviewer.models import PRCandidate
 
@@ -78,3 +80,27 @@ def write_stage_markdown(
     versioned_path.write_text(text, encoding="utf-8")
     stable_path.write_text(text, encoding="utf-8")
     return stable_path
+
+
+def write_review_meta(
+    output_root: Path,
+    pr: PRCandidate,
+    meta: dict[str, Any],
+    *,
+    version_label: str | None = None,
+) -> None:
+    """Write review metadata as JSON alongside the markdown artifacts.
+
+    Writes ``pr-{number}.meta.json`` (stable) and
+    ``{version}.meta.json`` (versioned history).
+    """
+    if pr.is_local:
+        target_dir, history_dir, stable_name = _local_output_dirs(output_root, pr)
+    else:
+        target_dir, history_dir, stable_name = _pr_output_dirs(output_root, pr)
+    target_dir.mkdir(parents=True, exist_ok=True)
+    history_dir.mkdir(parents=True, exist_ok=True)
+    stem = version_label or _versioned_stem(pr)
+    payload = json.dumps(meta, indent=2) + "\n"
+    (target_dir / f"{stable_name}.meta.json").write_text(payload, encoding="utf-8")
+    (history_dir / f"{stem}.meta.json").write_text(payload, encoding="utf-8")

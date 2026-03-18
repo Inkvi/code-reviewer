@@ -234,7 +234,7 @@ export default function PRDetail({ isHistorical }: Props) {
 
   return (
     <div className="animate-fade-in-up">
-      <div className="flex items-center gap-3 mb-2">
+      <div className="flex items-center gap-3 mb-1">
         <h1 className="text-2xl font-bold text-gray-100 tracking-tight">
           <span className="text-gray-500 font-mono">#</span>
           {number}
@@ -242,6 +242,20 @@ export default function PRDetail({ isHistorical }: Props) {
         <DecisionBadge decision={data.decision} />
         <TypeBadge type={data.review_type} />
       </div>
+
+      {(data.title || data.author) && (
+        <p className="text-sm text-gray-400 mb-1">
+          {data.title && (
+            <span className="text-gray-300">{data.title}</span>
+          )}
+          {data.title && data.author && (
+            <span className="text-gray-600 mx-1.5">by</span>
+          )}
+          {data.author && (
+            <span className="font-mono text-gray-500">{data.author}</span>
+          )}
+        </p>
+      )}
 
       {isHistorical && version && (
         <p className="text-sm font-mono text-gray-500 mb-6">{version}</p>
