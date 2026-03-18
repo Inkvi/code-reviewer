@@ -6,7 +6,7 @@ import {
   type PRDetailData,
   type VersionDetailData,
 } from "../api";
-import { DecisionBadge, TypeBadge, StageBadge } from "../components/Badge";
+import { DecisionBadge, TypeBadge } from "../components/Badge";
 import MarkdownView from "../components/MarkdownView";
 
 interface Props {
@@ -129,10 +129,7 @@ export default function PRDetail({ isHistorical }: Props) {
                     : "text-gray-500 hover:text-gray-300"
                 }`}
               >
-                <span className="flex items-center gap-2">
-                  {tab.label}
-                  {tab.id !== "final" && <StageBadge stage={tab.id} />}
-                </span>
+                {tab.label}
                 {activeTab === tab.id && (
                   <span className="absolute bottom-0 left-1.5 right-1.5 h-0.5 rounded-full bg-accent-blue" />
                 )}
