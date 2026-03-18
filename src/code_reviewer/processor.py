@@ -18,7 +18,7 @@ from code_reviewer.models import (
     ReviewerOutputSummary,
     TokenUsage,
 )
-from code_reviewer.output import write_review_markdown, write_reviewer_sidecar_markdown
+from code_reviewer.output import write_review_markdown, write_stage_markdown
 from code_reviewer.prompts import PromptOverrideError
 from code_reviewer.review_decision import infer_review_decision
 from code_reviewer.reviewers import (
@@ -992,6 +992,13 @@ async def process_candidate(
                 lightweight_text,
                 version_label=version_label,
             )
+            write_stage_markdown(
+                Path(config.output_dir),
+                pr,
+                "lightweight",
+                lightweight_text,
+                version_label=version_label,
+            )
             info(f"Lightweight review ready: {output_path.resolve()}")
 
             _publish_and_persist(
@@ -1113,15 +1120,19 @@ async def process_candidate(
             final_review,
             version_label=version_label,
         )
-        raw_output_path = write_reviewer_sidecar_markdown(
-            Path(config.output_dir),
-            pr,
-            active_outputs,
-            include_stderr=config.include_reviewer_stderr,
-            version_label=version_label,
-        )
+        # Write per-stage files for each successful reviewer
+        output_dir = Path(config.output_dir)
+        for name, output in active_outputs.items():
+            if output.status == "ok":
+                write_stage_markdown(
+                    output_dir, pr, name, output.markdown, version_label=version_label
+                )
+        # Write reconciliation output when multiple reviewers contributed
+        if len(ok_outputs) >= 2:
+            write_stage_markdown(
+                output_dir, pr, "reconcile", final_review, version_label=version_label
+            )
         info(f"Final review ready: {output_path.resolve()}")
-        info(f"Raw reviewer outputs: {raw_output_path.resolve()}")
 
         _publish_and_persist(
             config,

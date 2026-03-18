@@ -159,8 +159,8 @@ def test_slash_command_triggers_review(monkeypatch, tmp_path) -> None:
         lambda *_args, **_kwargs: tmp_path / "out.md",
     )
     monkeypatch.setattr(
-        "code_reviewer.processor.write_reviewer_sidecar_markdown",
-        lambda *_args, **_kwargs: tmp_path / "out.raw.md",
+        "code_reviewer.processor.write_stage_markdown",
+        lambda *_args, **_kwargs: tmp_path / "out.stage.md",
     )
 
     cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["codex"])
@@ -254,8 +254,8 @@ def test_slash_command_force_reviews_even_when_already_reviewed(monkeypatch, tmp
         lambda *_args, **_kwargs: tmp_path / "out.md",
     )
     monkeypatch.setattr(
-        "code_reviewer.processor.write_reviewer_sidecar_markdown",
-        lambda *_args, **_kwargs: tmp_path / "out.raw.md",
+        "code_reviewer.processor.write_stage_markdown",
+        lambda *_args, **_kwargs: tmp_path / "out.stage.md",
     )
 
     cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["codex"])
@@ -330,8 +330,8 @@ def test_slash_command_full_flow_react_review_post(monkeypatch, tmp_path) -> Non
         lambda *_args, **_kwargs: tmp_path / "out.md",
     )
     monkeypatch.setattr(
-        "code_reviewer.processor.write_reviewer_sidecar_markdown",
-        lambda *_args, **_kwargs: tmp_path / "out.raw.md",
+        "code_reviewer.processor.write_stage_markdown",
+        lambda *_args, **_kwargs: tmp_path / "out.stage.md",
     )
 
     cfg = AppConfig(
