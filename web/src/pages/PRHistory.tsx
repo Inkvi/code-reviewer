@@ -73,9 +73,11 @@ export default function PRHistory() {
                 </div>
               </div>
               <div className="flex gap-1.5">
-                {v.stages.map((s) => (
-                  <StageBadge key={s} stage={s} />
-                ))}
+                {v.stages
+                  .filter((s) => !s.endsWith(".prompt"))
+                  .map((s) => (
+                    <StageBadge key={s} stage={s} />
+                  ))}
               </div>
             </div>
           </Link>

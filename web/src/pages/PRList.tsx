@@ -83,9 +83,11 @@ export default function PRList() {
                 </td>
                 <td className="px-5 py-3.5">
                   <div className="flex gap-1.5 flex-wrap">
-                    {pr.stages.map((s) => (
-                      <StageBadge key={s} stage={s} />
-                    ))}
+                    {pr.stages
+                      .filter((s) => !s.endsWith(".prompt"))
+                      .map((s) => (
+                        <StageBadge key={s} stage={s} />
+                      ))}
                   </div>
                 </td>
                 <td className="px-5 py-3.5">
