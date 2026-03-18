@@ -13,6 +13,7 @@ from code_reviewer.config import AppConfig, default_config, load_config
 from code_reviewer.daemon import run_cycle, start_daemon
 from code_reviewer.github import GitHubClient
 from code_reviewer.github_app_auth import refresh_github_token
+from code_reviewer.history_server import run_history_server
 from code_reviewer.local_review import (
     build_local_candidate,
     gather_diff_metadata,
@@ -1092,3 +1093,64 @@ def webhook_command(
         warn("WEBHOOK_SECRET is not set; signature validation is disabled")
     info(f"Starting webhook server on {cfg.host}:{cfg.port}")
     run_server(cfg)
+
+
+HistoryHostOption = Annotated[
+    str,
+    typer.Option("--host", help="Host to bind the history server to."),
+]
+HistoryPortOption = Annotated[
+    int,
+    typer.Option("--port", "-p", help="Port to bind the history server to."),
+]
+HistoryReviewsDirOption = Annotated[
+    Path,
+    typer.Option("--reviews-dir", help="Path to reviews directory."),
+]
+HistoryDevOption = Annotated[
+    bool,
+    typer.Option("--dev", help="Enable CORS for development (React dev server on another port)."),
+]
+HistoryStaticDirOption = Annotated[
+    Path | None,
+    typer.Option("--static-dir", help="Path to built React app directory."),
+]
+
+
+@app.command("history")
+def history_command(
+    host: HistoryHostOption = "127.0.0.1",
+    port: HistoryPortOption = 8080,
+    reviews_dir: HistoryReviewsDirOption = Path("./reviews"),
+    dev: HistoryDevOption = False,
+    static_dir: HistoryStaticDirOption = None,
+) -> None:
+    """Browse PR review history in a web UI.
+
+    Starts an HTTP server that serves a JSON API for browsing review
+    artifacts and (optionally) a built React frontend.
+    """
+    import logging
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(message)s",
+    )
+    resolved_static = static_dir
+    if resolved_static is None:
+        default_static = Path(__file__).resolve().parent.parent.parent / "web" / "dist"
+        if default_static.is_dir():
+            resolved_static = default_static
+    info(f"Starting history server on {host}:{port}")
+    info(f"Reviews directory: {reviews_dir.resolve()}")
+    if resolved_static:
+        info(f"Serving frontend from: {resolved_static.resolve()}")
+    elif not dev:
+        warn("No static directory found. Run 'npm run build' in web/ to enable the frontend.")
+    run_history_server(
+        host=host,
+        port=port,
+        reviews_dir=reviews_dir,
+        static_dir=resolved_static,
+        enable_cors=dev,
+    )
