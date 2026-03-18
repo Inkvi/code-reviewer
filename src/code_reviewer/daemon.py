@@ -65,8 +65,7 @@ async def run_cycle(
                 try:
                     client.post_pr_comment_inline(
                         pr,
-                        f"Queued for review (position {index} of {total}, "
-                        f"{ahead} ahead).",
+                        f"Queued for review (position {index} of {total}, {ahead} ahead).",
                     )
                 except Exception as exc:  # noqa: BLE001
                     warn(f"{pr.key}: failed to post queue position comment: {exc}")

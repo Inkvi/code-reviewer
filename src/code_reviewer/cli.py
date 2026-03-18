@@ -694,8 +694,7 @@ def run_once_command(
                         try:
                             client.post_pr_comment_inline(
                                 candidate,
-                                f"Queued for review (position {index} of {total}, "
-                                f"{ahead} ahead).",
+                                f"Queued for review (position {index} of {total}, {ahead} ahead).",
                             )
                         except Exception as exc:  # noqa: BLE001
                             warn(f"{candidate.key}: failed to post queue position: {exc}")
