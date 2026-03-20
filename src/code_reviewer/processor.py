@@ -32,6 +32,9 @@ from code_reviewer.reviewers import (
     run_lightweight_review,
     run_triage,
 )
+from code_reviewer.reviewers._circuit_breaker import is_open as _circuit_is_open
+from code_reviewer.reviewers._circuit_breaker import record_failure as _circuit_record_failure
+from code_reviewer.reviewers._circuit_breaker import record_success as _circuit_record_success
 from code_reviewer.shell import CommandError
 from code_reviewer.state import StateStore
 from code_reviewer.workspace import PRWorkspace
@@ -526,36 +529,48 @@ async def _run_reviewers_with_monitoring(
     pending_tasks: dict[str, asyncio.Task] = {}
 
     if "claude" in enabled_reviewer_set:
-        info(
-            f"starting Claude review "
-            f"(backend={config.claude_backend}, model={config.claude_model or 'default'}, "
-            f"effort={config.claude_reasoning_effort or 'default'}) {pr.url}"
-        )
-        pending_tasks["claude"] = _start_claude_review_task(config, pr, workdir)
+        opened, reason = _circuit_is_open("claude", config.claude_model)
+        if opened:
+            warn(f"skipping Claude review (circuit open: {reason}) {pr.url}")
+        else:
+            info(
+                f"starting Claude review "
+                f"(backend={config.claude_backend}, model={config.claude_model or 'default'}, "
+                f"effort={config.claude_reasoning_effort or 'default'}) {pr.url}"
+            )
+            pending_tasks["claude"] = _start_claude_review_task(config, pr, workdir)
     else:
         info(f"Claude reviewer disabled {pr.url}")
 
     if "codex" in enabled_reviewer_set:
-        info(
-            f"starting Codex review "
-            f"(backend={config.codex_backend}, model={config.codex_model}, "
-            f"effort={config.codex_reasoning_effort or 'default'}) {pr.url}"
-        )
-        pending_tasks["codex"] = _start_codex_review_task(config, pr, workdir)
+        opened, reason = _circuit_is_open("codex", config.codex_model)
+        if opened:
+            warn(f"skipping Codex review (circuit open: {reason}) {pr.url}")
+        else:
+            info(
+                f"starting Codex review "
+                f"(backend={config.codex_backend}, model={config.codex_model}, "
+                f"effort={config.codex_reasoning_effort or 'default'}) {pr.url}"
+            )
+            pending_tasks["codex"] = _start_codex_review_task(config, pr, workdir)
     else:
         info(f"Codex reviewer disabled {pr.url}")
 
     if "gemini" in enabled_reviewer_set:
-        info(f"starting Gemini review (model={config.gemini_model or 'default'}) {pr.url}")
-        pending_tasks["gemini"] = asyncio.create_task(
-            run_gemini_review(
-                pr,
-                workdir,
-                config.gemini_timeout_seconds,
-                model=config.gemini_model,
-                prompt_path=config.full_review_prompt_path,
+        opened, reason = _circuit_is_open("gemini", config.gemini_model)
+        if opened:
+            warn(f"skipping Gemini review (circuit open: {reason}) {pr.url}")
+        else:
+            info(f"starting Gemini review (model={config.gemini_model or 'default'}) {pr.url}")
+            pending_tasks["gemini"] = asyncio.create_task(
+                run_gemini_review(
+                    pr,
+                    workdir,
+                    config.gemini_timeout_seconds,
+                    model=config.gemini_model,
+                    prompt_path=config.full_review_prompt_path,
+                )
             )
-        )
     else:
         info(f"Gemini reviewer disabled {pr.url}")
 
@@ -606,6 +621,18 @@ async def _run_reviewers_with_monitoring(
                         info(f"{output.stdout} {pr.url}")
                     if output.status != "ok" and output.error:
                         warn(f"{reviewer_name} error: {output.error} {pr.url}")
+                    # Record circuit breaker state
+                    _reviewer_model = {
+                        "claude": config.claude_model,
+                        "codex": config.codex_model,
+                        "gemini": config.gemini_model,
+                    }.get(reviewer_name)
+                    if output.status == "ok":
+                        _circuit_record_success(reviewer_name, _reviewer_model)
+                    elif output.error:
+                        _circuit_record_failure(
+                            reviewer_name, _reviewer_model, RuntimeError(output.error)
+                        )
                     pending_tasks.pop(reviewer_name)
     except _NewCommitDetected:
         # Cancel all running reviewer tasks before re-raising.
@@ -694,28 +721,43 @@ async def _run_local_reviewers(
     pending_tasks: dict[str, asyncio.Task] = {}
 
     if "claude" in enabled_reviewer_set:
-        info(
-            f"starting Claude review "
-            f"(backend={config.claude_backend}, model={config.claude_model or 'default'}, "
-            f"effort={config.claude_reasoning_effort or 'default'})"
-        )
-        pending_tasks["claude"] = _start_claude_review_task(config, pr, workdir)
+        opened, reason = _circuit_is_open("claude", config.claude_model)
+        if opened:
+            warn(f"skipping Claude review (circuit open: {reason})")
+        else:
+            info(
+                f"starting Claude review "
+                f"(backend={config.claude_backend}, model={config.claude_model or 'default'}, "
+                f"effort={config.claude_reasoning_effort or 'default'})"
+            )
+            pending_tasks["claude"] = _start_claude_review_task(config, pr, workdir)
 
     if "codex" in enabled_reviewer_set:
-        info(f"starting Codex review (backend={config.codex_backend}, model={config.codex_model})")
-        pending_tasks["codex"] = _start_codex_review_task(config, pr, workdir)
+        opened, reason = _circuit_is_open("codex", config.codex_model)
+        if opened:
+            warn(f"skipping Codex review (circuit open: {reason})")
+        else:
+            info(
+                f"starting Codex review "
+                f"(backend={config.codex_backend}, model={config.codex_model})"
+            )
+            pending_tasks["codex"] = _start_codex_review_task(config, pr, workdir)
 
     if "gemini" in enabled_reviewer_set:
-        info(f"starting Gemini review (model={config.gemini_model or 'default'})")
-        pending_tasks["gemini"] = asyncio.create_task(
-            run_gemini_review(
-                pr,
-                workdir,
-                config.gemini_timeout_seconds,
-                model=config.gemini_model,
-                prompt_path=config.full_review_prompt_path,
+        opened, reason = _circuit_is_open("gemini", config.gemini_model)
+        if opened:
+            warn(f"skipping Gemini review (circuit open: {reason})")
+        else:
+            info(f"starting Gemini review (model={config.gemini_model or 'default'})")
+            pending_tasks["gemini"] = asyncio.create_task(
+                run_gemini_review(
+                    pr,
+                    workdir,
+                    config.gemini_timeout_seconds,
+                    model=config.gemini_model,
+                    prompt_path=config.full_review_prompt_path,
+                )
             )
-        )
 
     reviewer_outputs: dict[str, ReviewerOutput] = {}
     while pending_tasks:
@@ -738,6 +780,17 @@ async def _run_local_reviewers(
                 )
                 if output.status != "ok" and output.error:
                     warn(f"{reviewer_name} error: {output.error}")
+                _reviewer_model = {
+                    "claude": config.claude_model,
+                    "codex": config.codex_model,
+                    "gemini": config.gemini_model,
+                }.get(reviewer_name)
+                if output.status == "ok":
+                    _circuit_record_success(reviewer_name, _reviewer_model)
+                elif output.error:
+                    _circuit_record_failure(
+                        reviewer_name, _reviewer_model, RuntimeError(output.error)
+                    )
                 pending_tasks.pop(reviewer_name)
 
     return reviewer_outputs

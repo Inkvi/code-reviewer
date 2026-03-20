@@ -137,7 +137,8 @@ async def run_triage(
         raise RuntimeError(f"unsupported triage backend: {b}")
 
     try:
-        text = await run_with_fallback(backends, _try, "triage", pr.url)
+        models_map = {b: (model if b == backends[0] else None) for b in backends}
+        text = await run_with_fallback(backends, _try, "triage", pr.url, models=models_map)
     except Exception as exc:  # noqa: BLE001
         warn(f"triage failed, falling back to full review: {exc} {pr.url}")
         return TriageResult.FULL_REVIEW, bundle

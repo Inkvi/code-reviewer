@@ -87,5 +87,6 @@ async def reconcile_reviews(
             return text, None
         raise RuntimeError(f"Unsupported reconciler backend: {b}")
 
-    text, usage = await run_with_fallback(backends, _try, "reconcile", pr.url)
+    models_map = {b: (reconciler_model if b == backends[0] else None) for b in backends}
+    text, usage = await run_with_fallback(backends, _try, "reconcile", pr.url, models=models_map)
     return text, usage, bundle

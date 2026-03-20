@@ -77,6 +77,10 @@ async def run_with_fallback[T](
 
 If every backend in the list is open, try the one whose circuit closes soonest rather than failing with no attempt.
 
+### Integration with full review (`processor.py`)
+
+Full review calls in `_run_reviewers_with_monitoring` launch individual reviewer tasks directly (not through `run_with_fallback`). Before launching each reviewer task, check `is_open(backend, model)`. If open, skip that reviewer and log a warning. After a reviewer task completes with `status="error"`, call `record_failure`. After `status="ok"`, call `record_success`.
+
 ### Caller Changes
 
 `triage.py`, `lightweight.py`, and `reconcile.py` pass a `models` dict to `run_with_fallback`. They already know which model maps to which backend — it's just threading the value through.

@@ -86,5 +86,6 @@ async def run_lightweight_review(
             return text, None
         raise RuntimeError(f"Unsupported lightweight review backend: {b}")
 
-    text, usage = await run_with_fallback(backends, _try, "lightweight", pr.url)
+    models_map = {b: (model if b == backends[0] else None) for b in backends}
+    text, usage = await run_with_fallback(backends, _try, "lightweight", pr.url, models=models_map)
     return text, usage, bundle
