@@ -10,7 +10,7 @@ Refactor `start_daemon` into a producer-consumer architecture using `asyncio.Que
 
 - **Discovery loop** polls GitHub on a fixed interval, independent of review processing
 - **Worker pool** (`max_parallel_prs` workers) pulls PRs from the queue and reviews them
-- An `in_flight: set[str]` of PR keys prevents re-queuing PRs already being reviewed
+- A `scheduled: set[str]` of PR keys prevents re-queuing PRs that are queued or being reviewed
 
 ## Architecture
 
@@ -20,7 +20,7 @@ Refactor `start_daemon` into a producer-consumer architecture using `asyncio.Que
 │  (every 30s)     │         │              │
 └─────────────────┘         └──────────────┘
         │                          │
-        └──── in_flight: set[str] ─┘
+        └──── scheduled: set[str] ─┘
 ```
 
 ## Discovery Loop
@@ -30,8 +30,8 @@ Runs every `poll_interval_seconds`:
 1. Optionally reload config
 2. Refresh GitHub token via `refresh_github_token()`
 3. Call `discover_pr_candidates` + `discover_slash_command_candidates` (same merge logic as current `run_cycle`)
-4. For each candidate: if `candidate.key` not in `in_flight`, enqueue it
-5. Log summary: found N, queued M, skipped K in-flight
+4. For each candidate: if `candidate.key` not in `scheduled`, add key to `scheduled` and enqueue it
+5. Log summary: found N, queued M, skipped K already scheduled
 6. Wait `poll_interval_seconds` or shutdown
 
 ## Worker
@@ -39,15 +39,15 @@ Runs every `poll_interval_seconds`:
 N instances where N = `max_parallel_prs`:
 
 1. Pull `PRCandidate` from queue (blocks until available or sentinel)
-2. Add `candidate.key` to `in_flight`
+2. Process inside `try/except Exception` — log and continue on failure, never let exceptions escape the loop
 3. Call `process_candidate` (unchanged signature and behavior)
-4. Remove `candidate.key` from `in_flight`
+4. In `finally`: remove `candidate.key` from `scheduled`, call `queue.task_done()`
 5. Loop
 
 ## Shared State
 
-- `asyncio.Queue[PRCandidate | None]` — unbounded. Backpressure is handled by the in-flight filter: if all workers are busy, new PRs for different keys queue up, but the same PR won't be re-queued.
-- `in_flight: set[str]` — no lock needed. All access is from coroutines in the same asyncio event loop (single-threaded). The set is only mutated inside `await` boundaries, not from `to_thread` calls.
+- `asyncio.Queue[PRCandidate | None]` — unbounded. Backpressure is handled by the scheduled filter: if all workers are busy, new PRs for different keys queue up, but the same PR won't be re-queued.
+- `scheduled: set[str]` — no lock needed. All access is from coroutines in the same asyncio event loop (single-threaded). Every check/add/remove sequence runs atomically between suspension points; `asyncio.to_thread` calls inside `process_candidate` do not touch this set.
 
 ## Shutdown
 
@@ -59,7 +59,8 @@ N instances where N = `max_parallel_prs`:
 ## Decisions
 
 - **Global concurrency cap**: `max_parallel_prs` remains the single cap on concurrent reviews. No separate queue depth limit.
-- **Duplicate handling**: PRs already in `in_flight` are silently skipped. No re-evaluation until the current review finishes.
+- **Duplicate handling**: PRs already in `scheduled` (queued or processing) are silently skipped. No re-evaluation until the current review finishes.
+- **Config reload**: Discovery loop reloads config each poll. Workers use the config snapshot from when `start_daemon` was called. Changes to `max_parallel_prs` require a restart — the worker pool size is static.
 - **StateStore access**: Unchanged. `threading.Lock` inside `StateStore` is sufficient since `process_candidate` already uses `asyncio.to_thread` for state operations.
 
 ## What Changes
