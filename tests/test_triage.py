@@ -31,7 +31,7 @@ def _sample_pr() -> PRCandidate:
 
 def test_triage_returns_simple_when_model_says_simple(tmp_path: Path) -> None:
     async def fake_claude_prompt(prompt, cwd, timeout, **kwargs):
-        return '{"classification": "simple"}', None
+        return '{"classification": "simple"}', None, None
 
     with patch("code_reviewer.reviewers.triage._run_claude_prompt", side_effect=fake_claude_prompt):
         result, _bundle = asyncio.run(
@@ -42,7 +42,7 @@ def test_triage_returns_simple_when_model_says_simple(tmp_path: Path) -> None:
 
 def test_triage_returns_full_review_when_model_says_full(tmp_path: Path) -> None:
     async def fake_claude_prompt(prompt, cwd, timeout, **kwargs):
-        return '{"classification": "full_review"}', None
+        return '{"classification": "full_review"}', None, None
 
     with patch("code_reviewer.reviewers.triage._run_claude_prompt", side_effect=fake_claude_prompt):
         result, _bundle = asyncio.run(
@@ -53,7 +53,7 @@ def test_triage_returns_full_review_when_model_says_full(tmp_path: Path) -> None
 
 def test_triage_falls_back_to_full_review_on_parse_error(tmp_path: Path) -> None:
     async def fake_claude_prompt(prompt, cwd, timeout, **kwargs):
-        return "not valid json", None
+        return "not valid json", None, None
 
     with patch("code_reviewer.reviewers.triage._run_claude_prompt", side_effect=fake_claude_prompt):
         result, _bundle = asyncio.run(
@@ -86,7 +86,7 @@ def test_triage_gemini_backend(tmp_path: Path) -> None:
 
 def test_triage_codex_backend(tmp_path: Path) -> None:
     async def fake_codex_prompt(prompt, cwd, timeout, **kwargs):
-        return '{"classification": "simple"}'
+        return '{"classification": "simple"}', None
 
     with patch("code_reviewer.reviewers.triage.run_codex_prompt", side_effect=fake_codex_prompt):
         result, _bundle = asyncio.run(
@@ -109,7 +109,7 @@ def test_triage_handles_numeric_classification(tmp_path: Path) -> None:
 
 def test_triage_extracts_json_from_markdown_code_block(tmp_path: Path) -> None:
     async def fake_claude_prompt(prompt, cwd, timeout, **kwargs):
-        return '```json\n{"classification": "simple"}\n```', None
+        return '```json\n{"classification": "simple"}\n```', None, None
 
     with patch("code_reviewer.reviewers.triage._run_claude_prompt", side_effect=fake_claude_prompt):
         result, _bundle = asyncio.run(
@@ -152,7 +152,7 @@ def test_triage_claude_system_prompt_warns_about_untrusted(tmp_path: Path) -> No
 
     async def fake_claude_prompt(prompt, cwd, timeout, **kwargs):
         captured_kwargs.update(kwargs)
-        return '{"classification": "full_review"}', None
+        return '{"classification": "full_review"}', None, None
 
     with patch("code_reviewer.reviewers.triage._run_claude_prompt", side_effect=fake_claude_prompt):
         asyncio.run(run_triage(_sample_pr(), tmp_path, timeout_seconds=60, backend=["claude"]))
@@ -225,7 +225,7 @@ def test_triage_falls_back_to_second_backend(tmp_path: Path) -> None:
         raise RuntimeError("gemini down")
 
     async def ok_claude(prompt, cwd, timeout, **kwargs):
-        return '{"classification": "simple"}', None
+        return '{"classification": "simple"}', None, None
 
     with (
         patch("code_reviewer.reviewers.triage.run_gemini_prompt", side_effect=failing_gemini),

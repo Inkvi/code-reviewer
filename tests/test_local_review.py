@@ -486,7 +486,7 @@ def test_run_claude_review_local_passes_system_prompt(
 
     async def fake_run_claude_prompt(prompt, cwd, timeout, **kwargs):  # noqa: ANN001
         captured_kwargs.update(kwargs)
-        return "### Findings\n- No material findings.\n\n### Test Gaps\n- None noted.", None
+        return "### Findings\n- No material findings.\n\n### Test Gaps\n- None noted.", None, None
 
     monkeypatch.setattr(
         "code_reviewer.reviewers.claude_sdk._run_claude_prompt",

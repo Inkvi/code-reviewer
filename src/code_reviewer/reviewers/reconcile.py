@@ -59,7 +59,7 @@ async def reconcile_reviews(
                     model=use_model,
                     reasoning_effort=use_effort,
                 )
-            return await _run_claude_prompt(
+            text, usage, _ = await _run_claude_prompt(
                 prompt,
                 workspace,
                 t,
@@ -68,8 +68,9 @@ async def reconcile_reviews(
                 model=use_model,
                 reasoning_effort=use_effort,
             )
+            return text, usage
         if b == "codex":
-            text = await run_codex_prompt(
+            text, _ = await run_codex_prompt(
                 prompt,
                 workspace,
                 t,

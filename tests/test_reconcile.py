@@ -48,7 +48,7 @@ async def test_reconcile_reviews_uses_codex_backend(monkeypatch, tmp_path: Path)
         captured["timeout_seconds"] = timeout_seconds
         captured["model"] = model
         captured["reasoning_effort"] = reasoning_effort
-        return "### Findings\n- No material findings.\n\n### Test Gaps\n- None noted."
+        return "### Findings\n- No material findings.\n\n### Test Gaps\n- None noted.", None
 
     monkeypatch.setattr("code_reviewer.reviewers.reconcile.run_codex_prompt", fake_codex_prompt)
 

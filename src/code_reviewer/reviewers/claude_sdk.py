@@ -17,6 +17,26 @@ from code_reviewer.models import PRCandidate, ReviewerOutput, TokenUsage
 from code_reviewer.prompts import build_full_review_bundle
 
 
+def _block_to_dict(block) -> dict:
+    """Convert an SDK content block to a serializable dict."""
+    block_type = getattr(block, "type", "unknown")
+    result: dict = {"type": block_type}
+    if block_type == "text":
+        result["text"] = getattr(block, "text", "")
+    elif block_type == "tool_use":
+        result["name"] = getattr(block, "name", "")
+        result["input"] = getattr(block, "input", {})
+        result["id"] = getattr(block, "id", "")
+    elif block_type == "tool_result":
+        result["tool_use_id"] = getattr(block, "tool_use_id", "")
+        result["content"] = str(getattr(block, "content", ""))
+    elif block_type == "thinking":
+        result["thinking"] = getattr(block, "thinking", "")
+    else:
+        result["text"] = str(block)
+    return result
+
+
 def _collect_text_from_assistant(message: AssistantMessage) -> str:
     chunks: list[str] = []
     for block in message.content:
@@ -47,7 +67,7 @@ async def _run_claude_prompt(
     model: str | None = None,
     reasoning_effort: str | None = None,
     stderr_lines: list[str] | None = None,
-) -> tuple[str, TokenUsage | None]:
+) -> tuple[str, TokenUsage | None, list[dict] | None]:
     collector = stderr_lines if stderr_lines is not None else []
     options = ClaudeAgentOptions(
         cwd=cwd,
@@ -63,10 +83,17 @@ async def _run_claude_prompt(
     parts: list[str] = []
     final_result: str | None = None
     token_usage: TokenUsage | None = None
+    conversation: list[dict] = []
 
     with fail_after(timeout_seconds):
         async for message in query(prompt=prompt, options=options):
             if isinstance(message, AssistantMessage):
+                conversation.append(
+                    {
+                        "type": "assistant",
+                        "message": {"content": [_block_to_dict(b) for b in message.content]},
+                    }
+                )
                 text = _collect_text_from_assistant(message)
                 if text.strip():
                     parts.append(text)
@@ -74,11 +101,17 @@ async def _run_claude_prompt(
                 if message.result:
                     final_result = message.result
                 token_usage = _extract_token_usage(message)
+                conversation.append(
+                    {
+                        "type": "result",
+                        "result": message.result or "",
+                    }
+                )
 
     merged = (final_result or "\n".join(parts)).strip()
     if not merged:
         raise RuntimeError("Claude returned an empty response")
-    return merged, token_usage
+    return merged, token_usage, conversation or None
 
 
 def _build_full_review_prompt(pr: PRCandidate) -> str:
@@ -104,7 +137,7 @@ async def run_claude_review(
         prompt_text = bundle.prompt
         system_prompt_text = bundle.system_prompt
         prompt = bundle.prompt
-        markdown, token_usage = await _run_claude_prompt(
+        markdown, token_usage, conversation = await _run_claude_prompt(
             prompt,
             workspace,
             timeout_seconds,
@@ -118,12 +151,14 @@ async def run_claude_review(
         stderr = ""
     except ProcessError as exc:
         markdown = ""
+        conversation = None
         status = "error"
         captured = "\n".join(stderr_lines).strip()
         stderr = captured or exc.stderr or ""
         error = f"exit_code={exc.exit_code} stderr={stderr}" if stderr else str(exc)
     except Exception as exc:  # noqa: BLE001
         markdown = ""
+        conversation = None
         status = "error"
         captured = "\n".join(stderr_lines).strip()
         stderr = captured or str(exc)
@@ -142,4 +177,5 @@ async def run_claude_review(
         token_usage=token_usage,
         prompt=prompt_text,
         system_prompt=system_prompt_text,
+        conversation=conversation,
     )

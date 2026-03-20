@@ -18,7 +18,12 @@ from code_reviewer.models import (
     ReviewerOutputSummary,
     TokenUsage,
 )
-from code_reviewer.output import write_review_markdown, write_review_meta, write_stage_markdown
+from code_reviewer.output import (
+    write_conversation_jsonl,
+    write_review_markdown,
+    write_review_meta,
+    write_stage_markdown,
+)
 from code_reviewer.prompts import PromptBundle, PromptOverrideError, format_prompt_bundle
 from code_reviewer.review_decision import infer_review_decision
 from code_reviewer.reviewers import (
@@ -1369,6 +1374,15 @@ async def process_candidate(
                     output.markdown,
                     version_label=version_label,
                 )
+                if output.conversation:
+                    await asyncio.to_thread(
+                        write_conversation_jsonl,
+                        output_dir,
+                        pr,
+                        name,
+                        output.conversation,
+                        version_label=version_label,
+                    )
         # Write reconciliation output when multiple reviewers contributed
         if len(ok_outputs) >= 2:
             await asyncio.to_thread(

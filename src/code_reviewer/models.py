@@ -69,6 +69,7 @@ class ReviewerOutput:
     token_usage: TokenUsage | None = None
     prompt: str = ""
     system_prompt: str | None = None
+    conversation: list[dict] | None = None
 
     @property
     def duration_seconds(self) -> float:

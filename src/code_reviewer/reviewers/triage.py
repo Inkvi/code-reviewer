@@ -111,7 +111,7 @@ async def run_triage(
                     model=use_model,
                 )
                 return text
-            text, _ = await _run_claude_prompt(
+            text, _, _ = await _run_claude_prompt(
                 prompt,
                 workspace,
                 timeout_seconds,
@@ -121,12 +121,13 @@ async def run_triage(
             )
             return text
         if b == "codex":
-            return await run_codex_prompt(
+            text, _ = await run_codex_prompt(
                 prompt,
                 workspace,
                 timeout_seconds,
                 model=use_model,
             )
+            return text
         if b == "gemini":
             return await run_gemini_prompt(
                 prompt,

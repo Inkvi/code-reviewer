@@ -58,7 +58,7 @@ async def run_lightweight_review(
                     model=use_model,
                     reasoning_effort=use_effort,
                 )
-            return await _run_claude_prompt(
+            text, usage, _ = await _run_claude_prompt(
                 prompt,
                 workspace,
                 timeout_seconds,
@@ -67,8 +67,9 @@ async def run_lightweight_review(
                 model=use_model,
                 reasoning_effort=use_effort,
             )
+            return text, usage
         if b == "codex":
-            text = await run_codex_prompt(
+            text, _ = await run_codex_prompt(
                 prompt,
                 workspace,
                 timeout_seconds,

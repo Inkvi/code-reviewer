@@ -7,6 +7,7 @@ from code_reviewer.reviewers.codex_cli import (
     _codex_review_json_unsupported,
     _extract_codex_markdown_from_jsonl,
     _extract_codex_review_text,
+    _parse_codex_jsonl,
     _sanitize_codex_markdown,
     run_codex_review,
 )
@@ -45,17 +46,27 @@ def test_build_codex_exec_command_includes_model_and_reasoning(tmp_path) -> None
         output_last_message_path=tmp_path / "last.md",
     )
 
-    assert args[:5] == [
-        "codex",
-        "exec",
-        "--skip-git-repo-check",
-        "--output-last-message",
-        str(tmp_path / "last.md"),
-    ]
+    assert args[:3] == ["codex", "exec", "--json"]
+    assert "--skip-git-repo-check" in args
+    assert "--output-last-message" in args
+    assert str(tmp_path / "last.md") in args
     assert "Say hello" in args
     assert "-m" in args
     assert "gpt-5.3-codex" in args
     assert 'model_reasoning_effort="medium"' in args
+
+
+def test_build_codex_exec_command_without_json(tmp_path) -> None:
+    args = _build_codex_exec_command(
+        "Say hello",
+        model=None,
+        reasoning_effort=None,
+        output_last_message_path=tmp_path / "last.md",
+        use_json=False,
+    )
+
+    assert "--json" not in args
+    assert args[:2] == ["codex", "exec"]
 
 
 def test_codex_review_json_unsupported_detection() -> None:
@@ -101,7 +112,8 @@ def test_run_codex_review_uses_prompt_execution(monkeypatch, tmp_path: Path) -> 
         captured["timeout_seconds"] = timeout_seconds
         captured["model"] = model
         captured["reasoning_effort"] = reasoning_effort
-        return "### Findings\n- No material findings.\n\n### Test Gaps\n- None noted."
+        md = "### Findings\n- No material findings.\n\n### Test Gaps\n- None noted."
+        return md, [{"type": "test"}]
 
     monkeypatch.setattr("code_reviewer.reviewers.codex_cli.run_codex_prompt", fake_run_codex_prompt)
 
@@ -116,8 +128,32 @@ def test_run_codex_review_uses_prompt_execution(monkeypatch, tmp_path: Path) -> 
     )
 
     assert result.status == "ok"
+    assert result.conversation == [{"type": "test"}]
     assert captured["workspace"] == tmp_path
     assert captured["timeout_seconds"] == 45
     assert captured["model"] == "gpt-5.3-codex"
     assert captured["reasoning_effort"] == "high"
     assert "actionable bugs" in str(captured["prompt"])
+
+
+def test_parse_codex_jsonl_extracts_events() -> None:
+    raw = "\n".join(
+        [
+            '{"type":"thread.started","thread_id":"abc"}',
+            '{"type":"item.completed","item":{"type":"agent_message","text":"hello"}}',
+            "not valid json",
+            '{"type":"turn.completed","usage":{"input_tokens":100,"output_tokens":50}}',
+        ]
+    )
+
+    events = _parse_codex_jsonl(raw)
+
+    assert len(events) == 3
+    assert events[0]["type"] == "thread.started"
+    assert events[1]["type"] == "item.completed"
+    assert events[2]["type"] == "turn.completed"
+
+
+def test_parse_codex_jsonl_empty() -> None:
+    assert _parse_codex_jsonl("") == []
+    assert _parse_codex_jsonl("\n\n") == []

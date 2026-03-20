@@ -1,7 +1,12 @@
+import json
 from pathlib import Path
 
 from code_reviewer.models import PRCandidate
-from code_reviewer.output import write_review_markdown, write_stage_markdown
+from code_reviewer.output import (
+    write_conversation_jsonl,
+    write_review_markdown,
+    write_stage_markdown,
+)
 
 
 def test_write_review_markdown(tmp_path: Path) -> None:
@@ -77,3 +82,39 @@ def test_write_stage_markdown_reconcile(tmp_path: Path) -> None:
     assert path.read_text(encoding="utf-8") == f"{content}\n"
     versioned_paths = list((tmp_path / "org" / "repo" / "pr-7").glob("*.reconcile.md"))
     assert len(versioned_paths) == 1
+
+
+def test_write_conversation_jsonl(tmp_path: Path) -> None:
+    pr = PRCandidate(
+        owner="org",
+        repo="repo",
+        number=42,
+        url="https://example.com/pr/42",
+        title="Fix bug",
+        author_login="alice",
+        base_ref="main",
+        head_sha="deadbeef",
+        updated_at="2026-01-01T00:00:00Z",
+    )
+    events = [
+        {"type": "assistant", "message": {"content": [{"type": "text", "text": "hello"}]}},
+        {"type": "result", "result": "done"},
+    ]
+    path = write_conversation_jsonl(tmp_path, pr, "claude", events)
+
+    assert path.exists()
+    assert path == tmp_path / "org" / "repo" / "pr-42.claude.conversation.jsonl"
+
+    # Verify JSONL format: one JSON object per line, parseable
+    lines = path.read_text(encoding="utf-8").strip().splitlines()
+    assert len(lines) == 2
+    parsed = [json.loads(line) for line in lines]
+    assert parsed[0]["type"] == "assistant"
+    assert parsed[1]["type"] == "result"
+    assert parsed[1]["result"] == "done"
+
+    # Verify versioned file
+    versioned_dir = tmp_path / "org" / "repo" / "pr-42"
+    versioned_paths = list(versioned_dir.glob("*.claude.conversation.jsonl"))
+    assert len(versioned_paths) == 1
+    assert versioned_paths[0].read_text(encoding="utf-8") == path.read_text(encoding="utf-8")

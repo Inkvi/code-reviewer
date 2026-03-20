@@ -81,12 +81,29 @@ def _sanitize_codex_markdown(text: str) -> str:
     return "\n".join(lines).strip()
 
 
+def _parse_codex_jsonl(raw: str) -> list[dict]:
+    """Parse Codex --json JSONL output into a list of events."""
+    events: list[dict] = []
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            event = json.loads(line)
+            if isinstance(event, dict):
+                events.append(event)
+        except json.JSONDecodeError:
+            continue
+    return events
+
+
 def _build_codex_exec_command(
     prompt: str,
     *,
     model: str | None,
     reasoning_effort: str | None,
     output_last_message_path: Path,
+    use_json: bool = True,
 ) -> list[str]:
     args = [
         "codex",
@@ -95,6 +112,8 @@ def _build_codex_exec_command(
         "--output-last-message",
         str(output_last_message_path),
     ]
+    if use_json:
+        args.insert(2, "--json")
     if model:
         args.extend(["-m", model])
     if reasoning_effort:
@@ -115,7 +134,7 @@ async def run_codex_prompt(
     *,
     model: str | None = None,
     reasoning_effort: str | None = None,
-) -> str:
+) -> tuple[str, list[dict] | None]:
     output_last_message_path = workspace / f".codex-last-message-{uuid4().hex}.md"
     try:
         code, raw_stdout, stderr = await run_command_async(
@@ -131,19 +150,43 @@ async def run_codex_prompt(
     except TimeoutError as exc:
         raise RuntimeError(f"codex prompt timed out after {timeout_seconds}s") from exc
 
+    # If --json is not supported, retry without it
+    conversation: list[dict] | None = None
+    if _codex_review_json_unsupported(stderr):
+        try:
+            code, raw_stdout, stderr = await run_command_async(
+                _build_codex_exec_command(
+                    prompt,
+                    model=model,
+                    reasoning_effort=reasoning_effort,
+                    output_last_message_path=output_last_message_path,
+                    use_json=False,
+                ),
+                cwd=workspace,
+                timeout=timeout_seconds,
+            )
+        except TimeoutError as exc:
+            raise RuntimeError(f"codex prompt timed out after {timeout_seconds}s") from exc
+    else:
+        events = _parse_codex_jsonl(raw_stdout)
+        conversation = events or None
+
     output_last_message = ""
     if output_last_message_path.exists():
         output_last_message = output_last_message_path.read_text(encoding="utf-8", errors="replace")
         output_last_message_path.unlink(missing_ok=True)
 
     markdown = _sanitize_codex_markdown(output_last_message.strip())
+    if not markdown and conversation is not None:
+        # In --json mode, stdout is JSONL — extract markdown from events
+        markdown, _ = _extract_codex_markdown_from_jsonl(raw_stdout)
     if not markdown:
         markdown = _extract_codex_review_text(raw_stdout, stderr)
     if code != 0:
         raise RuntimeError(f"codex exited with status {code}: {stderr.strip()}")
     if not markdown:
         raise RuntimeError("Codex returned an empty response")
-    return markdown
+    return markdown, conversation
 
 
 async def run_codex_review(
@@ -163,7 +206,7 @@ async def run_codex_review(
         bundle = build_full_review_bundle(pr, workspace, prompt_path)
         prompt_text = bundle.prompt
         system_prompt_text = bundle.system_prompt
-        markdown = await run_codex_prompt(
+        markdown, conversation = await run_codex_prompt(
             bundle.prompt,
             workspace,
             timeout_seconds,
@@ -180,12 +223,14 @@ async def run_codex_review(
         status = "error"
         error = stderr
         markdown = ""
+        conversation = None
     except Exception as exc:  # noqa: BLE001
         stdout = ""
         stderr = str(exc)
         status = "error"
         error = str(exc)
         markdown = ""
+        conversation = None
 
     ended = datetime.now(UTC)
     return ReviewerOutput(
@@ -199,4 +244,5 @@ async def run_codex_review(
         ended_at=ended,
         prompt=prompt_text,
         system_prompt=system_prompt_text,
+        conversation=conversation,
     )

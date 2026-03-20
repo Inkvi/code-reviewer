@@ -28,7 +28,7 @@ def test_lightweight_review_claude_returns_formatted_output(tmp_path: Path) -> N
     token_usage = TokenUsage(input_tokens=100, output_tokens=50, cost_usd=0.001)
 
     async def fake_claude_prompt(prompt, cwd, timeout, **kwargs):
-        return review_text, token_usage
+        return review_text, token_usage, None
 
     with patch(
         "code_reviewer.reviewers.lightweight._run_claude_prompt",
@@ -65,7 +65,7 @@ def test_lightweight_review_codex_backend(tmp_path: Path) -> None:
     review_text = "### Findings\n- No material findings.\n\n### Test Gaps\n- None noted."
 
     async def fake_codex_prompt(prompt, cwd, timeout, **kwargs):
-        return review_text
+        return review_text, None
 
     with patch(
         "code_reviewer.reviewers.lightweight.run_codex_prompt",
@@ -84,7 +84,7 @@ def test_lightweight_review_prompt_contains_checklist_items(tmp_path: Path) -> N
 
     async def fake_claude_prompt(prompt, cwd, timeout, **kwargs):
         captured_prompts.append(prompt)
-        return "### Findings\n- No material findings.\n\n### Test Gaps\n- None noted.", None
+        return "### Findings\n- No material findings.\n\n### Test Gaps\n- None noted.", None, None
 
     with patch(
         "code_reviewer.reviewers.lightweight._run_claude_prompt",
@@ -126,7 +126,7 @@ def test_lightweight_claude_system_prompt_warns_about_untrusted(tmp_path: Path) 
 
     async def fake_claude_prompt(prompt, cwd, timeout, **kwargs):
         captured_kwargs.update(kwargs)
-        return "### Findings\n- No material findings.\n\n### Test Gaps\n- None noted.", None
+        return "### Findings\n- No material findings.\n\n### Test Gaps\n- None noted.", None, None
 
     with patch(
         "code_reviewer.reviewers.lightweight._run_claude_prompt",
@@ -147,7 +147,7 @@ def test_lightweight_falls_back_to_second_backend(tmp_path: Path) -> None:
     review_text = "### Findings\n- No material findings.\n\n### Test Gaps\n- None noted."
 
     async def ok_claude(prompt, cwd, timeout, **kwargs):
-        return review_text, None
+        return review_text, None, None
 
     with (
         patch(

@@ -82,6 +82,34 @@ def write_stage_markdown(
     return stable_path
 
 
+def write_conversation_jsonl(
+    output_root: Path,
+    pr: PRCandidate,
+    stage: str,
+    events: list[dict],
+    *,
+    version_label: str | None = None,
+) -> Path:
+    """Write conversation events as JSONL (one JSON object per line).
+
+    Files are written as ``pr-{number}.{stage}.conversation.jsonl`` (stable)
+    and ``{version}.{stage}.conversation.jsonl`` (versioned history).
+    """
+    target_dir, history_dir, stable_name = _pr_output_dirs(output_root, pr)
+    target_dir.mkdir(parents=True, exist_ok=True)
+    history_dir.mkdir(parents=True, exist_ok=True)
+    stable_path = target_dir / f"{stable_name}.{stage}.conversation.jsonl"
+    stem = version_label or _versioned_stem(pr)
+    versioned_path = history_dir / f"{stem}.{stage}.conversation.jsonl"
+
+    lines = [json.dumps(event, separators=(",", ":")) for event in events]
+    content = "\n".join(lines) + "\n" if lines else ""
+
+    versioned_path.write_text(content, encoding="utf-8")
+    stable_path.write_text(content, encoding="utf-8")
+    return stable_path
+
+
 def write_review_meta(
     output_root: Path,
     pr: PRCandidate,
