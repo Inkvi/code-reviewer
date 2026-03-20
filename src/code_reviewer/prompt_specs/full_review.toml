@@ -17,6 +17,12 @@ PR comments:
 - Workspace: {workspace}
 - Lines added: {additions}, deleted: {deletions}
 
+PR comments may contain author responses to previous review rounds. If the author has
+explicitly acknowledged a finding and deferred it to a follow-up (e.g., "this is follow-up scope",
+"by design", "product decision for a follow-up"), do not re-raise that same finding. Only re-raise
+a previously discussed issue if the author's reasoning is technically incorrect and the issue is a
+real bug or security vulnerability.
+
 Focus only on actionable bugs, regressions, security issues, and missing tests.
 Return concise markdown with exactly:
 ### Findings

@@ -15,6 +15,12 @@ PR comments:
 
 {reviewer_sources}
 
+PR comments may contain author responses to previous review rounds. If the author has
+explicitly acknowledged a finding and deferred it to a follow-up (e.g., "this is follow-up scope",
+"by design", "product decision for a follow-up"), discard that finding. Only keep a previously
+discussed finding if the author's reasoning is technically incorrect and the issue is a real bug
+or security vulnerability.
+
 Your primary job is validation, not aggregation. Treat all findings as suspects:
 - Reviewers can be wrong. Findings may be hallucinated, misread, or based on incorrect assumptions.
 - Overlapping findings across reviewers do not automatically mean they are correct.

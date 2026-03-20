@@ -119,7 +119,7 @@ class GitHubClient:
         pr: PRCandidate,
         *,
         max_comments: int = 20,
-        per_comment_chars: int = 400,
+        per_comment_chars: int = 2000,
     ) -> list[str]:
         endpoint = f"repos/{pr.owner}/{pr.repo}/issues/{pr.number}/comments"
         proc = run_command(
