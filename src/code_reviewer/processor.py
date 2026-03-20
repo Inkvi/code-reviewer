@@ -24,6 +24,7 @@ from code_reviewer.output import (
     write_review_meta,
     write_stage_markdown,
 )
+from code_reviewer.progress import ProgressComment
 from code_reviewer.prompts import PromptBundle, PromptOverrideError, format_prompt_bundle
 from code_reviewer.repos import fetch_remote_skills
 from code_reviewer.review_decision import infer_review_decision
@@ -526,6 +527,7 @@ async def _run_reviewers_with_monitoring(
     client: GitHubClient,
     pr: PRCandidate,
     workdir: Path,
+    progress: ProgressComment,
 ) -> dict[str, ReviewerOutput]:
     """Launch reviewers and poll for completion, checking for new commits periodically.
 
@@ -539,6 +541,7 @@ async def _run_reviewers_with_monitoring(
         opened, reason = _circuit_is_open("claude", config.claude_model)
         if opened:
             warn(f"skipping Claude review (circuit open: {reason}) {pr.url}")
+            progress.set_reviewer_skipped("claude")
         else:
             info(
                 f"starting Claude review "
@@ -546,6 +549,7 @@ async def _run_reviewers_with_monitoring(
                 f"effort={config.claude_reasoning_effort or 'default'}) {pr.url}"
             )
             pending_tasks["claude"] = _start_claude_review_task(config, pr, workdir)
+            progress.set_reviewer_started("claude")
     else:
         info(f"Claude reviewer disabled {pr.url}")
 
@@ -553,6 +557,7 @@ async def _run_reviewers_with_monitoring(
         opened, reason = _circuit_is_open("codex", config.codex_model)
         if opened:
             warn(f"skipping Codex review (circuit open: {reason}) {pr.url}")
+            progress.set_reviewer_skipped("codex")
         else:
             info(
                 f"starting Codex review "
@@ -560,6 +565,7 @@ async def _run_reviewers_with_monitoring(
                 f"effort={config.codex_reasoning_effort or 'default'}) {pr.url}"
             )
             pending_tasks["codex"] = _start_codex_review_task(config, pr, workdir)
+            progress.set_reviewer_started("codex")
     else:
         info(f"Codex reviewer disabled {pr.url}")
 
@@ -567,6 +573,7 @@ async def _run_reviewers_with_monitoring(
         opened, reason = _circuit_is_open("gemini", config.gemini_model)
         if opened:
             warn(f"skipping Gemini review (circuit open: {reason}) {pr.url}")
+            progress.set_reviewer_skipped("gemini")
         else:
             info(f"starting Gemini review (model={config.gemini_model or 'default'}) {pr.url}")
             pending_tasks["gemini"] = asyncio.create_task(
@@ -578,8 +585,11 @@ async def _run_reviewers_with_monitoring(
                     prompt_path=config.full_review_prompt_path,
                 )
             )
+            progress.set_reviewer_started("gemini")
     else:
         info(f"Gemini reviewer disabled {pr.url}")
+
+    await progress.update()
 
     reviewer_outputs: dict[str, ReviewerOutput] = {}
     polls_since_last_sha_check = 0
@@ -636,10 +646,17 @@ async def _run_reviewers_with_monitoring(
                     }.get(reviewer_name)
                     if output.status == "ok":
                         _circuit_record_success(reviewer_name, _reviewer_model)
+                        progress.set_reviewer_done(
+                            reviewer_name, output.duration_seconds
+                        )
                     elif output.error:
                         _circuit_record_failure(
                             reviewer_name, _reviewer_model, RuntimeError(output.error)
                         )
+                        progress.set_reviewer_failed(reviewer_name)
+                    else:
+                        progress.set_reviewer_failed(reviewer_name)
+                    await progress.update()
                     pending_tasks.pop(reviewer_name)
     except _NewCommitDetected:
         # Cancel all running reviewer tasks before re-raising.
@@ -1130,15 +1147,9 @@ async def process_candidate(
         except Exception as exc:  # noqa: BLE001
             warn(f"{pr.key}: failed to add eyes reaction: {exc}")
 
-        if decision.reason == "new_rerequest" and config.post_rerequest_comment:
-            try:
-                await asyncio.to_thread(
-                    client.post_pr_comment_inline,
-                    pr,
-                    "Starting review of the latest changes…",
-                )
-            except Exception as exc:  # noqa: BLE001
-                warn(f"{pr.key}: failed to post rerequest comment: {exc}")
+    progress = ProgressComment(client, pr)
+    if not pr.is_local:
+        await progress.create()
 
     workdir: Path | None = None
     output_path: Path | None = None
@@ -1179,6 +1190,14 @@ async def process_candidate(
         )
 
         if triage_result == TriageResult.SIMPLE:
+            progress.set_triage_done("lightweight")
+        else:
+            progress.set_triage_done(
+                "full", enabled_reviewers=list(config.enabled_reviewers)
+            )
+        await progress.update()
+
+        if triage_result == TriageResult.SIMPLE:
             # Lightweight review path
             try:
                 # Check for new commits before starting lightweight review
@@ -1192,6 +1211,10 @@ async def process_candidate(
                         )
                         pr.head_sha = new_sha
                         await asyncio.to_thread(workspace_mgr.update_to_latest, workdir, pr)
+
+                progress.set_review_started()
+                await progress.update()
+                lightweight_start = datetime.now(UTC)
 
                 (
                     lightweight_text,
@@ -1207,6 +1230,12 @@ async def process_candidate(
                     prompt_path=config.lightweight_review_prompt_path,
                     claude_backend=config.claude_backend,
                 )
+
+                lightweight_duration = (
+                    datetime.now(UTC) - lightweight_start
+                ).total_seconds()
+                progress.set_review_done(lightweight_duration)
+                await progress.update()
             except PromptOverrideError:
                 raise
             except Exception as exc:  # noqa: BLE001
@@ -1306,7 +1335,9 @@ async def process_candidate(
         # Retry loop: restart reviewers when new commits are pushed mid-review.
         while True:
             try:
-                reviewer_outputs = await _run_reviewers_with_monitoring(config, client, pr, workdir)
+                reviewer_outputs = await _run_reviewers_with_monitoring(
+                    config, client, pr, workdir, progress
+                )
                 break  # Reviews completed without mid-review commits.
             except _NewCommitDetected as ncd:
                 if restarts_remaining <= 0:
@@ -1366,6 +1397,9 @@ async def process_candidate(
                 f"model={reconciler_model or 'default'}, "
                 f"effort={effort_label}) {pr.url}"
             )
+            progress.set_reconciliation_started()
+            await progress.update()
+            reconcile_start = datetime.now(UTC)
             final_review, reconciler_usage, reconcile_bundle = await reconcile_reviews(
                 pr,
                 workdir,
@@ -1379,6 +1413,9 @@ async def process_candidate(
                 prompt_path=config.reconcile_prompt_path,
                 claude_backend=config.claude_backend,
             )
+            reconcile_duration = (datetime.now(UTC) - reconcile_start).total_seconds()
+            progress.set_reconciliation_done(reconcile_duration)
+            await progress.update()
             final_review = _validate_review_format(
                 final_review, pr_url=pr.url, injection_protection=config.prompt_injection_protection
             )
@@ -1391,10 +1428,14 @@ async def process_candidate(
                 injection_protection=config.prompt_injection_protection,
             )
             reconciler_usage = None
+            progress.set_reconciliation_skipped()
+            await progress.update()
         elif len(enabled_reviewers) >= 1:
             warn(f"all reviewers failed, no review produced {pr.url}")
             final_review = _all_failed_review()
             reconciler_usage = None
+            progress.set_reconciliation_skipped()
+            await progress.update()
         else:
             raise RuntimeError("No enabled reviewers configured")
 
