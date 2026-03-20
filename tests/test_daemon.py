@@ -1,9 +1,13 @@
 import asyncio
-import os
-import signal
 
 from code_reviewer.config import AppConfig
-from code_reviewer.daemon import run_cycle, start_daemon
+from code_reviewer.daemon import (
+    _discover_candidates,
+    _discovery_loop,
+    _worker,
+    run_cycle,
+    start_daemon,
+)
 from code_reviewer.github import GitHubClient
 from code_reviewer.models import PRCandidate, ProcessingResult, SlashCommandTrigger
 from code_reviewer.preflight import PreflightResult
@@ -22,6 +26,121 @@ def _sample_pr(number: int) -> PRCandidate:
         head_sha=f"deadbeef{number}",
         updated_at="2026-03-01T00:00:00Z",
     )
+
+
+def test_discover_candidates_merges_slash_commands(monkeypatch, tmp_path) -> None:
+    """_discover_candidates returns merged list of regular + slash command PRs."""
+    config = AppConfig(github_orgs=["polymerdao"], slash_command_enabled=True)
+    state_path = tmp_path / "state.json"
+    store = StateStore(state_path)
+    store._owns_lock = True
+    store.load()
+
+    regular_pr = _sample_pr(1)
+    slash_pr = _sample_pr(2)
+    slash_pr.slash_command_trigger = SlashCommandTrigger(
+        comment_id=100, comment_author="bob", comment_created_at="2026-03-05T10:00:00Z"
+    )
+
+    monkeypatch.setattr(GitHubClient, "discover_pr_candidates", lambda _self, _config: [regular_pr])
+    monkeypatch.setattr(
+        GitHubClient,
+        "discover_slash_command_candidates",
+        lambda _self, _config, _store: [slash_pr],
+    )
+
+    client = GitHubClient(viewer_login="inkvi")
+    candidates = asyncio.run(_discover_candidates(config, client, store))
+    keys = [c.key for c in candidates]
+    assert "polymerdao/bridge-master#1" in keys
+    assert "polymerdao/bridge-master#2" in keys
+
+
+def test_discovery_loop_enqueues_candidates(monkeypatch) -> None:
+    """Discovery loop enqueues new candidates and skips already-scheduled ones."""
+    config = AppConfig(github_orgs=["polymerdao"], poll_interval_seconds=15)
+    preflight = PreflightResult(viewer_login="inkvi")
+
+    pr1 = _sample_pr(1)
+    pr2 = _sample_pr(2)
+
+    monkeypatch.setattr("code_reviewer.daemon.refresh_github_token", lambda: None)
+
+    queue: asyncio.Queue[PRCandidate | None] = asyncio.Queue()
+    scheduled: set[str] = set()
+    # Pre-schedule pr1 to verify it gets skipped
+    scheduled.add(pr1.key)
+    shutdown = asyncio.Event()
+
+    async def fake_discover(_config, _client, _store):
+        return [pr1, pr2]
+
+    monkeypatch.setattr("code_reviewer.daemon._discover_candidates", fake_discover)
+
+    async def run() -> None:
+        async def stop_soon():
+            await asyncio.sleep(0.05)
+            shutdown.set()
+
+        asyncio.create_task(stop_soon())
+        await _discovery_loop(config, preflight, object(), queue, scheduled, shutdown)
+
+    asyncio.run(run())
+
+    # Only pr2 should be enqueued (pr1 was already scheduled)
+    assert queue.qsize() == 1
+    item = queue.get_nowait()
+    assert item.key == pr2.key
+    assert pr2.key in scheduled
+
+
+def test_worker_processes_and_clears_scheduled(monkeypatch) -> None:
+    """Worker processes a PR from the queue and removes its key from scheduled."""
+    config = AppConfig(github_orgs=["polymerdao"])
+    preflight = PreflightResult(viewer_login="inkvi")
+    pr = _sample_pr(7)
+
+    processed_keys: list[str] = []
+
+    async def fake_process(_config, _client, _store, _workspace, candidate, **_kw):
+        processed_keys.append(candidate.key)
+        return ProcessingResult(
+            processed=True, pr_url=candidate.url, pr_key=candidate.key, status="generated"
+        )
+
+    monkeypatch.setattr("code_reviewer.daemon.process_candidate", fake_process)
+
+    queue: asyncio.Queue[PRCandidate | None] = asyncio.Queue()
+    scheduled: set[str] = {pr.key}
+    queue.put_nowait(pr)
+    queue.put_nowait(None)  # sentinel to stop the worker
+
+    asyncio.run(_worker(config, preflight, object(), queue, scheduled))
+
+    assert processed_keys == [pr.key]
+    assert pr.key not in scheduled
+
+
+def test_worker_clears_scheduled_on_exception(monkeypatch) -> None:
+    """Worker removes key from scheduled even when process_candidate raises."""
+    config = AppConfig(github_orgs=["polymerdao"])
+    preflight = PreflightResult(viewer_login="inkvi")
+    pr = _sample_pr(8)
+
+    async def exploding_process(_config, _client, _store, _workspace, _pr, **_kw):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr("code_reviewer.daemon.process_candidate", exploding_process)
+    monkeypatch.setattr("code_reviewer.daemon.warn", lambda _msg: None)
+
+    queue: asyncio.Queue[PRCandidate | None] = asyncio.Queue()
+    scheduled: set[str] = {pr.key}
+    queue.put_nowait(pr)
+    queue.put_nowait(None)  # sentinel
+
+    asyncio.run(_worker(config, preflight, object(), queue, scheduled))
+
+    assert pr.key not in scheduled
 
 
 def test_run_cycle_quiet_mode_suppresses_per_pr_logs(monkeypatch) -> None:
@@ -65,25 +184,49 @@ def test_run_cycle_quiet_mode_suppresses_per_pr_logs(monkeypatch) -> None:
     assert logs == []
 
 
-def test_start_daemon_uses_quiet_run_cycle(monkeypatch) -> None:
-    config = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["codex"])
+def test_start_daemon_producer_consumer(monkeypatch) -> None:
+    """start_daemon discovers PRs and processes them via workers."""
+    config = AppConfig(github_orgs=["polymerdao"], poll_interval_seconds=15, max_parallel_prs=2)
     preflight = PreflightResult(viewer_login="inkvi")
-    run_cycle_verbose_args: list[bool] = []
 
-    async def fake_run_cycle(_config, _preflight, _store, *, verbose=True) -> int:  # noqa: ANN001
-        run_cycle_verbose_args.append(verbose)
-        return 0
+    pr = _sample_pr(20)
+    discovery_count = 0
+    processed_keys: list[str] = []
 
-    monkeypatch.setattr("code_reviewer.daemon.run_cycle", fake_run_cycle)
+    async def fake_discover(_config, _client, _store):
+        nonlocal discovery_count
+        discovery_count += 1
+        if discovery_count == 1:
+            return [pr]
+        return []
 
-    async def run_then_stop() -> None:
-        loop = asyncio.get_running_loop()
-        loop.call_later(0.1, lambda: loop.call_soon(os.kill, os.getpid(), signal.SIGINT))
-        await start_daemon(config, preflight, object())
+    async def fake_process(_config, _client, _store, _workspace, candidate, **_kw):
+        processed_keys.append(candidate.key)
+        return ProcessingResult(
+            processed=True, pr_url=candidate.url, pr_key=candidate.key, status="generated"
+        )
 
-    asyncio.run(run_then_stop())
+    monkeypatch.setattr("code_reviewer.daemon._discover_candidates", fake_discover)
+    monkeypatch.setattr("code_reviewer.daemon.process_candidate", fake_process)
+    monkeypatch.setattr("code_reviewer.daemon.refresh_github_token", lambda: None)
+    monkeypatch.setattr("code_reviewer.daemon.is_github_app_auth", lambda: False)
 
-    assert run_cycle_verbose_args == [False]
+    async def run() -> None:
+        shutdown = asyncio.Event()
+
+        async def stop_after_processing():
+            for _ in range(50):
+                await asyncio.sleep(0.02)
+                if processed_keys:
+                    break
+            shutdown.set()
+
+        asyncio.create_task(stop_after_processing())
+        await start_daemon(config, preflight, object(), shutdown_event=shutdown)
+
+    asyncio.run(run())
+
+    assert pr.key in processed_keys
 
 
 def test_run_cycle_merges_slash_command_candidates(monkeypatch, tmp_path) -> None:

@@ -20,22 +20,17 @@ from code_reviewer.state import StateStore
 from code_reviewer.workspace import PRWorkspace
 
 
-async def run_cycle(
+async def _discover_candidates(
     config: AppConfig,
-    preflight: PreflightResult,
+    client: GitHubClient,
     store: StateStore,
-    *,
-    verbose: bool = True,
-) -> int:
-    client = GitHubClient(viewer_login=preflight.viewer_login)
-    workspace_mgr = PRWorkspace(Path(config.clone_root))
-
-    processed = 0
+) -> list[PRCandidate]:
+    """Discover PR candidates from GitHub (regular + slash command)."""
     try:
         candidates = await asyncio.to_thread(client.discover_pr_candidates, config)
     except Exception as exc:  # noqa: BLE001
         warn(f"Failed to discover PRs: {exc}")
-        return 0
+        return []
 
     if config.slash_command_enabled:
         try:
@@ -53,6 +48,92 @@ async def run_cycle(
             else:
                 candidates = [sc if c.key.lower() == sc.key.lower() else c for c in candidates]
 
+    return candidates
+
+
+async def _discovery_loop(
+    config: AppConfig,
+    preflight: PreflightResult,
+    store: StateStore,
+    queue: asyncio.Queue[PRCandidate | None],
+    scheduled: set[str],
+    shutdown: asyncio.Event,
+    *,
+    reload_config: Callable[[], AppConfig] | None = None,
+) -> None:
+    """Poll GitHub for PR candidates and enqueue new ones."""
+    while not shutdown.is_set():
+        if reload_config is not None:
+            try:
+                config = reload_config()
+            except Exception as exc:  # noqa: BLE001
+                warn(f"Config reload failed, using previous config: {exc}")
+        try:
+            await asyncio.to_thread(refresh_github_token)
+            client = GitHubClient(viewer_login=preflight.viewer_login)
+            candidates = await _discover_candidates(config, client, store)
+            queued = 0
+            skipped = 0
+            for pr in candidates:
+                if pr.key in scheduled:
+                    skipped += 1
+                else:
+                    scheduled.add(pr.key)
+                    queue.put_nowait(pr)
+                    queued += 1
+            if candidates:
+                info(
+                    f"Discovery: found {len(candidates)}, "
+                    f"queued {queued}, skipped {skipped} already scheduled"
+                )
+        except Exception as exc:  # noqa: BLE001
+            warn(f"Discovery cycle failed: {exc}")
+        try:
+            await asyncio.wait_for(shutdown.wait(), timeout=config.poll_interval_seconds)
+        except TimeoutError:
+            pass
+
+
+async def _worker(
+    config: AppConfig,
+    preflight: PreflightResult,
+    store: StateStore,
+    queue: asyncio.Queue[PRCandidate | None],
+    scheduled: set[str],
+) -> None:
+    """Pull PRs from the queue and process them."""
+    client = GitHubClient(viewer_login=preflight.viewer_login)
+    workspace_mgr = PRWorkspace(Path(config.clone_root))
+
+    while True:
+        candidate = await queue.get()
+        if candidate is None:
+            queue.task_done()
+            break
+        try:
+            result = await process_candidate(
+                config, client, store, workspace_mgr, candidate, verbose=False
+            )
+            info(f"Worker done: {candidate.key} status={result.status}")
+        except Exception as exc:  # noqa: BLE001
+            warn(f"Worker failed for {candidate.key}: {exc}")
+        finally:
+            scheduled.discard(candidate.key)
+            queue.task_done()
+
+
+async def run_cycle(
+    config: AppConfig,
+    preflight: PreflightResult,
+    store: StateStore,
+    *,
+    verbose: bool = True,
+) -> int:
+    client = GitHubClient(viewer_login=preflight.viewer_login)
+    workspace_mgr = PRWorkspace(Path(config.clone_root))
+
+    candidates = await _discover_candidates(config, client, store)
+
     if not candidates:
         if verbose:
             info("No candidate PRs found")
@@ -61,6 +142,7 @@ async def run_cycle(
     if verbose:
         info(f"Found {len(candidates)} candidate PR(s)")
 
+    processed = 0
     if config.max_parallel_prs == 1:
         total = len(candidates)
         for index, pr in enumerate(candidates, start=1):
@@ -123,7 +205,8 @@ async def start_daemon(
 ) -> None:
     info(
         "Starting daemon with "
-        f"interval={config.poll_interval_seconds}s owners={','.join(config.github_owners)}"
+        f"interval={config.poll_interval_seconds}s owners={','.join(config.github_owners)} "
+        f"workers={config.max_parallel_prs}"
     )
     if is_github_app_auth():
         info("GitHub App auth detected — tokens will refresh each cycle")
@@ -136,22 +219,22 @@ async def start_daemon(
         for sig in (signal.SIGINT, signal.SIGTERM):
             loop.add_signal_handler(sig, shutdown.set)
 
-    while not shutdown.is_set():
-        if reload_config is not None:
-            try:
-                config = reload_config()
-            except Exception as exc:  # noqa: BLE001
-                warn(f"Config reload failed, using previous config: {exc}")
-        try:
-            await asyncio.to_thread(refresh_github_token)
-            processed = await run_cycle(config, preflight, store, verbose=False)
-            info(f"Cycle complete. Processed {processed} PR(s)")
-        except Exception as exc:  # noqa: BLE001
-            warn(f"Cycle failed: {exc}")
-        try:
-            await asyncio.wait_for(shutdown.wait(), timeout=config.poll_interval_seconds)
-        except TimeoutError:
-            pass
+    queue: asyncio.Queue[PRCandidate | None] = asyncio.Queue()
+    scheduled: set[str] = set()
+
+    workers = [
+        asyncio.create_task(_worker(config, preflight, store, queue, scheduled))
+        for _ in range(config.max_parallel_prs)
+    ]
+
+    await _discovery_loop(
+        config, preflight, store, queue, scheduled, shutdown, reload_config=reload_config
+    )
+
+    # Discovery stopped — send sentinels to drain workers
+    for _ in workers:
+        queue.put_nowait(None)
+    await asyncio.gather(*workers)
 
     info("Shutting down daemon")
 
