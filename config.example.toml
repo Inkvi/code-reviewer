@@ -51,8 +51,6 @@ max_mid_review_restarts = 2
 max_findings = 10
 # Maximum number of test gaps the reconciler can include (1-10, default 3):
 max_test_gaps = 3
-# Post a comment when starting a review triggered by a re-request (default true):
-post_rerequest_comment = true
 # Slash command trigger — respond to /review comments in monitored org PRs
 slash_command_enabled = true
 # Prompt injection detection — extracts injection sections from output, logs warnings,

@@ -254,8 +254,6 @@ auto_post_review = false
 # - request changes when any P1/P2 finding exists
 auto_submit_review_decision = false
 
-# Post a comment when starting a review triggered by a re-request
-post_rerequest_comment = true
 ```
 
 ### Trigger mode

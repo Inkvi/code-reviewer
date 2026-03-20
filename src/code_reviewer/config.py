@@ -74,7 +74,6 @@ class AppConfig(BaseModel):
     max_mid_review_restarts: int = Field(default=2, ge=0, le=5)
     max_findings: int = Field(default=10, ge=1, le=20)
     max_test_gaps: int = Field(default=3, ge=1, le=10)
-    post_rerequest_comment: bool = True
     slash_command_enabled: bool = True
     prompt_injection_protection: bool = True
 
