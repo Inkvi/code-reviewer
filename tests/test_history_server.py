@@ -328,3 +328,42 @@ def test_get_stage_content_returns_prompt(tmp_path: Path) -> None:
     content = get_stage_content(reviews, "myorg", "myrepo", 2, "triage.prompt")
     assert content is not None
     assert "Classify this PR" in content
+
+
+def test_get_pr_detail_includes_conversation(tmp_path: Path) -> None:
+    reviews = _setup_reviews(tmp_path)
+    repo_dir = reviews / "myorg" / "myrepo"
+    # Write a conversation JSONL file for the claude stage
+    (repo_dir / "pr-2.claude.conversation.jsonl").write_text(
+        '{"type":"assistant","message":{"content":[{"type":"text","text":"hello"}]}}\n'
+        '{"type":"result","result":"done"}\n'
+    )
+    detail = get_pr_detail(reviews, "myorg", "myrepo", 2)
+    assert detail is not None
+    convs = detail["stage_conversations"]
+    assert convs is not None
+    assert "claude" in convs
+    assert len(convs["claude"]) == 2
+    assert convs["claude"][0]["type"] == "assistant"
+    assert convs["claude"][1]["type"] == "result"
+
+
+def test_get_pr_detail_no_conversation(tmp_path: Path) -> None:
+    reviews = _setup_reviews(tmp_path)
+    detail = get_pr_detail(reviews, "myorg", "myrepo", 2)
+    assert detail is not None
+    assert detail["stage_conversations"] is None
+
+
+def test_get_version_detail_includes_conversation(tmp_path: Path) -> None:
+    reviews = _setup_reviews(tmp_path)
+    history_dir = reviews / "myorg" / "myrepo" / "pr-2"
+    (history_dir / "20260318T130000Z-def987654321.claude.conversation.jsonl").write_text(
+        '{"type":"assistant","message":{"content":[]}}\n'
+    )
+    v = get_version_detail(reviews, "myorg", "myrepo", 2, "20260318T130000Z-def987654321")
+    assert v is not None
+    convs = v["stage_conversations"]
+    assert convs is not None
+    assert "claude" in convs
+    assert len(convs["claude"]) == 1

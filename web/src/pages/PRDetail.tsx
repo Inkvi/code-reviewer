@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import {
   fetchPRDetail,
   fetchVersionDetail,
+  type ConversationEvent,
   type PRDetailData,
   type ReviewMeta,
   type VersionDetailData,
@@ -166,6 +167,171 @@ function PromptDisclosure({ content }: { content: string }) {
       {open && (
         <div className="px-4 py-4 border-t border-surface-border bg-surface-1/50 animate-fade-in">
           <MarkdownView content={content} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── conversation steps disclosure ── */
+
+function ConversationStep({ event, index }: { event: ConversationEvent; index: number }) {
+  const type = event.type as string;
+
+  if (type === "assistant") {
+    const msg = event.message as { content?: Array<Record<string, unknown>> } | undefined;
+    const blocks = msg?.content || [];
+    return (
+      <div className="flex gap-3">
+        <div className="flex flex-col items-center">
+          <div className="w-6 h-6 rounded-full bg-amber-500/20 text-amber-400 flex items-center justify-center text-xs font-bold shrink-0">
+            A
+          </div>
+          <div className="w-px flex-1 bg-surface-border/50 mt-1" />
+        </div>
+        <div className="flex-1 min-w-0 pb-4">
+          <span className="text-xs font-medium text-amber-400">Assistant</span>
+          <span className="text-xs text-gray-600 ml-2">#{index + 1}</span>
+          <div className="mt-1.5 space-y-2">
+            {blocks.map((block, i) => {
+              const bt = block.type as string;
+              if (bt === "text") {
+                const text = block.text as string;
+                return (
+                  <div key={i} className="text-xs text-gray-300 whitespace-pre-wrap break-words leading-relaxed">
+                    {text.length > 500 ? text.slice(0, 500) + "…" : text}
+                  </div>
+                );
+              }
+              if (bt === "tool_use") {
+                return (
+                  <div key={i} className="rounded bg-surface-3/60 border border-surface-border/50 px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <svg className="w-3 h-3 text-blue-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M11.42 15.17l-5.384-3.19a.75.75 0 010-1.286l5.383-3.19A.75.75 0 0112 8.02v6.96a.75.75 0 01-.58.52z" />
+                      </svg>
+                      <span className="text-xs font-mono text-blue-400">{block.name as string}</span>
+                    </div>
+                    {block.input !== undefined && (
+                      <pre className="mt-1.5 text-[10px] text-gray-500 font-mono overflow-x-auto max-h-24 leading-tight">
+                        {JSON.stringify(block.input, null, 2)}
+                      </pre>
+                    )}
+                  </div>
+                );
+              }
+              if (bt === "tool_result") {
+                const content = block.content as string;
+                return (
+                  <div key={i} className="rounded bg-surface-3/40 border border-surface-border/30 px-3 py-2">
+                    <span className="text-[10px] text-gray-500">tool result</span>
+                    <div className="text-[10px] text-gray-500 font-mono mt-0.5 max-h-16 overflow-hidden">
+                      {content && content.length > 200 ? content.slice(0, 200) + "…" : content}
+                    </div>
+                  </div>
+                );
+              }
+              if (bt === "thinking") {
+                return (
+                  <div key={i} className="rounded bg-purple-500/5 border border-purple-500/20 px-3 py-2">
+                    <span className="text-[10px] text-purple-400">thinking</span>
+                    <div className="text-[10px] text-gray-500 mt-0.5 max-h-16 overflow-hidden whitespace-pre-wrap">
+                      {(block.thinking as string || "").slice(0, 200)}
+                      {(block.thinking as string || "").length > 200 ? "…" : ""}
+                    </div>
+                  </div>
+                );
+              }
+              return (
+                <div key={i} className="text-[10px] text-gray-600 font-mono">
+                  {JSON.stringify(block)}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (type === "result") {
+    const result = event.result as string;
+    return (
+      <div className="flex gap-3">
+        <div className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+          </svg>
+        </div>
+        <div className="flex-1 min-w-0 pb-2">
+          <span className="text-xs font-medium text-emerald-400">Result</span>
+          {result && (
+            <div className="mt-1 text-xs text-gray-400 max-h-20 overflow-hidden whitespace-pre-wrap">
+              {result.length > 300 ? result.slice(0, 300) + "…" : result}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // Generic Codex event rendering
+  const eventType = type || "unknown";
+  const item = event.item as Record<string, unknown> | undefined;
+  return (
+    <div className="flex gap-3">
+      <div className="w-6 h-6 rounded-full bg-gray-700/50 text-gray-500 flex items-center justify-center text-[9px] font-mono shrink-0">
+        {index + 1}
+      </div>
+      <div className="flex-1 min-w-0 pb-3">
+        <span className="text-[10px] font-mono text-gray-500">{eventType}</span>
+        {item?.type === "agent_message" && typeof item.text === "string" && (
+          <div className="mt-1 text-xs text-gray-400 whitespace-pre-wrap max-h-20 overflow-hidden">
+            {item.text.slice(0, 300)}
+          </div>
+        )}
+        {item?.type === "function_call" && (
+          <div className="mt-1 flex items-center gap-1.5">
+            <svg className="w-3 h-3 text-blue-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M11.42 15.17l-5.384-3.19a.75.75 0 010-1.286l5.383-3.19A.75.75 0 0112 8.02v6.96a.75.75 0 01-.58.52z" />
+            </svg>
+            <span className="text-[10px] font-mono text-blue-400">{item.name as string || "tool"}</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ConversationSteps({ events }: { events: ConversationEvent[] }) {
+  const [open, setOpen] = useState(false);
+  const stepCount = events.length;
+
+  return (
+    <div className="mb-5 rounded-lg border border-surface-border overflow-hidden">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="flex items-center gap-2 w-full px-4 py-2.5 text-sm font-medium text-gray-400 hover:text-gray-200 bg-surface-3/50 hover:bg-surface-3 transition-colors"
+      >
+        <svg
+          className={`w-3.5 h-3.5 transition-transform duration-200 ${open ? "rotate-90" : ""}`}
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          strokeWidth={2.5}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+        </svg>
+        Steps
+        <span className="text-xs text-gray-600 font-normal">({stepCount})</span>
+      </button>
+      {open && (
+        <div className="px-4 py-4 border-t border-surface-border bg-surface-1/50 animate-fade-in max-h-[600px] overflow-y-auto">
+          {events.map((event, i) => (
+            <ConversationStep key={i} event={event} index={i} />
+          ))}
         </div>
       )}
     </div>
@@ -372,6 +538,13 @@ export default function PRDetail({ isHistorical }: Props) {
   const promptKey = activeTab === "final" ? null : `${activeTab}.prompt`;
   const promptContent = promptKey ? stageContents[promptKey] : null;
 
+  // Find conversation steps for the active tab
+  const stageConversations = data.stage_conversations;
+  const conversationEvents =
+    activeTab !== "final" && stageConversations
+      ? stageConversations[activeTab] || null
+      : null;
+
   return (
     <div className="animate-fade-in-up">
       <div className="flex items-center gap-3 mb-1">
@@ -460,6 +633,7 @@ export default function PRDetail({ isHistorical }: Props) {
         {/* Content */}
         <div className="p-6 animate-fade-in" key={activeTab}>
           {promptContent && <PromptDisclosure content={promptContent} />}
+          {conversationEvents && <ConversationSteps events={conversationEvents} />}
           <MarkdownView content={activeContent} />
         </div>
       </div>

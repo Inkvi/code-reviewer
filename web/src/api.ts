@@ -18,6 +18,8 @@ export interface PRSummary {
 
 export type ReviewMeta = Record<string, unknown>;
 
+export type ConversationEvent = Record<string, unknown>;
+
 export interface PRDetailData {
   number: number;
   org: string;
@@ -27,6 +29,7 @@ export interface PRDetailData {
   final_review: string;
   stages: string[];
   stage_contents: Record<string, string>;
+  stage_conversations?: Record<string, ConversationEvent[]> | null;
   versions: VersionSummary[];
   author: string | null;
   title: string | null;
@@ -48,6 +51,7 @@ export interface VersionDetailData {
   final_review: string;
   stages: string[];
   stage_contents: Record<string, string>;
+  stage_conversations?: Record<string, ConversationEvent[]> | null;
   decision: string;
   review_type: string;
   author: string | null;

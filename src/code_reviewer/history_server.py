@@ -46,6 +46,21 @@ def _read_meta(path: Path) -> dict[str, Any]:
         return {}
 
 
+def _read_conversation_jsonl(path: Path) -> list[dict[str, Any]]:
+    """Read a conversation JSONL file, returning a list of events."""
+    if not path.is_file():
+        return []
+    events: list[dict[str, Any]] = []
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if line:
+                events.append(json.loads(line))
+    except (json.JSONDecodeError, OSError):
+        pass
+    return events
+
+
 # ---------------------------------------------------------------------------
 # Filesystem scanning helpers
 # ---------------------------------------------------------------------------
@@ -159,10 +174,14 @@ def get_pr_detail(reviews_dir: Path, org: str, repo: str, number: int) -> dict[s
     review_type = _detect_review_type(stages)
     decision = infer_review_decision(final_review)
     stage_contents: dict[str, str] = {}
+    stage_conversations: dict[str, list[dict[str, Any]]] = {}
     for stage in stages:
         stage_path = repo_dir / f"pr-{number}.{stage}.md"
         if stage_path.is_file():
             stage_contents[stage] = stage_path.read_text(encoding="utf-8")
+        conv = _read_conversation_jsonl(repo_dir / f"pr-{number}.{stage}.conversation.jsonl")
+        if conv:
+            stage_conversations[stage] = conv
     meta = _read_meta(repo_dir / f"pr-{number}.meta.json")
     history_dir = repo_dir / f"pr-{number}"
     versions = _list_versions(history_dir) if history_dir.is_dir() else []
@@ -175,6 +194,7 @@ def get_pr_detail(reviews_dir: Path, org: str, repo: str, number: int) -> dict[s
         "final_review": final_review,
         "stages": stages,
         "stage_contents": stage_contents,
+        "stage_conversations": stage_conversations or None,
         "versions": versions,
         "author": meta.get("author"),
         "title": meta.get("title"),
@@ -244,12 +264,16 @@ def get_version_detail(
     if final_review is None:
         return None
     stage_contents: dict[str, str] = {}
+    stage_conversations: dict[str, list[dict[str, Any]]] = {}
     stages: list[str] = []
     for stage in KNOWN_STAGES:
         stage_path = history_dir / f"{version}.{stage}.md"
         if stage_path.is_file():
             stages.append(stage)
             stage_contents[stage] = stage_path.read_text(encoding="utf-8")
+        conv = _read_conversation_jsonl(history_dir / f"{version}.{stage}.conversation.jsonl")
+        if conv:
+            stage_conversations[stage] = conv
     meta = _read_meta(history_dir / f"{version}.meta.json")
     parsed = _parse_version_stem(version)
     return {
@@ -259,6 +283,7 @@ def get_version_detail(
         "final_review": final_review,
         "stages": stages,
         "stage_contents": stage_contents,
+        "stage_conversations": stage_conversations or None,
         "author": meta.get("author"),
         "title": meta.get("title"),
         "meta": meta or None,
