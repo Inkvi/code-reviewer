@@ -51,6 +51,10 @@ class PRWorkspace:
     @staticmethod
     def update_to_latest(workdir: Path, pr: PRCandidate) -> None:
         """Re-fetch and checkout the latest PR head in an existing workspace."""
+        # Git refuses to fetch directly into a branch that is currently checked out
+        # in a non-bare repository, so step off the PR branch before forcing the
+        # ref update.
+        run_command(["git", "-C", str(workdir), "checkout", "--quiet", "--detach"])
         run_command(
             [
                 "git",

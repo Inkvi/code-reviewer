@@ -93,6 +93,18 @@ class AppConfig(BaseModel):
     full_review_prompt_path: str | None = None
     reconcile_prompt_path: str | None = None
 
+    # Skills
+    skills: list[str] = Field(default_factory=list)
+
+    @field_validator("skills")
+    @classmethod
+    def validate_skills(cls, v: list[str]) -> list[str]:
+        from code_reviewer.repos import parse_github_tree_url
+
+        for url in v:
+            parse_github_tree_url(url)
+        return v
+
     @property
     def github_owners(self) -> list[str]:
         return list(self.github_orgs)

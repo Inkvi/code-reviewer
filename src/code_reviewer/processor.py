@@ -25,6 +25,7 @@ from code_reviewer.output import (
     write_stage_markdown,
 )
 from code_reviewer.prompts import PromptBundle, PromptOverrideError, format_prompt_bundle
+from code_reviewer.repos import fetch_remote_skills
 from code_reviewer.review_decision import infer_review_decision
 from code_reviewer.reviewers import (
     TriageResult,
@@ -41,6 +42,7 @@ from code_reviewer.reviewers._circuit_breaker import is_open as _circuit_is_open
 from code_reviewer.reviewers._circuit_breaker import record_failure as _circuit_record_failure
 from code_reviewer.reviewers._circuit_breaker import record_success as _circuit_record_success
 from code_reviewer.shell import CommandError
+from code_reviewer.skills import inject_skill_paths, inject_skills, remove_injected_skills
 from code_reviewer.state import StateStore
 from code_reviewer.workspace import PRWorkspace
 
@@ -877,8 +879,26 @@ async def process_local_review(
                 total_token_usage=lightweight_usage,
             )
 
-        # Full review path
-        reviewer_outputs = await _run_local_reviewers(config, pr, workdir)
+        # Full review path — inject skills for local reviews
+        remote_skill_paths: list[Path] = []
+        if config.skills:
+            try:
+                remote_skill_paths = await fetch_remote_skills(
+                    config.skills, Path(config.output_dir).parent
+                )
+            except Exception as exc:  # noqa: BLE001
+                warn(f"failed to fetch remote skills: {exc}")
+                raise
+        local_skills_dir = workdir / "skills"
+        if local_skills_dir.is_dir():
+            await asyncio.to_thread(inject_skills, local_skills_dir, workdir)
+        if remote_skill_paths:
+            await asyncio.to_thread(inject_skill_paths, remote_skill_paths, workdir)
+
+        try:
+            reviewer_outputs = await _run_local_reviewers(config, pr, workdir)
+        finally:
+            await asyncio.to_thread(remove_injected_skills, workdir)
         enabled_reviewers = list(config.enabled_reviewers)
         active_outputs = {
             name: reviewer_outputs.get(name, _disabled_output(name)) for name in enabled_reviewers
@@ -1129,6 +1149,17 @@ async def process_candidate(
         workdir = await asyncio.to_thread(workspace_mgr.prepare, pr)
         info(f"workspace ready at {workdir} {pr.url}")
 
+        # Fetch remote skills (once, reused across restarts)
+        remote_skill_paths: list[Path] = []
+        if config.skills:
+            try:
+                remote_skill_paths = await fetch_remote_skills(
+                    config.skills, Path(config.output_dir).parent
+                )
+            except Exception as exc:  # noqa: BLE001
+                warn(f"failed to fetch remote skills: {exc} {pr.url}")
+                raise
+
         # Fetch PR comments for prompt context
         if not pr.is_local and pr.number > 0:
             try:
@@ -1265,6 +1296,13 @@ async def process_candidate(
             )
 
         # Full review path continues below
+        # Inject skills into the workspace for full reviews.
+        local_skills_dir = workdir / "skills"
+        if local_skills_dir.is_dir():
+            await asyncio.to_thread(inject_skills, local_skills_dir, workdir)
+        if remote_skill_paths:
+            await asyncio.to_thread(inject_skill_paths, remote_skill_paths, workdir)
+
         # Retry loop: restart reviewers when new commits are pushed mid-review.
         while True:
             try:
@@ -1284,8 +1322,16 @@ async def process_candidate(
                     f"restarting review on new head {ncd.new_sha[:12]} "
                     f"({restarts_remaining} restart(s) remaining) {pr.url}"
                 )
+                # Clean injected skills before workspace update to avoid
+                # untracked-file conflicts with git checkout.
+                await asyncio.to_thread(remove_injected_skills, workdir)
                 pr.head_sha = ncd.new_sha
                 await asyncio.to_thread(workspace_mgr.update_to_latest, workdir, pr)
+                # Re-inject skills after workspace update.
+                if local_skills_dir.is_dir():
+                    await asyncio.to_thread(inject_skills, local_skills_dir, workdir)
+                if remote_skill_paths:
+                    await asyncio.to_thread(inject_skill_paths, remote_skill_paths, workdir)
                 info(f"workspace updated to {ncd.new_sha[:12]} {pr.url}")
 
         enabled_reviewers = list(config.enabled_reviewers)

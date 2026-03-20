@@ -84,3 +84,9 @@ lightweight_review_timeout_seconds = 300
 # Optional prompt override TOML for reconciliation:
 # Built-in default template: src/code_reviewer/prompt_specs/reconcile.toml
 # reconcile_prompt_path = "./prompts/reconcile.toml"
+# Remote skills — GitHub tree URLs pointing to skill folders with SKILL.md.
+# Local skills in skills/ at project root are auto-discovered (no config needed).
+# skills = [
+#   "https://github.com/org/repo/tree/main/skills/security-review",
+#   "https://github.com/org/repo/tree/main/skills/perf-review",
+# ]
