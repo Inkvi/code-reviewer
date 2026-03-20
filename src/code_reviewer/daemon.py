@@ -60,12 +60,15 @@ async def _discovery_loop(
     shutdown: asyncio.Event,
     *,
     reload_config: Callable[[], AppConfig] | None = None,
+    live_config: list[AppConfig] | None = None,
 ) -> None:
     """Poll GitHub for PR candidates and enqueue new ones."""
     while not shutdown.is_set():
         if reload_config is not None:
             try:
                 config = reload_config()
+                if live_config is not None:
+                    live_config[0] = config
             except Exception as exc:  # noqa: BLE001
                 warn(f"Config reload failed, using previous config: {exc}")
         try:
@@ -95,7 +98,7 @@ async def _discovery_loop(
 
 
 async def _worker(
-    config: AppConfig,
+    live_config: list[AppConfig],
     preflight: PreflightResult,
     store: StateStore,
     queue: asyncio.Queue[PRCandidate | None],
@@ -103,7 +106,6 @@ async def _worker(
 ) -> None:
     """Pull PRs from the queue and process them."""
     client = GitHubClient(viewer_login=preflight.viewer_login)
-    workspace_mgr = PRWorkspace(Path(config.clone_root))
 
     while True:
         candidate = await queue.get()
@@ -111,8 +113,10 @@ async def _worker(
             queue.task_done()
             break
         try:
+            cfg = live_config[0]
+            workspace_mgr = PRWorkspace(Path(cfg.clone_root))
             result = await process_candidate(
-                config, client, store, workspace_mgr, candidate, verbose=False
+                cfg, client, store, workspace_mgr, candidate, verbose=False
             )
             info(f"Worker done: {candidate.key} status={result.status}")
         except Exception as exc:  # noqa: BLE001
@@ -221,20 +225,29 @@ async def start_daemon(
 
     queue: asyncio.Queue[PRCandidate | None] = asyncio.Queue()
     scheduled: set[str] = set()
+    live_config: list[AppConfig] = [config]
 
     workers = [
-        asyncio.create_task(_worker(config, preflight, store, queue, scheduled))
+        asyncio.create_task(_worker(live_config, preflight, store, queue, scheduled))
         for _ in range(config.max_parallel_prs)
     ]
 
-    await _discovery_loop(
-        config, preflight, store, queue, scheduled, shutdown, reload_config=reload_config
-    )
-
-    # Discovery stopped — send sentinels to drain workers
-    for _ in workers:
-        queue.put_nowait(None)
-    await asyncio.gather(*workers)
+    try:
+        await _discovery_loop(
+            config,
+            preflight,
+            store,
+            queue,
+            scheduled,
+            shutdown,
+            reload_config=reload_config,
+            live_config=live_config,
+        )
+    finally:
+        # Send sentinels to drain workers even on cancellation
+        for _ in workers:
+            queue.put_nowait(None)
+        await asyncio.gather(*workers, return_exceptions=True)
 
     info("Shutting down daemon")
 

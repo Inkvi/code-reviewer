@@ -115,7 +115,7 @@ def test_worker_processes_and_clears_scheduled(monkeypatch) -> None:
     queue.put_nowait(pr)
     queue.put_nowait(None)  # sentinel to stop the worker
 
-    asyncio.run(_worker(config, preflight, object(), queue, scheduled))
+    asyncio.run(_worker([config], preflight, object(), queue, scheduled))
 
     assert processed_keys == [pr.key]
     assert pr.key not in scheduled
@@ -138,7 +138,7 @@ def test_worker_clears_scheduled_on_exception(monkeypatch) -> None:
     queue.put_nowait(pr)
     queue.put_nowait(None)  # sentinel
 
-    asyncio.run(_worker(config, preflight, object(), queue, scheduled))
+    asyncio.run(_worker([config], preflight, object(), queue, scheduled))
 
     assert pr.key not in scheduled
 
