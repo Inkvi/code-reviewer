@@ -545,10 +545,15 @@ def test_discover_slash_command_candidates_disabled(monkeypatch) -> None:
 def test_create_pr_comment_returns_node_id(monkeypatch) -> None:
     client = GitHubClient(viewer_login="bot")
     pr = PRCandidate(
-        owner="org", repo="repo", number=1,
+        owner="org",
+        repo="repo",
+        number=1,
         url="https://github.com/org/repo/pull/1",
-        title="t", author_login="a", base_ref="main",
-        head_sha="abc123", updated_at="",
+        title="t",
+        author_login="a",
+        base_ref="main",
+        head_sha="abc123",
+        updated_at="",
     )
 
     captured: list[list[str]] = []

@@ -505,9 +505,11 @@ class GitHubClient:
         """Post a PR comment and return its GraphQL node ID."""
         result = run_json(
             [
-                "gh", "api",
+                "gh",
+                "api",
                 f"repos/{pr.owner}/{pr.repo}/issues/{pr.number}/comments",
-                "-f", f"body={body}",
+                "-f",
+                f"body={body}",
             ]
         )
         return result["node_id"]
@@ -521,12 +523,19 @@ class GitHubClient:
             "  }"
             "}"
         )
-        run_command([
-            "gh", "api", "graphql",
-            "-f", f"query={query}",
-            "-f", f"id={node_id}",
-            "-f", f"body={body}",
-        ])
+        run_command(
+            [
+                "gh",
+                "api",
+                "graphql",
+                "-f",
+                f"query={query}",
+                "-f",
+                f"id={node_id}",
+                "-f",
+                f"body={body}",
+            ]
+        )
 
     def submit_pr_review(
         self,

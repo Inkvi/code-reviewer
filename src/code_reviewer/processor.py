@@ -646,9 +646,7 @@ async def _run_reviewers_with_monitoring(
                     }.get(reviewer_name)
                     if output.status == "ok":
                         _circuit_record_success(reviewer_name, _reviewer_model)
-                        progress.set_reviewer_done(
-                            reviewer_name, output.duration_seconds
-                        )
+                        progress.set_reviewer_done(reviewer_name, output.duration_seconds)
                     elif output.error:
                         _circuit_record_failure(
                             reviewer_name, _reviewer_model, RuntimeError(output.error)
@@ -1192,9 +1190,7 @@ async def process_candidate(
         if triage_result == TriageResult.SIMPLE:
             progress.set_triage_done("lightweight")
         else:
-            progress.set_triage_done(
-                "full", enabled_reviewers=list(config.enabled_reviewers)
-            )
+            progress.set_triage_done("full", enabled_reviewers=list(config.enabled_reviewers))
         await progress.update()
 
         if triage_result == TriageResult.SIMPLE:
@@ -1231,9 +1227,7 @@ async def process_candidate(
                     claude_backend=config.claude_backend,
                 )
 
-                lightweight_duration = (
-                    datetime.now(UTC) - lightweight_start
-                ).total_seconds()
+                lightweight_duration = (datetime.now(UTC) - lightweight_start).total_seconds()
                 progress.set_review_done(lightweight_duration)
                 await progress.update()
             except PromptOverrideError:
