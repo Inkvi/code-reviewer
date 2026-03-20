@@ -542,6 +542,46 @@ def test_discover_slash_command_candidates_disabled(monkeypatch) -> None:
     assert len(candidates) == 0
 
 
+def test_create_pr_comment_returns_node_id(monkeypatch) -> None:
+    client = GitHubClient(viewer_login="bot")
+    pr = PRCandidate(
+        owner="org", repo="repo", number=1,
+        url="https://github.com/org/repo/pull/1",
+        title="t", author_login="a", base_ref="main",
+        head_sha="abc123", updated_at="",
+    )
+
+    captured: list[list[str]] = []
+
+    def fake_run_json(args, **_kwargs):
+        captured.append(args)
+        return {"node_id": "IC_abc123"}
+
+    monkeypatch.setattr("code_reviewer.github.run_json", fake_run_json)
+    node_id = client.create_pr_comment(pr, "hello")
+
+    assert node_id == "IC_abc123"
+    assert captured[0][:3] == ["gh", "api", "repos/org/repo/issues/1/comments"]
+
+
+def test_edit_pr_comment_calls_graphql(monkeypatch) -> None:
+    client = GitHubClient(viewer_login="bot")
+
+    captured: list[list[str]] = []
+
+    def fake_run_command(args, **_kwargs):
+        captured.append(args)
+        return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+    monkeypatch.setattr("code_reviewer.github.run_command", fake_run_command)
+    client.edit_pr_comment("IC_abc123", "updated body")
+
+    assert captured[0][:3] == ["gh", "api", "graphql"]
+    # The query arg is passed via -f query=...
+    query_args = " ".join(captured[0])
+    assert "updateIssueComment" in query_args
+
+
 def test_discover_slash_command_candidates_rejects_unauthorized_user(monkeypatch) -> None:
     """A non-org-member who is not the PR author should be ignored."""
     client = GitHubClient(viewer_login="Inkvi")
