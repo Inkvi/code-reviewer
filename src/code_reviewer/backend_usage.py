@@ -6,14 +6,63 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from code_reviewer.shell import run_json
+from code_reviewer.shell import run_command, run_json
 
-_SUPPORTED_BACKENDS = {"claude", "codex"}
+_SUPPORTED_BACKENDS = {"claude", "codex", "gemini"}
 _PREFERRED_LIMIT_ORDER = ("five_hour", "seven_day", "seven_day_sonnet", "seven_day_opus")
 _CODEX_LIMIT_MAP = {
     "primary": "five_hour",
     "secondary": "seven_day",
 }
+_GEMINI_AUTH_TYPE_MAP = {
+    "oauth-personal": "LOGIN_WITH_GOOGLE",
+    "compute-default-credentials": "COMPUTE_ADC",
+}
+_GEMINI_QUOTA_PROBE_SCRIPT = """
+import { pathToFileURL } from "node:url";
+
+const coreRoot = process.argv[1];
+const cwd = process.argv[2];
+const model = process.argv[3] || "gemini-3-flash-preview";
+const authTypeName = process.argv[4];
+const core = await import(pathToFileURL(coreRoot).href);
+const authType = core.AuthType[authTypeName];
+
+if (!authType) {
+  throw new Error(`Unsupported Gemini auth type: ${authTypeName}`);
+}
+
+const config = new core.Config({
+  usageStatisticsEnabled: true,
+  debugMode: false,
+  sessionId: "quota-probe",
+  proxy: undefined,
+  model,
+  targetDir: cwd,
+  cwd,
+});
+const client = await core.getOauthClient(authType, config);
+const userData = await core.setupUser(client, config.getValidationHandler?.(), {});
+const server = new core.CodeAssistServer(
+  client,
+  userData.projectId,
+  {},
+  "quota-probe",
+  userData.userTier,
+  userData.userTierName,
+  userData.paidTier,
+  config,
+);
+const quota = await server.retrieveUserQuota({ project: userData.projectId });
+
+console.log(JSON.stringify({
+  seenAt: new Date().toISOString(),
+  selectedModel: model,
+  authType: authTypeName,
+  userData,
+  quota,
+}));
+""".strip()
 
 
 @dataclass(slots=True)
@@ -94,6 +143,16 @@ def _parse_used_percent(value: object) -> float | None:
     return used_percent
 
 
+def _parse_remaining_fraction_used_percent(value: object) -> float | None:
+    if not isinstance(value, int | float):
+        return None
+    remaining_fraction = float(value)
+    if remaining_fraction < 0:
+        return None
+    remaining_fraction = min(1.0, remaining_fraction)
+    return max(0.0, (1.0 - remaining_fraction) * 100.0)
+
+
 def _format_dt(value: datetime | None) -> str:
     if value is None:
         return "unknown"
@@ -106,6 +165,10 @@ def _default_claude_support_dir() -> Path:
 
 def _default_codex_home() -> Path:
     return Path.home() / ".codex"
+
+
+def _default_gemini_home() -> Path:
+    return Path.home() / ".gemini"
 
 
 def _load_claude_account_type(
@@ -281,11 +344,190 @@ def _scan_codex_usage_snapshot(codex_home: Path) -> BackendUsageSnapshot:
     )
 
 
+def _load_gemini_settings(gemini_home: Path) -> tuple[str | None, str | None]:
+    settings_path = gemini_home / "settings.json"
+    try:
+        payload = json.loads(settings_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None, None
+
+    auth_type = payload.get("security", {}).get("auth", {}).get("selectedType")
+    model_name = payload.get("model", {}).get("name")
+    return (
+        model_name if isinstance(model_name, str) and model_name.strip() else None,
+        auth_type if isinstance(auth_type, str) and auth_type.strip() else None,
+    )
+
+
+def _find_gemini_core_module() -> Path:
+    candidates = (
+        Path(
+            "/opt/homebrew/opt/gemini-cli/libexec/lib/node_modules/@google/gemini-cli/"
+            "node_modules/@google/gemini-cli-core/dist/src/index.js"
+        ),
+        Path(
+            "/usr/local/opt/gemini-cli/libexec/lib/node_modules/@google/gemini-cli/"
+            "node_modules/@google/gemini-cli-core/dist/src/index.js"
+        ),
+    )
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+
+    search_roots = (
+        Path("/opt/homebrew/Cellar/gemini-cli"),
+        Path("/usr/local/Cellar/gemini-cli"),
+    )
+    for search_root in search_roots:
+        if not search_root.exists():
+            continue
+        matches = sorted(
+            search_root.glob(
+                "*/libexec/lib/node_modules/@google/gemini-cli/"
+                "node_modules/@google/gemini-cli-core/dist/src/index.js"
+            ),
+            reverse=True,
+        )
+        if matches:
+            return matches[0]
+
+    raise FileNotFoundError("Unable to locate the installed Gemini CLI core module.")
+
+
+def _load_gemini_quota_payload(
+    gemini_home: Path,
+    *,
+    quota_loader: Callable[[Path, str | None, str | None], object] | None = None,
+) -> tuple[object | None, str | None, str | None]:
+    selected_model, auth_type = _load_gemini_settings(gemini_home)
+    if auth_type not in _GEMINI_AUTH_TYPE_MAP:
+        return None, selected_model, auth_type
+
+    if quota_loader is not None:
+        return quota_loader(gemini_home, selected_model, auth_type), selected_model, auth_type
+
+    proc = run_command(
+        [
+            "node",
+            "--input-type=module",
+            "-e",
+            _GEMINI_QUOTA_PROBE_SCRIPT,
+            str(_find_gemini_core_module()),
+            str(Path.cwd()),
+            selected_model or "",
+            _GEMINI_AUTH_TYPE_MAP[auth_type],
+        ],
+        cwd=Path.cwd(),
+        timeout=30,
+    )
+    payload = None
+    for line in reversed(proc.stdout.splitlines()):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        try:
+            payload = json.loads(stripped)
+            break
+        except json.JSONDecodeError:
+            continue
+    if payload is None:
+        raise RuntimeError("Invalid JSON from Gemini quota probe.")
+    return payload, selected_model, auth_type
+
+
+def _scan_gemini_usage_snapshot(
+    gemini_home: Path,
+    *,
+    quota_loader: Callable[[Path, str | None, str | None], object] | None = None,
+) -> BackendUsageSnapshot:
+    latest_by_limit: dict[str, BackendUsageWindow] = {}
+    payload, selected_model, auth_type = _load_gemini_quota_payload(
+        gemini_home,
+        quota_loader=quota_loader,
+    )
+
+    if not isinstance(payload, dict):
+        return BackendUsageSnapshot(
+            backend="gemini",
+            events_scanned=0,
+            latest_by_limit=latest_by_limit,
+            account_type=auth_type,
+        )
+
+    user_data = payload.get("userData")
+    account_type = auth_type
+    if isinstance(user_data, dict):
+        user_tier_name = user_data.get("userTierName")
+        user_tier = user_data.get("userTier")
+        if isinstance(user_tier_name, str):
+            account_type = user_tier_name
+        elif isinstance(user_tier, str):
+            account_type = user_tier
+
+    quota = payload.get("quota")
+    buckets = quota.get("buckets") if isinstance(quota, dict) else None
+    if not isinstance(buckets, list):
+        return BackendUsageSnapshot(
+            backend="gemini",
+            events_scanned=0,
+            latest_by_limit=latest_by_limit,
+            account_type=account_type,
+        )
+
+    selected_bucket: dict[str, object] | None = None
+    for bucket in buckets:
+        if not isinstance(bucket, dict):
+            continue
+        if bucket.get("modelId") == selected_model:
+            selected_bucket = bucket
+            break
+    if selected_bucket is None:
+        for bucket in buckets:
+            if isinstance(bucket, dict) and isinstance(bucket.get("modelId"), str):
+                selected_bucket = bucket
+                break
+
+    seen_at = payload.get("seenAt")
+    model_id = selected_bucket.get("modelId") if isinstance(selected_bucket, dict) else None
+    if not isinstance(seen_at, str) or not isinstance(model_id, str):
+        return BackendUsageSnapshot(
+            backend="gemini",
+            events_scanned=0,
+            latest_by_limit=latest_by_limit,
+            account_type=account_type,
+        )
+
+    latest_by_limit[model_id] = BackendUsageWindow(
+        backend="gemini",
+        limit_key=model_id,
+        raw_limit_key=model_id,
+        seen_at=_parse_iso8601_utc(seen_at),
+        resets_at=(
+            _parse_iso8601_utc(selected_bucket["resetTime"])
+            if isinstance(selected_bucket.get("resetTime"), str)
+            else None
+        ),
+        used_percent=_parse_remaining_fraction_used_percent(
+            selected_bucket.get("remainingFraction")
+        ),
+        status="allowed",
+        source=gemini_home / "settings.json",
+    )
+
+    return BackendUsageSnapshot(
+        backend="gemini",
+        events_scanned=1,
+        latest_by_limit=latest_by_limit,
+        account_type=account_type,
+    )
+
+
 def load_backend_usage_snapshot(
     backend: str,
     support_dir: Path | None = None,
     *,
     auth_status_loader: Callable[[list[str]], object] | None = None,
+    gemini_quota_loader: Callable[[Path, str | None, str | None], object] | None = None,
 ) -> BackendUsageSnapshot:
     normalized = _normalize_backend_name(backend)
     if normalized == "claude":
@@ -293,7 +535,12 @@ def load_backend_usage_snapshot(
             support_dir or _default_claude_support_dir(),
             auth_status_loader=auth_status_loader,
         )
-    return _scan_codex_usage_snapshot(support_dir or _default_codex_home())
+    if normalized == "codex":
+        return _scan_codex_usage_snapshot(support_dir or _default_codex_home())
+    return _scan_gemini_usage_snapshot(
+        support_dir or _default_gemini_home(),
+        quota_loader=gemini_quota_loader,
+    )
 
 
 def _iter_sorted_windows(snapshot: BackendUsageSnapshot) -> Iterable[BackendUsageWindow]:
@@ -343,7 +590,7 @@ def decide_backend_usage(
     if not windows:
         return BackendUsageDecision(
             should_use_backend=False,
-            reason=f"No {backend_name} rate-limit events were found in local logs.",
+            reason=f"No {backend_name} usage data is available from local state or CLI signals.",
         )
 
     for window in windows:
@@ -431,11 +678,13 @@ def has_enough_backend_usage(
     support_dir: Path | None = None,
     now: datetime | None = None,
     auth_status_loader: Callable[[list[str]], object] | None = None,
+    gemini_quota_loader: Callable[[Path, str | None, str | None], object] | None = None,
 ) -> bool:
     usage_snapshot = snapshot or load_backend_usage_snapshot(
         backend,
         support_dir,
         auth_status_loader=auth_status_loader,
+        gemini_quota_loader=gemini_quota_loader,
     )
     decision = decide_backend_usage(
         usage_snapshot,
@@ -454,12 +703,14 @@ def ask_backend_usage_question(
     now: datetime | None = None,
     minimum_remaining_percent: float = 10.0,
     auth_status_loader: Callable[[list[str]], object] | None = None,
+    gemini_quota_loader: Callable[[Path, str | None, str | None], object] | None = None,
 ) -> BackendUsageAnswer:
     current_time = now or datetime.now(UTC)
     usage_snapshot = snapshot or load_backend_usage_snapshot(
         backend,
         support_dir,
         auth_status_loader=auth_status_loader,
+        gemini_quota_loader=gemini_quota_loader,
     )
     decision = decide_backend_usage(
         usage_snapshot,
@@ -472,7 +723,7 @@ def ask_backend_usage_question(
 
     if "reset" in normalized:
         if window is None:
-            answer = f"No {backend_name} rate-limit reset time is available from local logs."
+            answer = f"No {backend_name} rate-limit reset time is available from current signals."
         else:
             answer = (
                 f"The latest {backend_name} {window.limit_key} reset is "
@@ -480,7 +731,7 @@ def ask_backend_usage_question(
             )
     elif "left" in normalized or "remaining" in normalized:
         if window is None:
-            answer = f"No local {backend_name} usage data is available."
+            answer = f"No {backend_name} usage data is available from current signals."
         elif window.remaining_percent is not None:
             answer = (
                 f"About {window.remaining_percent:.0f}% remains in the current "
@@ -490,7 +741,7 @@ def ask_backend_usage_question(
         else:
             answer = (
                 f"Exact {backend_name} usage remaining is unknown. "
-                f"The latest local signal says {window.limit_key} "
+                f"The latest signal says {window.limit_key} "
                 f"is {window.status or 'present'} and resets at {_format_dt(window.resets_at)}."
             )
     elif "use" in normalized or "backend" in normalized or "can i" in normalized:
@@ -498,7 +749,7 @@ def ask_backend_usage_question(
         answer = f"{prefix}: {decision.reason}"
     else:
         if window is None:
-            answer = f"No {backend_name} usage data is available from local logs."
+            answer = f"No {backend_name} usage data is available from current signals."
         else:
             suffix = (
                 f", account_type={usage_snapshot.account_type}"
