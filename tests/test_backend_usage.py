@@ -207,7 +207,7 @@ def test_load_backend_usage_snapshot_reads_gemini_selected_model_quota(tmp_path:
     )
 
     assert snapshot.backend == "gemini"
-    assert snapshot.events_scanned == 1
+    assert snapshot.events_scanned == 2
     assert snapshot.account_type == "Gemini Code Assist in Google One AI Pro"
     assert round(snapshot.latest_by_limit["gemini-3-flash-preview"].used_percent or 0.0, 1) == 9.3
 

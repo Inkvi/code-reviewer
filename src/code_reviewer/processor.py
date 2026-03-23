@@ -7,6 +7,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
+from code_reviewer.backend_usage import (
+    BackendUsageSnapshot,
+    decide_backend_usage,
+    load_backend_usage_snapshot,
+)
 from code_reviewer.config import AppConfig
 from code_reviewer.github import GitHubClient
 from code_reviewer.logger import info, warn
@@ -53,6 +58,8 @@ DecisionReason = Literal[
     "no_new_trigger",
     "missing_rerequest_data",
 ]
+
+_MINIMUM_BACKEND_USAGE_PERCENT = 10.0
 
 
 @dataclass(slots=True)
@@ -195,6 +202,54 @@ def _start_claude_review_task(config: AppConfig, pr: PRCandidate, workdir: Path)
             prompt_path=config.full_review_prompt_path,
         )
     )
+
+
+def _usage_snapshot_for_model(
+    snapshot: BackendUsageSnapshot,
+    model: str | None,
+) -> BackendUsageSnapshot | None:
+    if snapshot.backend != "gemini" or not model:
+        return snapshot
+    window = snapshot.latest_by_limit.get(model)
+    if window is None:
+        return None
+    return BackendUsageSnapshot(
+        backend=snapshot.backend,
+        events_scanned=snapshot.events_scanned,
+        latest_by_limit={model: window},
+        account_type=snapshot.account_type,
+    )
+
+
+def _backend_has_available_usage(
+    backend: str,
+    model: str | None,
+) -> tuple[bool, str | None]:
+    backend_name = backend.capitalize()
+    try:
+        snapshot = load_backend_usage_snapshot(backend)
+    except Exception as exc:  # noqa: BLE001
+        info(f"{backend_name} usage check unavailable ({exc})")
+        return True, None
+
+    if not snapshot.latest_by_limit:
+        return True, None
+
+    relevant_snapshot = _usage_snapshot_for_model(snapshot, model)
+    if relevant_snapshot is None:
+        info(
+            f"{backend_name} usage check unavailable for configured model "
+            f"{model}; proceeding without quota gating"
+        )
+        return True, None
+
+    decision = decide_backend_usage(
+        relevant_snapshot,
+        minimum_remaining_percent=_MINIMUM_BACKEND_USAGE_PERCENT,
+    )
+    if not decision.should_use_backend:
+        return False, decision.reason
+    return True, None
 
 
 def _resolve_reconciler_settings(
@@ -543,13 +598,18 @@ async def _run_reviewers_with_monitoring(
             warn(f"skipping Claude review (circuit open: {reason}) {pr.url}")
             progress.set_reviewer_skipped("claude")
         else:
-            info(
-                f"starting Claude review "
-                f"(backend={config.claude_backend}, model={config.claude_model or 'default'}, "
-                f"effort={config.claude_reasoning_effort or 'default'}) {pr.url}"
-            )
-            pending_tasks["claude"] = _start_claude_review_task(config, pr, workdir)
-            progress.set_reviewer_started("claude")
+            allowed, usage_reason = _backend_has_available_usage("claude", config.claude_model)
+            if not allowed:
+                warn(f"skipping Claude review (usage gate: {usage_reason}) {pr.url}")
+                progress.set_reviewer_skipped("claude")
+            else:
+                info(
+                    f"starting Claude review "
+                    f"(backend={config.claude_backend}, model={config.claude_model or 'default'}, "
+                    f"effort={config.claude_reasoning_effort or 'default'}) {pr.url}"
+                )
+                pending_tasks["claude"] = _start_claude_review_task(config, pr, workdir)
+                progress.set_reviewer_started("claude")
     else:
         info(f"Claude reviewer disabled {pr.url}")
 
@@ -559,13 +619,18 @@ async def _run_reviewers_with_monitoring(
             warn(f"skipping Codex review (circuit open: {reason}) {pr.url}")
             progress.set_reviewer_skipped("codex")
         else:
-            info(
-                f"starting Codex review "
-                f"(backend={config.codex_backend}, model={config.codex_model}, "
-                f"effort={config.codex_reasoning_effort or 'default'}) {pr.url}"
-            )
-            pending_tasks["codex"] = _start_codex_review_task(config, pr, workdir)
-            progress.set_reviewer_started("codex")
+            allowed, usage_reason = _backend_has_available_usage("codex", config.codex_model)
+            if not allowed:
+                warn(f"skipping Codex review (usage gate: {usage_reason}) {pr.url}")
+                progress.set_reviewer_skipped("codex")
+            else:
+                info(
+                    f"starting Codex review "
+                    f"(backend={config.codex_backend}, model={config.codex_model}, "
+                    f"effort={config.codex_reasoning_effort or 'default'}) {pr.url}"
+                )
+                pending_tasks["codex"] = _start_codex_review_task(config, pr, workdir)
+                progress.set_reviewer_started("codex")
     else:
         info(f"Codex reviewer disabled {pr.url}")
 
@@ -575,17 +640,22 @@ async def _run_reviewers_with_monitoring(
             warn(f"skipping Gemini review (circuit open: {reason}) {pr.url}")
             progress.set_reviewer_skipped("gemini")
         else:
-            info(f"starting Gemini review (model={config.gemini_model or 'default'}) {pr.url}")
-            pending_tasks["gemini"] = asyncio.create_task(
-                run_gemini_review(
-                    pr,
-                    workdir,
-                    config.gemini_timeout_seconds,
-                    model=config.gemini_model,
-                    prompt_path=config.full_review_prompt_path,
+            allowed, usage_reason = _backend_has_available_usage("gemini", config.gemini_model)
+            if not allowed:
+                warn(f"skipping Gemini review (usage gate: {usage_reason}) {pr.url}")
+                progress.set_reviewer_skipped("gemini")
+            else:
+                info(f"starting Gemini review (model={config.gemini_model or 'default'}) {pr.url}")
+                pending_tasks["gemini"] = asyncio.create_task(
+                    run_gemini_review(
+                        pr,
+                        workdir,
+                        config.gemini_timeout_seconds,
+                        model=config.gemini_model,
+                        prompt_path=config.full_review_prompt_path,
+                    )
                 )
-            )
-            progress.set_reviewer_started("gemini")
+                progress.set_reviewer_started("gemini")
     else:
         info(f"Gemini reviewer disabled {pr.url}")
 
@@ -747,39 +817,51 @@ async def _run_local_reviewers(
         if opened:
             warn(f"skipping Claude review (circuit open: {reason})")
         else:
-            info(
-                f"starting Claude review "
-                f"(backend={config.claude_backend}, model={config.claude_model or 'default'}, "
-                f"effort={config.claude_reasoning_effort or 'default'})"
-            )
-            pending_tasks["claude"] = _start_claude_review_task(config, pr, workdir)
+            allowed, usage_reason = _backend_has_available_usage("claude", config.claude_model)
+            if not allowed:
+                warn(f"skipping Claude review (usage gate: {usage_reason})")
+            else:
+                info(
+                    f"starting Claude review "
+                    f"(backend={config.claude_backend}, model={config.claude_model or 'default'}, "
+                    f"effort={config.claude_reasoning_effort or 'default'})"
+                )
+                pending_tasks["claude"] = _start_claude_review_task(config, pr, workdir)
 
     if "codex" in enabled_reviewer_set:
         opened, reason = _circuit_is_open("codex", config.codex_model)
         if opened:
             warn(f"skipping Codex review (circuit open: {reason})")
         else:
-            info(
-                f"starting Codex review "
-                f"(backend={config.codex_backend}, model={config.codex_model})"
-            )
-            pending_tasks["codex"] = _start_codex_review_task(config, pr, workdir)
+            allowed, usage_reason = _backend_has_available_usage("codex", config.codex_model)
+            if not allowed:
+                warn(f"skipping Codex review (usage gate: {usage_reason})")
+            else:
+                info(
+                    f"starting Codex review "
+                    f"(backend={config.codex_backend}, model={config.codex_model})"
+                )
+                pending_tasks["codex"] = _start_codex_review_task(config, pr, workdir)
 
     if "gemini" in enabled_reviewer_set:
         opened, reason = _circuit_is_open("gemini", config.gemini_model)
         if opened:
             warn(f"skipping Gemini review (circuit open: {reason})")
         else:
-            info(f"starting Gemini review (model={config.gemini_model or 'default'})")
-            pending_tasks["gemini"] = asyncio.create_task(
-                run_gemini_review(
-                    pr,
-                    workdir,
-                    config.gemini_timeout_seconds,
-                    model=config.gemini_model,
-                    prompt_path=config.full_review_prompt_path,
+            allowed, usage_reason = _backend_has_available_usage("gemini", config.gemini_model)
+            if not allowed:
+                warn(f"skipping Gemini review (usage gate: {usage_reason})")
+            else:
+                info(f"starting Gemini review (model={config.gemini_model or 'default'})")
+                pending_tasks["gemini"] = asyncio.create_task(
+                    run_gemini_review(
+                        pr,
+                        workdir,
+                        config.gemini_timeout_seconds,
+                        model=config.gemini_model,
+                        prompt_path=config.full_review_prompt_path,
+                    )
                 )
-            )
 
     reviewer_outputs: dict[str, ReviewerOutput] = {}
     while pending_tasks:
