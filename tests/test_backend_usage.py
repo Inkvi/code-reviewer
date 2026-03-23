@@ -79,6 +79,41 @@ def _codex_event(
     }
 
 
+def _gemini_quota_payload(
+    *,
+    seen_at: str = "2026-03-23T18:44:11Z",
+    selected_model: str = "gemini-3-flash-preview",
+    auth_type: str = "oauth-personal",
+    tier_name: str = "Gemini Code Assist in Google One AI Pro",
+) -> dict:
+    return {
+        "seenAt": seen_at,
+        "selectedModel": selected_model,
+        "authType": auth_type,
+        "userData": {
+            "projectId": "augmented-element-p5ctx",
+            "userTier": "g1-pro-tier",
+            "userTierName": tier_name,
+        },
+        "quota": {
+            "buckets": [
+                {
+                    "resetTime": "2026-03-24T17:44:11Z",
+                    "tokenType": "REQUESTS",
+                    "modelId": "gemini-3-flash-preview",
+                    "remainingFraction": 0.907,
+                },
+                {
+                    "resetTime": "2026-03-24T17:44:33Z",
+                    "tokenType": "REQUESTS",
+                    "modelId": "gemini-3-pro-preview",
+                    "remainingFraction": 0.9266667,
+                },
+            ]
+        },
+    }
+
+
 def test_load_backend_usage_snapshot_reads_latest_claude_event_per_limit(tmp_path: Path) -> None:
     support_dir = tmp_path / "Claude"
     _write_jsonl(
@@ -147,6 +182,55 @@ def test_load_backend_usage_snapshot_reads_codex_primary_and_secondary(tmp_path:
     assert snapshot.latest_by_limit["five_hour"].used_percent == 27.0
     assert snapshot.latest_by_limit["seven_day"].raw_limit_key == "secondary"
     assert snapshot.latest_by_limit["seven_day"].used_percent == 58.0
+
+
+def test_load_backend_usage_snapshot_reads_gemini_selected_model_quota(tmp_path: Path) -> None:
+    gemini_home = tmp_path / ".gemini"
+    gemini_home.mkdir()
+    (gemini_home / "settings.json").write_text(
+        json.dumps(
+            {
+                "security": {"auth": {"selectedType": "oauth-personal"}},
+                "model": {"name": "gemini-3-flash-preview"},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    snapshot = load_backend_usage_snapshot(
+        "gemini",
+        gemini_home,
+        gemini_quota_loader=lambda home, model, auth: _gemini_quota_payload(
+            selected_model=model or "gemini-3-flash-preview",
+            auth_type=auth or "oauth-personal",
+        ),
+    )
+
+    assert snapshot.backend == "gemini"
+    assert snapshot.events_scanned == 1
+    assert snapshot.account_type == "Gemini Code Assist in Google One AI Pro"
+    assert round(snapshot.latest_by_limit["gemini-3-flash-preview"].used_percent or 0.0, 1) == 9.3
+
+
+def test_load_backend_usage_snapshot_handles_unsupported_gemini_auth(tmp_path: Path) -> None:
+    gemini_home = tmp_path / ".gemini"
+    gemini_home.mkdir()
+    (gemini_home / "settings.json").write_text(
+        json.dumps(
+            {
+                "security": {"auth": {"selectedType": "gemini-api-key"}},
+                "model": {"name": "gemini-3-flash-preview"},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    snapshot = load_backend_usage_snapshot("gemini", gemini_home)
+
+    assert snapshot.backend == "gemini"
+    assert snapshot.events_scanned == 0
+    assert snapshot.latest_by_limit == {}
+    assert snapshot.account_type == "gemini-api-key"
 
 
 def test_decide_backend_usage_rejects_active_exhausted_window() -> None:
@@ -280,6 +364,33 @@ def test_ask_backend_usage_question_reports_codex_remaining_percent() -> None:
 
     assert "73% remains" in answer.answer
     assert answer.decision.should_use_backend is True
+
+
+def test_has_enough_backend_usage_accepts_gemini_current_model_quota(tmp_path: Path) -> None:
+    gemini_home = tmp_path / ".gemini"
+    gemini_home.mkdir()
+    (gemini_home / "settings.json").write_text(
+        json.dumps(
+            {
+                "security": {"auth": {"selectedType": "oauth-personal"}},
+                "model": {"name": "gemini-3-flash-preview"},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert (
+        has_enough_backend_usage(
+            "gemini",
+            support_dir=gemini_home,
+            minimum_remaining_percent=10.0,
+            gemini_quota_loader=lambda home, model, auth: _gemini_quota_payload(
+                selected_model=model or "gemini-3-flash-preview",
+                auth_type=auth or "oauth-personal",
+            ),
+        )
+        is True
+    )
 
 
 def test_ask_backend_usage_question_answers_claude_backend_decision() -> None:
