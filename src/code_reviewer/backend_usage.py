@@ -474,22 +474,8 @@ def _scan_gemini_usage_snapshot(
             account_type=account_type,
         )
 
-    selected_bucket: dict[str, object] | None = None
-    for bucket in buckets:
-        if not isinstance(bucket, dict):
-            continue
-        if bucket.get("modelId") == selected_model:
-            selected_bucket = bucket
-            break
-    if selected_bucket is None:
-        for bucket in buckets:
-            if isinstance(bucket, dict) and isinstance(bucket.get("modelId"), str):
-                selected_bucket = bucket
-                break
-
     seen_at = payload.get("seenAt")
-    model_id = selected_bucket.get("modelId") if isinstance(selected_bucket, dict) else None
-    if not isinstance(seen_at, str) or not isinstance(model_id, str):
+    if not isinstance(seen_at, str):
         return BackendUsageSnapshot(
             backend="gemini",
             events_scanned=0,
@@ -497,26 +483,47 @@ def _scan_gemini_usage_snapshot(
             account_type=account_type,
         )
 
-    latest_by_limit[model_id] = BackendUsageWindow(
-        backend="gemini",
-        limit_key=model_id,
-        raw_limit_key=model_id,
-        seen_at=_parse_iso8601_utc(seen_at),
-        resets_at=(
-            _parse_iso8601_utc(selected_bucket["resetTime"])
-            if isinstance(selected_bucket.get("resetTime"), str)
-            else None
-        ),
-        used_percent=_parse_remaining_fraction_used_percent(
-            selected_bucket.get("remainingFraction")
-        ),
-        status="allowed",
-        source=gemini_home / "settings.json",
-    )
+    ordered_buckets: list[dict[str, object]] = []
+    for bucket in buckets:
+        if isinstance(bucket, dict) and bucket.get("modelId") == selected_model:
+            ordered_buckets.append(bucket)
+    for bucket in buckets:
+        if not isinstance(bucket, dict):
+            continue
+        if bucket in ordered_buckets:
+            continue
+        ordered_buckets.append(bucket)
+
+    for bucket in ordered_buckets:
+        model_id = bucket.get("modelId")
+        if not isinstance(model_id, str):
+            continue
+        latest_by_limit[model_id] = BackendUsageWindow(
+            backend="gemini",
+            limit_key=model_id,
+            raw_limit_key=model_id,
+            seen_at=_parse_iso8601_utc(seen_at),
+            resets_at=(
+                _parse_iso8601_utc(bucket["resetTime"])
+                if isinstance(bucket.get("resetTime"), str)
+                else None
+            ),
+            used_percent=_parse_remaining_fraction_used_percent(bucket.get("remainingFraction")),
+            status="allowed",
+            source=gemini_home / "settings.json",
+        )
+
+    if not latest_by_limit:
+        return BackendUsageSnapshot(
+            backend="gemini",
+            events_scanned=0,
+            latest_by_limit=latest_by_limit,
+            account_type=account_type,
+        )
 
     return BackendUsageSnapshot(
         backend="gemini",
-        events_scanned=1,
+        events_scanned=len(latest_by_limit),
         latest_by_limit=latest_by_limit,
         account_type=account_type,
     )

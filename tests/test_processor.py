@@ -2,15 +2,18 @@ import asyncio
 from datetime import UTC, datetime
 from pathlib import Path
 
+from code_reviewer.backend_usage import BackendUsageSnapshot, BackendUsageWindow
 from code_reviewer.config import AppConfig
 from code_reviewer.github import GitHubClient
 from code_reviewer.models import PRCandidate, ProcessedState, ReviewerOutput
 from code_reviewer.processor import (
+    _backend_has_available_usage,
     _check_pr_head_changed,
     _compute_processing_decision,
     _extract_injection_section,
     _NewCommitDetected,
     _resolve_reconciler_settings,
+    _run_local_reviewers,
     _run_reviewers_with_monitoring,
     _single_reviewer_final_review,
     _start_claude_review_task,
@@ -325,6 +328,110 @@ def test_resolve_reconciler_settings_multi_backend_timeouts() -> None:
 
     assert backends == ["claude", "gemini"]
     assert backend_timeouts == {"claude": 900, "gemini": 600}
+
+
+def test_backend_has_available_usage_rejects_low_codex_usage(monkeypatch) -> None:
+    now = datetime(2026, 3, 23, 6, 30, tzinfo=UTC)
+    snapshot = BackendUsageSnapshot(
+        backend="codex",
+        events_scanned=1,
+        latest_by_limit={
+            "five_hour": BackendUsageWindow(
+                backend="codex",
+                limit_key="five_hour",
+                raw_limit_key="primary",
+                seen_at=now,
+                resets_at=now,
+                used_percent=96.0,
+                status=None,
+                source=Path("/tmp/codex.jsonl"),
+            )
+        },
+    )
+    monkeypatch.setattr(
+        "code_reviewer.processor.load_backend_usage_snapshot",
+        lambda backend: snapshot,
+    )
+
+    allowed, reason = _backend_has_available_usage("codex", None)
+
+    assert allowed is False
+    assert reason is not None
+    assert "4% < 10%" in reason
+
+
+def test_backend_has_available_usage_uses_configured_gemini_model_bucket(monkeypatch) -> None:
+    now = datetime(2026, 3, 23, 6, 30, tzinfo=UTC)
+    snapshot = BackendUsageSnapshot(
+        backend="gemini",
+        events_scanned=2,
+        latest_by_limit={
+            "gemini-3-flash-preview": BackendUsageWindow(
+                backend="gemini",
+                limit_key="gemini-3-flash-preview",
+                raw_limit_key="gemini-3-flash-preview",
+                seen_at=now,
+                resets_at=now,
+                used_percent=10.0,
+                status="allowed",
+                source=Path("/tmp/gemini-settings.json"),
+            ),
+            "gemini-3.1-pro-preview": BackendUsageWindow(
+                backend="gemini",
+                limit_key="gemini-3.1-pro-preview",
+                raw_limit_key="gemini-3.1-pro-preview",
+                seen_at=now,
+                resets_at=now,
+                used_percent=96.0,
+                status="allowed",
+                source=Path("/tmp/gemini-settings.json"),
+            ),
+        },
+    )
+    monkeypatch.setattr(
+        "code_reviewer.processor.load_backend_usage_snapshot",
+        lambda backend: snapshot,
+    )
+
+    allowed, reason = _backend_has_available_usage("gemini", "gemini-3.1-pro-preview")
+
+    assert allowed is False
+    assert reason is not None
+    assert "gemini-3.1-pro-preview" in reason
+
+
+def test_backend_has_available_usage_allows_when_signal_unavailable(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "code_reviewer.processor.load_backend_usage_snapshot",
+        lambda backend: (_ for _ in ()).throw(RuntimeError("probe failed")),
+    )
+
+    allowed, reason = _backend_has_available_usage("gemini", "gemini-3.1-pro-preview")
+
+    assert allowed is True
+    assert reason is None
+
+
+def test_run_local_reviewers_skips_backend_when_usage_gate_blocks(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(
+        "code_reviewer.processor._circuit_is_open",
+        lambda backend, model: (False, None),
+    )
+    monkeypatch.setattr(
+        "code_reviewer.processor._backend_has_available_usage",
+        lambda backend, model: (False, "usage too low"),
+    )
+    monkeypatch.setattr(
+        "code_reviewer.processor.run_codex_review",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("codex review should not start when usage is low")
+        ),
+    )
+
+    cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["codex"])
+    outputs = asyncio.run(_run_local_reviewers(cfg, _sample_pr(), tmp_path))
+
+    assert outputs == {}
 
 
 def test_compute_processing_decision_bootstrap_state() -> None:
