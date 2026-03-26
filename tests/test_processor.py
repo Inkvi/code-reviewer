@@ -1627,6 +1627,72 @@ def test_auto_reuse_saved_review_on_submission_failed(monkeypatch, tmp_path) -> 
     assert len(submitted_reviews) == 1
 
 
+def test_all_backends_failed_does_not_approve(monkeypatch, tmp_path) -> None:
+    """When all reviewer backends fail, review_decision must be None (no approval)."""
+    store = DummyStore()
+    workspace = DummyWorkspace(tmp_path)
+    client = GitHubClient(viewer_login="Inkvi")
+    monkeypatch.setattr(GitHubClient, "add_eyes_reaction", lambda _self, _pr: None)
+    _mock_triage_full_review(monkeypatch)
+
+    now = datetime.now(UTC)
+    failed_output = ReviewerOutput(
+        reviewer="codex",
+        status="error",
+        markdown="",
+        stdout="",
+        stderr="error",
+        error="backend crashed",
+        started_at=now,
+        ended_at=now,
+    )
+
+    async def fake_codex(
+        _pr, _workdir, _timeout, *, model=None, reasoning_effort=None, prompt_path=None
+    ):
+        return failed_output
+
+    monkeypatch.setattr("code_reviewer.processor.run_codex_review", fake_codex)
+
+    submitted_reviews: list[str] = []
+    monkeypatch.setattr(
+        GitHubClient,
+        "submit_pr_review",
+        lambda _self, _pr, body_file, decision: submitted_reviews.append(decision),
+    )
+    posted_comments: list[str] = []
+    monkeypatch.setattr(
+        GitHubClient,
+        "post_pr_comment",
+        lambda _self, _pr, body_file: posted_comments.append(body_file),
+    )
+    monkeypatch.setattr(
+        "code_reviewer.processor.write_review_markdown",
+        lambda *_args, **_kwargs: tmp_path / "out.md",
+    )
+    monkeypatch.setattr(
+        "code_reviewer.processor.write_stage_markdown",
+        lambda *_args, **_kwargs: tmp_path / "out.stage.md",
+    )
+    monkeypatch.setattr(
+        "code_reviewer.processor.write_review_meta",
+        lambda *_args, **_kwargs: None,
+    )
+
+    cfg = AppConfig(
+        github_orgs=["polymerdao"],
+        enabled_reviewers=["codex"],
+        auto_submit_review_decision=True,
+    )
+    (tmp_path / "out.md").write_text("### Findings\n- All reviewer backends failed.\n")
+    result = asyncio.run(process_candidate(cfg, client, store, workspace, _sample_pr()))
+
+    assert result.processed is True
+    assert result.review_decision is None
+    assert len(submitted_reviews) == 0, "should NOT submit an approval when all backends failed"
+    assert len(posted_comments) == 1, "should post as comment instead"
+
+
 def test_error_handler_saves_output_file_when_exists(monkeypatch, tmp_path) -> None:
     """When review is written but publish fails, error handler saves last_output_file."""
     store = DummyStore()

@@ -32,7 +32,7 @@ from code_reviewer.output import (
 from code_reviewer.progress import ProgressComment
 from code_reviewer.prompts import PromptBundle, PromptOverrideError, format_prompt_bundle
 from code_reviewer.repos import fetch_remote_skills
-from code_reviewer.review_decision import infer_review_decision
+from code_reviewer.review_decision import ReviewDecision, infer_review_decision
 from code_reviewer.reviewers import (
     TriageResult,
     reconcile_reviews,
@@ -485,19 +485,18 @@ def _publish_and_persist(
     store: StateStore,
     pr: PRCandidate,
     output_path: Path,
-    review_text_for_decision: str,
+    review_decision: ReviewDecision | None,
     status_when_not_posted: str,
     previous: ProcessedState,
 ) -> None:
     posted_at = None
     status = status_when_not_posted
-    if config.auto_submit_review_decision:
-        decision = infer_review_decision(review_text_for_decision)
-        info(f"submitting PR review decision={decision} {pr.url}")
+    if config.auto_submit_review_decision and review_decision is not None:
+        info(f"submitting PR review decision={review_decision} {pr.url}")
         try:
-            client.submit_pr_review(pr, str(output_path), decision)
+            client.submit_pr_review(pr, str(output_path), review_decision)
             posted_at = ProcessedState.now_iso()
-            status = "approved" if decision == "approve" else "changes_requested"
+            status = "approved" if review_decision == "approve" else "changes_requested"
             info(f"submitted PR review ({status}) {pr.url}")
         except CommandError as exc:
             exc_str = str(exc)
@@ -517,8 +516,13 @@ def _publish_and_persist(
             else:
                 warn(f"failed to submit review: {exc} {pr.url}")
                 status = "submission_failed"
-    elif config.auto_post_review:
-        info(f"posting review comment to GitHub {pr.url}")
+    elif config.auto_post_review or (
+        config.auto_submit_review_decision and review_decision is None
+    ):
+        if review_decision is None:
+            info(f"no review decision (backends failed), posting as comment {pr.url}")
+        else:
+            info(f"posting review comment to GitHub {pr.url}")
         try:
             client.post_pr_comment(pr, str(output_path))
             posted_at = ProcessedState.now_iso()
@@ -1048,7 +1052,7 @@ async def process_local_review(
 
         _log_token_usage(active_outputs, reconciler_usage, pr.url)
 
-        review_decision = infer_review_decision(final_review) if final_review else None
+        review_decision = infer_review_decision(final_review) if ok_outputs else None
         return ProcessingResult(
             processed=True,
             pr_url=pr.url,
@@ -1113,9 +1117,10 @@ async def process_candidate(
                 status="skipped_missing_saved_review",
             )
         detail(f"using saved review file ({saved_review_path}) {pr.url}")
-        review_text_for_decision = await asyncio.to_thread(
+        saved_review_text = await asyncio.to_thread(
             saved_review_path.read_text, encoding="utf-8"
         )
+        saved_decision = infer_review_decision(saved_review_text)
         await asyncio.to_thread(
             _publish_and_persist,
             config,
@@ -1123,7 +1128,7 @@ async def process_candidate(
             store,
             pr,
             saved_review_path,
-            review_text_for_decision,
+            saved_decision,
             status_when_not_posted="reused_saved_review",
             previous=previous,
         )
@@ -1133,7 +1138,7 @@ async def process_candidate(
             pr_url=pr.url,
             pr_key=pr.key,
             status="reused_saved_review",
-            final_review=review_text_for_decision,
+            final_review=saved_review_text,
             output_file=str(saved_review_path.resolve()),
         )
 
@@ -1148,6 +1153,7 @@ async def process_candidate(
         if saved_path.exists():
             info(f"reusing previously generated review (submission retry) {pr.url}")
             review_text = await asyncio.to_thread(saved_path.read_text, encoding="utf-8")
+            retry_decision = infer_review_decision(review_text)
             await asyncio.to_thread(
                 _publish_and_persist,
                 config,
@@ -1155,7 +1161,7 @@ async def process_candidate(
                 store,
                 pr,
                 saved_path,
-                review_text,
+                retry_decision,
                 status_when_not_posted="reused_saved_review",
                 previous=previous,
             )
@@ -1384,7 +1390,7 @@ async def process_candidate(
                 store,
                 pr,
                 output_path,
-                lightweight_text,
+                infer_review_decision(lightweight_text),
                 status_when_not_posted="lightweight_generated",
                 previous=previous,
             )
@@ -1590,6 +1596,7 @@ async def process_candidate(
             )
         info(f"Final review ready: {output_path.resolve()}")
 
+        review_decision = infer_review_decision(final_review) if ok_outputs else None
         await asyncio.to_thread(
             _publish_and_persist,
             config,
@@ -1597,12 +1604,11 @@ async def process_candidate(
             store,
             pr,
             output_path,
-            final_review,
+            review_decision,
             status_when_not_posted="generated",
             previous=previous,
         )
         info(f"processing complete {pr.url}")
-        review_decision = infer_review_decision(final_review) if final_review else None
         return ProcessingResult(
             processed=True,
             pr_url=pr.url,
