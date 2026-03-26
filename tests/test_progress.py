@@ -114,6 +114,21 @@ def test_render_reason_multiline_uses_first_line():
     assert "second line" not in text
 
 
+def test_render_reason_extracts_error_class():
+    pc = ProgressComment(FakeClient(), FakePR())
+    pc.set_triage_done("full", enabled_reviewers=["gemini"])
+    error = (
+        "gemini exited with status 1: Error when talking to Gemini API "
+        "Full report available at: /tmp/gemini-client-error.json "
+        "TerminalQuotaError: You have exhausted your capacity. Resets after 17h59m42s."
+    )
+    pc.set_reviewer_failed("gemini", error)
+    text = pc.render()
+    assert "TerminalQuotaError:" in text
+    assert "Resets after 17h59m42s" in text
+    assert "/tmp/gemini-client-error.json" not in text
+
+
 def test_render_reconciliation_skipped():
     pc = ProgressComment(FakeClient(), FakePR())
     pc.set_triage_done("full", enabled_reviewers=["claude", "codex"])

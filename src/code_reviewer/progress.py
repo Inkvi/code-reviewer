@@ -18,12 +18,18 @@ class _Stage:
         self.detail = detail
 
 
-_MAX_REASON_LEN = 80
+_MAX_REASON_LEN = 120
+
+_ERROR_CLASS_RE = __import__("re").compile(r"\w+Error: .+")
 
 
 def _truncate(text: str) -> str:
-    """Collapse to first line and truncate for table display."""
+    """Extract the most informative part of an error for table display."""
     first_line = text.split("\n", 1)[0].strip()
+    # Prefer a recognized error class near the end (e.g., "TerminalQuotaError: ...")
+    match = _ERROR_CLASS_RE.search(first_line)
+    if match:
+        first_line = match.group(0)
     if len(first_line) > _MAX_REASON_LEN:
         return first_line[:_MAX_REASON_LEN] + "…"
     return first_line
