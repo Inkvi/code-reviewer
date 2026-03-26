@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import platform
 import threading
 from pathlib import Path
 
@@ -16,16 +17,21 @@ class StateStore:
         self._owns_lock = False
         self._mutex = threading.Lock()
 
-    def _read_lock_pid(self) -> int | None:
+    def _read_lock_info(self) -> tuple[int | None, str | None]:
+        """Return (pid, hostname) from lock file, or (None, None) if unreadable."""
         if not self.lock_path.exists():
-            return None
+            return None, None
         raw = self.lock_path.read_text(encoding="utf-8").strip()
         if not raw:
-            return None
+            return None, None
+        # Format: "pid\nhostname" or legacy "pid"
+        parts = raw.split("\n", 1)
         try:
-            return int(raw)
+            pid = int(parts[0])
         except ValueError:
-            return None
+            return None, None
+        hostname = parts[1].strip() if len(parts) > 1 else None
+        return pid, hostname
 
     def _is_pid_running(self, pid: int) -> bool:
         if pid <= 0:
@@ -38,6 +44,12 @@ class StateStore:
             return True
         return True
 
+    def _is_lock_holder_alive(self, pid: int, hostname: str | None) -> bool:
+        """Check if the lock holder is still alive on this host."""
+        if hostname is not None and hostname != platform.node():
+            return False
+        return self._is_pid_running(pid)
+
     def acquire_lock(self) -> None:
         self.lock_path.parent.mkdir(parents=True, exist_ok=True)
         flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
@@ -45,8 +57,8 @@ class StateStore:
             try:
                 fd = os.open(self.lock_path, flags)
             except FileExistsError as exc:
-                lock_pid = self._read_lock_pid()
-                if lock_pid is not None and self._is_pid_running(lock_pid):
+                lock_pid, lock_host = self._read_lock_info()
+                if lock_pid is not None and self._is_lock_holder_alive(lock_pid, lock_host):
                     raise RuntimeError(
                         f"Another daemon appears active (pid {lock_pid}): {self.lock_path}"
                     ) from exc
@@ -58,7 +70,7 @@ class StateStore:
                     ) from unlink_exc
                 continue
             with os.fdopen(fd, "w", encoding="utf-8") as handle:
-                handle.write(f"{os.getpid()}\n")
+                handle.write(f"{os.getpid()}\n{platform.node()}\n")
             self._owns_lock = True
             return
         raise RuntimeError(f"Unable to acquire lock: {self.lock_path}")
@@ -66,7 +78,7 @@ class StateStore:
     def release_lock(self) -> None:
         if not self._owns_lock:
             return
-        lock_pid = self._read_lock_pid()
+        lock_pid, _ = self._read_lock_info()
         if lock_pid is None or lock_pid == os.getpid():
             self.lock_path.unlink(missing_ok=True)
         self._owns_lock = False

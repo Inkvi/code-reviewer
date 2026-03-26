@@ -1,4 +1,5 @@
 import os
+import platform
 from pathlib import Path
 
 import pytest
@@ -95,7 +96,9 @@ def test_acquire_lock_removes_stale_lock(tmp_path: Path, monkeypatch: pytest.Mon
 
     store.acquire_lock()
     try:
-        assert store.lock_path.read_text(encoding="utf-8").strip() == str(os.getpid())
+        lines = store.lock_path.read_text(encoding="utf-8").strip().split("\n")
+        assert lines[0] == str(os.getpid())
+        assert lines[1] == platform.node()
     finally:
         store.release_lock()
     assert not store.lock_path.exists()
@@ -105,8 +108,43 @@ def test_acquire_lock_live_pid_raises(tmp_path: Path, monkeypatch: pytest.Monkey
     state_path = tmp_path / "state.json"
     store = StateStore(state_path)
     store.lock_path.parent.mkdir(parents=True, exist_ok=True)
-    store.lock_path.write_text("123\n", encoding="utf-8")
+    store.lock_path.write_text(f"123\n{platform.node()}\n", encoding="utf-8")
     monkeypatch.setattr(store, "_is_pid_running", lambda _pid: True)
 
     with pytest.raises(RuntimeError, match="pid 123"):
         store.acquire_lock()
+
+
+def test_acquire_lock_different_hostname_clears_stale(tmp_path: Path) -> None:
+    """Lock from a different container/host is treated as stale."""
+    state_path = tmp_path / "state.json"
+    store = StateStore(state_path)
+    store.lock_path.parent.mkdir(parents=True, exist_ok=True)
+    # PID 30 on a different host (e.g. old container)
+    store.lock_path.write_text("30\nold-container-abc123\n", encoding="utf-8")
+
+    store.acquire_lock()
+    try:
+        lines = store.lock_path.read_text(encoding="utf-8").strip().split("\n")
+        assert lines[0] == str(os.getpid())
+        assert lines[1] == platform.node()
+    finally:
+        store.release_lock()
+
+
+def test_acquire_lock_legacy_format_without_hostname(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Legacy lock files (pid only, no hostname) are handled correctly."""
+    state_path = tmp_path / "state.json"
+    store = StateStore(state_path)
+    store.lock_path.parent.mkdir(parents=True, exist_ok=True)
+    store.lock_path.write_text("999999\n", encoding="utf-8")
+    monkeypatch.setattr(store, "_is_pid_running", lambda _pid: False)
+
+    store.acquire_lock()
+    try:
+        lines = store.lock_path.read_text(encoding="utf-8").strip().split("\n")
+        assert lines[0] == str(os.getpid())
+    finally:
+        store.release_lock()
