@@ -168,11 +168,13 @@ async def run_gemini_review(
                 timeout=timeout_seconds,
             )
             status = "ok" if code == 0 else "error"
-            error = (
-                None
-                if code == 0
-                else f"gemini exited with status {code}: {_summarize_gemini_error(stderr)}"
-            )
+            if code != 0:
+                detail = _summarize_gemini_error(stderr)
+                if not detail:
+                    detail = raw_stdout.strip()[:500] or "(no output)"
+                error = f"gemini exited with status {code}: {detail}"
+            else:
+                error = None
             markdown = _extract_gemini_review_text(raw_stdout, stderr)
             stdout = raw_stdout
         else:
@@ -234,7 +236,10 @@ async def run_gemini_prompt(
         raise RuntimeError(f"gemini prompt timed out after {timeout_seconds}s") from exc
 
     if code != 0:
-        raise RuntimeError(f"gemini exited with status {code}: {_summarize_gemini_error(stderr)}")
+        detail = _summarize_gemini_error(stderr)
+        if not detail:
+            detail = raw_stdout.strip()[:500] or "(no output)"
+        raise RuntimeError(f"gemini exited with status {code}: {detail}")
 
     markdown = _extract_gemini_review_text(raw_stdout, stderr)
     if not markdown:

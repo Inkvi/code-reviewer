@@ -57,7 +57,10 @@ async def run_claude_cli_prompt(
         raise RuntimeError(f"claude CLI timed out after {timeout_seconds}s") from exc
 
     if code != 0:
-        raise RuntimeError(f"claude CLI exited with status {code}: {stderr.strip()}")
+        detail = stderr.strip()
+        if not detail:
+            detail = stdout.strip()[:500] or "(no output)"
+        raise RuntimeError(f"claude CLI exited with status {code}: {detail}")
 
     text = stdout.strip()
     if not text:
