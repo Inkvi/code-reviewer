@@ -18,6 +18,17 @@ class _Stage:
         self.detail = detail
 
 
+_MAX_REASON_LEN = 80
+
+
+def _truncate(text: str) -> str:
+    """Collapse to first line and truncate for table display."""
+    first_line = text.split("\n", 1)[0].strip()
+    if len(first_line) > _MAX_REASON_LEN:
+        return first_line[:_MAX_REASON_LEN] + "…"
+    return first_line
+
+
 _ICONS = {
     "pending": "⬜",
     "running": "⏳",
@@ -77,17 +88,17 @@ class ProgressComment:
             stage.state = "done"
             stage.detail = f"Done ({duration_s:.0f}s)"
 
-    def set_reviewer_failed(self, name: str) -> None:
+    def set_reviewer_failed(self, name: str, reason: str = "") -> None:
         stage = self._find(name.capitalize())
         if stage:
             stage.state = "failed"
-            stage.detail = "Failed"
+            stage.detail = f"Failed: {_truncate(reason)}" if reason else "Failed"
 
-    def set_reviewer_skipped(self, name: str) -> None:
+    def set_reviewer_skipped(self, name: str, reason: str = "") -> None:
         stage = self._find(name.capitalize())
         if stage:
             stage.state = "skipped"
-            stage.detail = "Skipped"
+            stage.detail = f"Skipped: {_truncate(reason)}" if reason else "Skipped"
 
     def set_review_started(self) -> None:
         stage = self._find("Review")

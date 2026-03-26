@@ -600,12 +600,12 @@ async def _run_reviewers_with_monitoring(
         opened, reason = _circuit_is_open("claude", config.claude_model)
         if opened:
             warn(f"skipping Claude review (circuit open: {reason}) {pr.url}")
-            progress.set_reviewer_skipped("claude")
+            progress.set_reviewer_skipped("claude", reason or "")
         else:
             allowed, usage_reason = _backend_has_available_usage("claude", config.claude_model)
             if not allowed:
                 warn(f"skipping Claude review (usage gate: {usage_reason}) {pr.url}")
-                progress.set_reviewer_skipped("claude")
+                progress.set_reviewer_skipped("claude", usage_reason or "")
             else:
                 info(
                     f"starting Claude review "
@@ -621,12 +621,12 @@ async def _run_reviewers_with_monitoring(
         opened, reason = _circuit_is_open("codex", config.codex_model)
         if opened:
             warn(f"skipping Codex review (circuit open: {reason}) {pr.url}")
-            progress.set_reviewer_skipped("codex")
+            progress.set_reviewer_skipped("codex", reason or "")
         else:
             allowed, usage_reason = _backend_has_available_usage("codex", config.codex_model)
             if not allowed:
                 warn(f"skipping Codex review (usage gate: {usage_reason}) {pr.url}")
-                progress.set_reviewer_skipped("codex")
+                progress.set_reviewer_skipped("codex", usage_reason or "")
             else:
                 info(
                     f"starting Codex review "
@@ -642,12 +642,12 @@ async def _run_reviewers_with_monitoring(
         opened, reason = _circuit_is_open("gemini", config.gemini_model)
         if opened:
             warn(f"skipping Gemini review (circuit open: {reason}) {pr.url}")
-            progress.set_reviewer_skipped("gemini")
+            progress.set_reviewer_skipped("gemini", reason or "")
         else:
             allowed, usage_reason = _backend_has_available_usage("gemini", config.gemini_model)
             if not allowed:
                 warn(f"skipping Gemini review (usage gate: {usage_reason}) {pr.url}")
-                progress.set_reviewer_skipped("gemini")
+                progress.set_reviewer_skipped("gemini", usage_reason or "")
             else:
                 info(f"starting Gemini review (model={config.gemini_model or 'default'}) {pr.url}")
                 pending_tasks["gemini"] = asyncio.create_task(
@@ -725,7 +725,7 @@ async def _run_reviewers_with_monitoring(
                         _circuit_record_failure(
                             reviewer_name, _reviewer_model, RuntimeError(output.error)
                         )
-                        progress.set_reviewer_failed(reviewer_name)
+                        progress.set_reviewer_failed(reviewer_name, output.error)
                     else:
                         progress.set_reviewer_failed(reviewer_name)
                     await progress.update()

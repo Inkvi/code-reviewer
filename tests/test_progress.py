@@ -65,6 +65,16 @@ def test_render_reviewer_failed():
     pc.set_reviewer_failed("claude")
     text = pc.render()
     assert "❌" in text
+    assert "❌ Failed |" in text
+
+
+def test_render_reviewer_failed_with_reason():
+    pc = ProgressComment(FakeClient(), FakePR())
+    pc.set_triage_done("full", enabled_reviewers=["claude"])
+    pc.set_reviewer_failed("claude", "rate limit exceeded")
+    text = pc.render()
+    assert "❌" in text
+    assert "Failed: rate limit exceeded" in text
 
 
 def test_render_reviewer_skipped():
@@ -73,6 +83,35 @@ def test_render_reviewer_skipped():
     pc.set_reviewer_skipped("claude")
     text = pc.render()
     assert "⊘" in text
+    assert "⊘ Skipped |" in text
+
+
+def test_render_reviewer_skipped_with_reason():
+    pc = ProgressComment(FakeClient(), FakePR())
+    pc.set_triage_done("full", enabled_reviewers=["claude"])
+    pc.set_reviewer_skipped("claude", "quota exhausted on claude (resets in 2h30m)")
+    text = pc.render()
+    assert "⊘" in text
+    assert "Skipped: quota exhausted on claude (resets in 2h30m)" in text
+
+
+def test_render_reason_truncated():
+    pc = ProgressComment(FakeClient(), FakePR())
+    pc.set_triage_done("full", enabled_reviewers=["claude"])
+    long_reason = "x" * 200
+    pc.set_reviewer_failed("claude", long_reason)
+    text = pc.render()
+    assert "…" in text
+    assert long_reason not in text
+
+
+def test_render_reason_multiline_uses_first_line():
+    pc = ProgressComment(FakeClient(), FakePR())
+    pc.set_triage_done("full", enabled_reviewers=["claude"])
+    pc.set_reviewer_failed("claude", "first line\nsecond line\nthird line")
+    text = pc.render()
+    assert "Failed: first line" in text
+    assert "second line" not in text
 
 
 def test_render_reconciliation_skipped():
