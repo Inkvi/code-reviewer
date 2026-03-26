@@ -183,7 +183,10 @@ async def run_codex_prompt(
     if not markdown:
         markdown = _extract_codex_review_text(raw_stdout, stderr)
     if code != 0:
-        raise RuntimeError(f"codex exited with status {code}: {stderr.strip()}")
+        detail = stderr.strip()
+        if not detail:
+            detail = raw_stdout.strip()[:500] or "(no output)"
+        raise RuntimeError(f"codex exited with status {code}: {detail}")
     if not markdown:
         raise RuntimeError("Codex returned an empty response")
     return markdown, conversation
