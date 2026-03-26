@@ -1117,9 +1117,7 @@ async def process_candidate(
                 status="skipped_missing_saved_review",
             )
         detail(f"using saved review file ({saved_review_path}) {pr.url}")
-        saved_review_text = await asyncio.to_thread(
-            saved_review_path.read_text, encoding="utf-8"
-        )
+        saved_review_text = await asyncio.to_thread(saved_review_path.read_text, encoding="utf-8")
         saved_decision = infer_review_decision(saved_review_text)
         await asyncio.to_thread(
             _publish_and_persist,
