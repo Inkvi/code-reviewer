@@ -58,6 +58,7 @@ class AppConfig(BaseModel):
     codex_model: str = Field(default="gpt-5.3-codex", min_length=1)
     codex_reasoning_effort: str | None = "low"
     gemini_model: str | None = None
+    gemini_fallback_model: str | None = None
     gemini_timeout_seconds: int = Field(default=900, ge=30)
     skip_own_prs: bool = True
     auto_post_review: bool = False
@@ -298,6 +299,16 @@ class AppConfig(BaseModel):
         cleaned = value.strip()
         if not cleaned:
             raise ValueError("gemini_model cannot be empty")
+        return cleaned
+
+    @field_validator("gemini_fallback_model")
+    @classmethod
+    def validate_gemini_fallback_model(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("gemini_fallback_model cannot be empty")
         return cleaned
 
     @field_validator("trigger_mode")

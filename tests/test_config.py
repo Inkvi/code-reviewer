@@ -595,3 +595,40 @@ def test_lightweight_rejects_max_effort_when_codex_is_primary(tmp_path: Path) ->
     )
     with pytest.raises(ValueError):
         load_config(path)
+
+
+def test_load_config_accepts_gemini_fallback_model(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text(
+        'github_orgs=["polymerdao"]\n'
+        'gemini_model = "gemini-3-pro"\n'
+        'gemini_fallback_model = "gemini-3-flash-preview"\n',
+        encoding="utf-8",
+    )
+    cfg = load_config(path)
+    assert cfg.gemini_fallback_model == "gemini-3-flash-preview"
+
+
+def test_load_config_rejects_empty_gemini_fallback_model(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text(
+        'github_orgs=["polymerdao"]\ngemini_fallback_model = ""\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError):
+        load_config(path)
+
+
+def test_default_config_gemini_fallback_model_is_none() -> None:
+    cfg = default_config()
+    assert cfg.gemini_fallback_model is None
+
+
+def test_gemini_fallback_model_strips_whitespace(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text(
+        'github_orgs=["polymerdao"]\ngemini_fallback_model = "  gemini-3-flash  "\n',
+        encoding="utf-8",
+    )
+    cfg = load_config(path)
+    assert cfg.gemini_fallback_model == "gemini-3-flash"

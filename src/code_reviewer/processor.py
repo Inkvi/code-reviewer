@@ -252,6 +252,34 @@ def _backend_has_available_usage(
     return True, None
 
 
+def _resolve_gemini_review_model(
+    config: AppConfig,
+    context: str,
+) -> tuple[bool, str | None]:
+    """Pick the best available Gemini model, trying fallback if primary is blocked.
+
+    Returns (available, model). available=False means all models are blocked.
+    model may be None when using the CLI default.
+    """
+    candidates = [("primary", config.gemini_model)]
+    if config.gemini_fallback_model and config.gemini_fallback_model != config.gemini_model:
+        candidates.append(("fallback", config.gemini_fallback_model))
+
+    for label, model in candidates:
+        opened, reason = _circuit_is_open("gemini", model)
+        if opened:
+            warn(f"Gemini {label} model {model or 'default'} circuit open: {reason} {context}")
+            continue
+        allowed, usage_reason = _backend_has_available_usage("gemini", model)
+        if not allowed:
+            warn(f"Gemini {label} model {model or 'default'} usage gate: {usage_reason} {context}")
+            continue
+        if label == "fallback":
+            info(f"using Gemini fallback model {model} {context}")
+        return True, model
+    return False, None
+
+
 def _resolve_reconciler_settings(
     config: AppConfig,
 ) -> tuple[list[str], dict[str, int], str | None, str | None]:
@@ -406,6 +434,8 @@ def _build_review_meta(
             elif name == "gemini":
                 if config.gemini_model:
                     r["model"] = config.gemini_model
+                if config.gemini_fallback_model:
+                    r["fallback_model"] = config.gemini_fallback_model
             if reviewer_outputs and name in reviewer_outputs:
                 out = reviewer_outputs[name]
                 r["status"] = out.status
@@ -638,28 +668,26 @@ async def _run_reviewers_with_monitoring(
     else:
         info(f"Codex reviewer disabled {pr.url}")
 
+    reviewer_models: dict[str, str | None] = {}
+
     if "gemini" in enabled_reviewer_set:
-        opened, reason = _circuit_is_open("gemini", config.gemini_model)
-        if opened:
-            warn(f"skipping Gemini review (circuit open: {reason}) {pr.url}")
-            progress.set_reviewer_skipped("gemini", reason or "")
+        gemini_available, gemini_model = _resolve_gemini_review_model(config, pr.url)
+        if not gemini_available:
+            warn(f"skipping Gemini review (all models exhausted) {pr.url}")
+            progress.set_reviewer_skipped("gemini", "all models exhausted")
         else:
-            allowed, usage_reason = _backend_has_available_usage("gemini", config.gemini_model)
-            if not allowed:
-                warn(f"skipping Gemini review (usage gate: {usage_reason}) {pr.url}")
-                progress.set_reviewer_skipped("gemini", usage_reason or "")
-            else:
-                info(f"starting Gemini review (model={config.gemini_model or 'default'}) {pr.url}")
-                pending_tasks["gemini"] = asyncio.create_task(
-                    run_gemini_review(
-                        pr,
-                        workdir,
-                        config.gemini_timeout_seconds,
-                        model=config.gemini_model,
-                        prompt_path=config.full_review_prompt_path,
-                    )
+            reviewer_models["gemini"] = gemini_model
+            info(f"starting Gemini review (model={gemini_model or 'default'}) {pr.url}")
+            pending_tasks["gemini"] = asyncio.create_task(
+                run_gemini_review(
+                    pr,
+                    workdir,
+                    config.gemini_timeout_seconds,
+                    model=gemini_model,
+                    prompt_path=config.full_review_prompt_path,
                 )
-                progress.set_reviewer_started("gemini")
+            )
+            progress.set_reviewer_started("gemini")
     else:
         info(f"Gemini reviewer disabled {pr.url}")
 
@@ -713,10 +741,9 @@ async def _run_reviewers_with_monitoring(
                     if output.status != "ok" and output.error:
                         warn(f"{reviewer_name} error: {output.error} {pr.url}")
                     # Record circuit breaker state
-                    _reviewer_model = {
+                    _reviewer_model = reviewer_models.get(reviewer_name) or {
                         "claude": config.claude_model,
                         "codex": config.codex_model,
-                        "gemini": config.gemini_model,
                     }.get(reviewer_name)
                     if output.status == "ok":
                         _circuit_record_success(reviewer_name, _reviewer_model)
@@ -725,6 +752,32 @@ async def _run_reviewers_with_monitoring(
                         _circuit_record_failure(
                             reviewer_name, _reviewer_model, RuntimeError(output.error)
                         )
+                        # Retry Gemini with fallback model on quota error
+                        if (
+                            reviewer_name == "gemini"
+                            and "reset after" in output.error
+                            and config.gemini_fallback_model
+                            and config.gemini_fallback_model != reviewer_models.get("gemini")
+                        ):
+                            fb_opened, _ = _circuit_is_open("gemini", config.gemini_fallback_model)
+                            if not fb_opened:
+                                info(
+                                    f"retrying Gemini with fallback model "
+                                    f"{config.gemini_fallback_model} {pr.url}"
+                                )
+                                reviewer_models["gemini"] = config.gemini_fallback_model
+                                pending_tasks["gemini"] = asyncio.create_task(
+                                    run_gemini_review(
+                                        pr,
+                                        workdir,
+                                        config.gemini_timeout_seconds,
+                                        model=config.gemini_fallback_model,
+                                        prompt_path=config.full_review_prompt_path,
+                                    )
+                                )
+                                progress.set_reviewer_started("gemini")
+                                await progress.update()
+                                continue
                         progress.set_reviewer_failed(reviewer_name, output.error)
                     else:
                         progress.set_reviewer_failed(reviewer_name)
@@ -847,25 +900,24 @@ async def _run_local_reviewers(
                 )
                 pending_tasks["codex"] = _start_codex_review_task(config, pr, workdir)
 
+    reviewer_models: dict[str, str | None] = {}
+
     if "gemini" in enabled_reviewer_set:
-        opened, reason = _circuit_is_open("gemini", config.gemini_model)
-        if opened:
-            warn(f"skipping Gemini review (circuit open: {reason})")
+        gemini_available, gemini_model = _resolve_gemini_review_model(config, pr.url)
+        if not gemini_available:
+            warn("skipping Gemini review (all models exhausted)")
         else:
-            allowed, usage_reason = _backend_has_available_usage("gemini", config.gemini_model)
-            if not allowed:
-                warn(f"skipping Gemini review (usage gate: {usage_reason})")
-            else:
-                info(f"starting Gemini review (model={config.gemini_model or 'default'})")
-                pending_tasks["gemini"] = asyncio.create_task(
-                    run_gemini_review(
-                        pr,
-                        workdir,
-                        config.gemini_timeout_seconds,
-                        model=config.gemini_model,
-                        prompt_path=config.full_review_prompt_path,
-                    )
+            reviewer_models["gemini"] = gemini_model
+            info(f"starting Gemini review (model={gemini_model or 'default'})")
+            pending_tasks["gemini"] = asyncio.create_task(
+                run_gemini_review(
+                    pr,
+                    workdir,
+                    config.gemini_timeout_seconds,
+                    model=gemini_model,
+                    prompt_path=config.full_review_prompt_path,
                 )
+            )
 
     reviewer_outputs: dict[str, ReviewerOutput] = {}
     while pending_tasks:
@@ -888,10 +940,9 @@ async def _run_local_reviewers(
                 )
                 if output.status != "ok" and output.error:
                     warn(f"{reviewer_name} error: {output.error}")
-                _reviewer_model = {
+                _reviewer_model = reviewer_models.get(reviewer_name) or {
                     "claude": config.claude_model,
                     "codex": config.codex_model,
-                    "gemini": config.gemini_model,
                 }.get(reviewer_name)
                 if output.status == "ok":
                     _circuit_record_success(reviewer_name, _reviewer_model)
@@ -899,6 +950,30 @@ async def _run_local_reviewers(
                     _circuit_record_failure(
                         reviewer_name, _reviewer_model, RuntimeError(output.error)
                     )
+                    # Retry Gemini with fallback model on quota error
+                    if (
+                        reviewer_name == "gemini"
+                        and "reset after" in output.error
+                        and config.gemini_fallback_model
+                        and config.gemini_fallback_model != reviewer_models.get("gemini")
+                    ):
+                        fb_opened, _ = _circuit_is_open("gemini", config.gemini_fallback_model)
+                        if not fb_opened:
+                            info(
+                                f"retrying Gemini with fallback model "
+                                f"{config.gemini_fallback_model}"
+                            )
+                            reviewer_models["gemini"] = config.gemini_fallback_model
+                            pending_tasks["gemini"] = asyncio.create_task(
+                                run_gemini_review(
+                                    pr,
+                                    workdir,
+                                    config.gemini_timeout_seconds,
+                                    model=config.gemini_fallback_model,
+                                    prompt_path=config.full_review_prompt_path,
+                                )
+                            )
+                            continue
                 pending_tasks.pop(reviewer_name)
 
     return reviewer_outputs
@@ -939,6 +1014,7 @@ async def process_local_review(
             model=config.triage_model,
             prompt_path=config.triage_prompt_path,
             claude_backend=config.claude_backend,
+            gemini_fallback_model=config.gemini_fallback_model,
         )
 
         if triage_result == TriageResult.SIMPLE:
@@ -956,6 +1032,7 @@ async def process_local_review(
                     reasoning_effort=config.lightweight_review_reasoning_effort,
                     prompt_path=config.lightweight_review_prompt_path,
                     claude_backend=config.claude_backend,
+                    gemini_fallback_model=config.gemini_fallback_model,
                 )
             except PromptOverrideError:
                 raise
@@ -1030,6 +1107,7 @@ async def process_local_review(
                 max_test_gaps=config.max_test_gaps,
                 prompt_path=config.reconcile_prompt_path,
                 claude_backend=config.claude_backend,
+                gemini_fallback_model=config.gemini_fallback_model,
             )
             final_review = _validate_review_format(
                 final_review, pr_url=pr.url, injection_protection=config.prompt_injection_protection
@@ -1271,6 +1349,7 @@ async def process_candidate(
             model=config.triage_model,
             prompt_path=config.triage_prompt_path,
             claude_backend=config.claude_backend,
+            gemini_fallback_model=config.gemini_fallback_model,
         )
 
         if triage_result == TriageResult.SIMPLE:
@@ -1311,6 +1390,7 @@ async def process_candidate(
                     reasoning_effort=config.lightweight_review_reasoning_effort,
                     prompt_path=config.lightweight_review_prompt_path,
                     claude_backend=config.claude_backend,
+                    gemini_fallback_model=config.gemini_fallback_model,
                 )
 
                 lightweight_duration = (datetime.now(UTC) - lightweight_start).total_seconds()
@@ -1492,6 +1572,7 @@ async def process_candidate(
                 max_test_gaps=config.max_test_gaps,
                 prompt_path=config.reconcile_prompt_path,
                 claude_backend=config.claude_backend,
+                gemini_fallback_model=config.gemini_fallback_model,
             )
             reconcile_duration = (datetime.now(UTC) - reconcile_start).total_seconds()
             progress.set_reconciliation_done(reconcile_duration)

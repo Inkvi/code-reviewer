@@ -1,14 +1,18 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from code_reviewer.models import PRCandidate, ReviewerOutput, TokenUsage
 from code_reviewer.prompts import PromptBundle, build_reconcile_bundle
+from code_reviewer.reviewers._circuit_breaker import record_failure as _cb_record_failure
 from code_reviewer.reviewers._fallback import run_with_fallback
 from code_reviewer.reviewers.claude_cli import run_claude_cli_prompt
 from code_reviewer.reviewers.claude_sdk import _run_claude_prompt
 from code_reviewer.reviewers.codex_cli import run_codex_prompt
 from code_reviewer.reviewers.gemini_cli import run_gemini_prompt
+
+log = logging.getLogger(__name__)
 
 
 async def reconcile_reviews(
@@ -24,6 +28,7 @@ async def reconcile_reviews(
     max_test_gaps: int = 3,
     prompt_path: str | None = None,
     claude_backend: str = "sdk",
+    gemini_fallback_model: str | None = None,
 ) -> tuple[str, TokenUsage | None, PromptBundle]:
     backends = (
         [reconciler_backend] if isinstance(reconciler_backend, str) else list(reconciler_backend)
@@ -79,13 +84,34 @@ async def reconcile_reviews(
             )
             return text, None
         if b == "gemini":
-            text = await run_gemini_prompt(
-                prompt,
-                workspace,
-                t,
-                model=use_model,
-            )
-            return text, None
+            try:
+                text = await run_gemini_prompt(
+                    prompt,
+                    workspace,
+                    t,
+                    model=use_model,
+                )
+                return text, None
+            except RuntimeError as exc:
+                if (
+                    gemini_fallback_model
+                    and use_model != gemini_fallback_model
+                    and "reset after" in str(exc)
+                ):
+                    _cb_record_failure("gemini", use_model, exc)
+                    log.info(
+                        "retrying gemini reconcile with fallback model %s %s",
+                        gemini_fallback_model,
+                        pr.url,
+                    )
+                    text = await run_gemini_prompt(
+                        prompt,
+                        workspace,
+                        t,
+                        model=gemini_fallback_model,
+                    )
+                    return text, None
+                raise
         raise RuntimeError(f"Unsupported reconciler backend: {b}")
 
     models_map = {b: (reconciler_model if b == backends[0] else None) for b in backends}

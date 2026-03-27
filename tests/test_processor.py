@@ -12,6 +12,7 @@ from code_reviewer.processor import (
     _compute_processing_decision,
     _extract_injection_section,
     _NewCommitDetected,
+    _resolve_gemini_review_model,
     _resolve_reconciler_settings,
     _run_local_reviewers,
     _run_reviewers_with_monitoring,
@@ -410,6 +411,108 @@ def test_backend_has_available_usage_allows_when_signal_unavailable(monkeypatch)
 
     assert allowed is True
     assert reason is None
+
+
+def test_resolve_gemini_model_returns_primary_when_available(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "code_reviewer.processor._circuit_is_open",
+        lambda backend, model: (False, None),
+    )
+    monkeypatch.setattr(
+        "code_reviewer.processor._backend_has_available_usage",
+        lambda backend, model: (True, None),
+    )
+    cfg = AppConfig(
+        github_orgs=["test"],
+        gemini_model="gemini-3-pro",
+        gemini_fallback_model="gemini-3-flash",
+    )
+    available, model = _resolve_gemini_review_model(cfg, "test")
+    assert available is True
+    assert model == "gemini-3-pro"
+
+
+def test_resolve_gemini_model_falls_back_when_primary_circuit_open(monkeypatch) -> None:
+    def fake_circuit(backend, model):
+        if model == "gemini-3-pro":
+            return True, "quota exhausted"
+        return False, None
+
+    monkeypatch.setattr("code_reviewer.processor._circuit_is_open", fake_circuit)
+    monkeypatch.setattr(
+        "code_reviewer.processor._backend_has_available_usage",
+        lambda backend, model: (True, None),
+    )
+    cfg = AppConfig(
+        github_orgs=["test"],
+        gemini_model="gemini-3-pro",
+        gemini_fallback_model="gemini-3-flash",
+    )
+    available, model = _resolve_gemini_review_model(cfg, "test")
+    assert available is True
+    assert model == "gemini-3-flash"
+
+
+def test_resolve_gemini_model_both_exhausted(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "code_reviewer.processor._circuit_is_open",
+        lambda backend, model: (True, "quota exhausted"),
+    )
+    cfg = AppConfig(
+        github_orgs=["test"],
+        gemini_model="gemini-3-pro",
+        gemini_fallback_model="gemini-3-flash",
+    )
+    available, model = _resolve_gemini_review_model(cfg, "test")
+    assert available is False
+
+
+def test_resolve_gemini_model_no_fallback_configured(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "code_reviewer.processor._circuit_is_open",
+        lambda backend, model: (True, "quota exhausted"),
+    )
+    cfg = AppConfig(github_orgs=["test"], gemini_model="gemini-3-pro")
+    available, model = _resolve_gemini_review_model(cfg, "test")
+    assert available is False
+
+
+def test_resolve_gemini_model_default_model_available(monkeypatch) -> None:
+    """When gemini_model is None (use CLI default), should still succeed."""
+    monkeypatch.setattr(
+        "code_reviewer.processor._circuit_is_open",
+        lambda backend, model: (False, None),
+    )
+    monkeypatch.setattr(
+        "code_reviewer.processor._backend_has_available_usage",
+        lambda backend, model: (True, None),
+    )
+    cfg = AppConfig(github_orgs=["test"])
+    available, model = _resolve_gemini_review_model(cfg, "test")
+    assert available is True
+    assert model is None
+
+
+def test_resolve_gemini_model_falls_back_on_usage_gate(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "code_reviewer.processor._circuit_is_open",
+        lambda backend, model: (False, None),
+    )
+
+    def fake_usage(backend, model):
+        if model == "gemini-3-pro":
+            return False, "usage too low"
+        return True, None
+
+    monkeypatch.setattr("code_reviewer.processor._backend_has_available_usage", fake_usage)
+    cfg = AppConfig(
+        github_orgs=["test"],
+        gemini_model="gemini-3-pro",
+        gemini_fallback_model="gemini-3-flash",
+    )
+    available, model = _resolve_gemini_review_model(cfg, "test")
+    assert available is True
+    assert model == "gemini-3-flash"
 
 
 def test_run_local_reviewers_skips_backend_when_usage_gate_blocks(monkeypatch, tmp_path) -> None:

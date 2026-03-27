@@ -131,6 +131,13 @@ GeminiModelOption = Annotated[
         help="Override gemini_model from config.",
     ),
 ]
+GeminiFallbackModelOption = Annotated[
+    str | None,
+    typer.Option(
+        "--gemini-fallback-model",
+        help="Override gemini_fallback_model from config.",
+    ),
+]
 AutoPostReviewOption = Annotated[
     bool | None,
     typer.Option(
@@ -336,6 +343,7 @@ def _load_config_with_overrides(
     codex_reasoning_effort: str | None,
     auto_post_review: bool | None,
     gemini_model: str | None,
+    gemini_fallback_model: str | None,
     slash_command_enabled: bool | None,
     triage_backend: str | None,
     triage_model: str | None,
@@ -386,6 +394,9 @@ def _load_config_with_overrides(
         "--auto-post-review/--no-auto-post-review",
     )
     config = _apply_field_override(config, "gemini_model", gemini_model, "--gemini-model")
+    config = _apply_field_override(
+        config, "gemini_fallback_model", gemini_fallback_model, "--gemini-fallback-model"
+    )
     config = _apply_bool_override(
         config,
         "slash_command_enabled",
@@ -426,6 +437,7 @@ def _load_runtime(
     codex_reasoning_effort: str | None,
     auto_post_review: bool | None,
     gemini_model: str | None,
+    gemini_fallback_model: str | None,
     slash_command_enabled: bool | None,
     triage_backend: str | None,
     triage_model: str | None,
@@ -447,6 +459,7 @@ def _load_runtime(
         codex_reasoning_effort,
         auto_post_review,
         gemini_model,
+        gemini_fallback_model,
         slash_command_enabled,
         triage_backend,
         triage_model,
@@ -486,6 +499,7 @@ def check_command(
     codex_reasoning_effort: CodexReasoningEffortOption = None,
     auto_post_review: AutoPostReviewOption = None,
     gemini_model: GeminiModelOption = None,
+    gemini_fallback_model: GeminiFallbackModelOption = None,
     slash_command_enabled: SlashCommandEnabledOption = None,
     triage_backend: TriageBackendOption = None,
     triage_model: TriageModelOption = None,
@@ -533,6 +547,9 @@ def check_command(
         "--auto-post-review/--no-auto-post-review",
     )
     cfg = _apply_field_override(cfg, "gemini_model", gemini_model, "--gemini-model")
+    cfg = _apply_field_override(
+        cfg, "gemini_fallback_model", gemini_fallback_model, "--gemini-fallback-model"
+    )
     cfg = _apply_bool_override(
         cfg,
         "slash_command_enabled",
@@ -586,6 +603,7 @@ def check_command(
     table.add_row("Codex model", cfg.codex_model)
     table.add_row("Codex reasoning effort", cfg.codex_reasoning_effort or "default")
     table.add_row("Gemini model", cfg.gemini_model or "default")
+    table.add_row("Gemini fallback model", cfg.gemini_fallback_model or "none")
     table.add_row("Slash command enabled", str(cfg.slash_command_enabled))
     table.add_row("Triage backend", " > ".join(cfg.triage_backend))
     table.add_row("Triage model", cfg.triage_model or "default")
@@ -629,6 +647,7 @@ def run_once_command(
     codex_reasoning_effort: CodexReasoningEffortOption = None,
     auto_post_review: AutoPostReviewOption = None,
     gemini_model: GeminiModelOption = None,
+    gemini_fallback_model: GeminiFallbackModelOption = None,
     slash_command_enabled: SlashCommandEnabledOption = None,
     triage_backend: TriageBackendOption = None,
     triage_model: TriageModelOption = None,
@@ -665,6 +684,7 @@ def run_once_command(
         codex_reasoning_effort,
         auto_post_review,
         gemini_model,
+        gemini_fallback_model,
         slash_command_enabled,
         triage_backend,
         triage_model,
@@ -737,6 +757,7 @@ def start_command(
     codex_reasoning_effort: CodexReasoningEffortOption = None,
     auto_post_review: AutoPostReviewOption = None,
     gemini_model: GeminiModelOption = None,
+    gemini_fallback_model: GeminiFallbackModelOption = None,
     slash_command_enabled: SlashCommandEnabledOption = None,
     triage_backend: TriageBackendOption = None,
     triage_model: TriageModelOption = None,
@@ -765,6 +786,7 @@ def start_command(
         codex_reasoning_effort,
         auto_post_review,
         gemini_model,
+        gemini_fallback_model,
         slash_command_enabled,
         triage_backend,
         triage_model,
@@ -789,6 +811,7 @@ def start_command(
             codex_reasoning_effort,
             auto_post_review,
             gemini_model,
+            gemini_fallback_model,
             slash_command_enabled,
             triage_backend,
             triage_model,
@@ -878,6 +901,7 @@ def _load_config_with_reviewer_overrides(
     codex_model: str | None,
     codex_reasoning_effort: str | None,
     gemini_model: str | None,
+    gemini_fallback_model: str | None,
     triage_backend: str | None,
     triage_model: str | None,
     lightweight_review_backend: str | None,
@@ -916,6 +940,9 @@ def _load_config_with_reviewer_overrides(
         "--codex-reasoning-effort",
     )
     cfg = _apply_field_override(cfg, "gemini_model", gemini_model, "--gemini-model")
+    cfg = _apply_field_override(
+        cfg, "gemini_fallback_model", gemini_fallback_model, "--gemini-fallback-model"
+    )
     cfg = _apply_field_override(cfg, "triage_backend", triage_backend, "--triage-backend")
     cfg = _apply_field_override(cfg, "triage_model", triage_model, "--triage-model")
     cfg = _apply_field_override(
@@ -959,6 +986,7 @@ def review_command(
     codex_model: CodexModelOption = None,
     codex_reasoning_effort: CodexReasoningEffortOption = None,
     gemini_model: GeminiModelOption = None,
+    gemini_fallback_model: GeminiFallbackModelOption = None,
     triage_backend: TriageBackendOption = None,
     triage_model: TriageModelOption = None,
     lightweight_review_backend: LightweightReviewBackendOption = None,
@@ -1020,6 +1048,7 @@ def review_command(
         codex_model,
         codex_reasoning_effort,
         gemini_model,
+        gemini_fallback_model,
         triage_backend,
         triage_model,
         lightweight_review_backend,

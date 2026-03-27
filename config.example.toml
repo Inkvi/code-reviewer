@@ -29,6 +29,7 @@ codex_reasoning_effort = "low"
 # Install extension: gemini extensions install https://github.com/gemini-cli-extensions/code-review
 # To enable: add "gemini" to enabled_reviewers, e.g. ["claude", "codex", "gemini"]
 # gemini_model = "gemini-3.1-pro-preview"
+# gemini_fallback_model = "gemini-3-flash-preview"  # used when primary model hits quota limits
 gemini_timeout_seconds = 900
 skip_own_prs = true
 auto_post_review = false

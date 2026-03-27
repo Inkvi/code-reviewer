@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import subprocess
 from enum import Enum
@@ -9,12 +10,15 @@ from pathlib import Path
 from code_reviewer.logger import info, warn
 from code_reviewer.models import PRCandidate
 from code_reviewer.prompts import PromptBundle, build_triage_bundle
+from code_reviewer.reviewers._circuit_breaker import record_failure as _cb_record_failure
 from code_reviewer.reviewers._fallback import run_with_fallback
 from code_reviewer.reviewers._sanitize import _escape_delimiters
 from code_reviewer.reviewers.claude_cli import run_claude_cli_prompt
 from code_reviewer.reviewers.claude_sdk import _run_claude_prompt
 from code_reviewer.reviewers.codex_cli import run_codex_prompt
 from code_reviewer.reviewers.gemini_cli import run_gemini_prompt
+
+log = logging.getLogger(__name__)
 
 
 class TriageResult(Enum):
@@ -90,6 +94,7 @@ async def run_triage(
     model: str | None = None,
     prompt_path: str | None = None,
     claude_backend: str = "sdk",
+    gemini_fallback_model: str | None = None,
 ) -> tuple[TriageResult, PromptBundle]:
     backends = [backend] if isinstance(backend, str) else list(backend)
     diff_snippet = _get_diff_snippet(workspace, pr)
@@ -129,12 +134,32 @@ async def run_triage(
             )
             return text
         if b == "gemini":
-            return await run_gemini_prompt(
-                prompt,
-                workspace,
-                timeout_seconds,
-                model=use_model,
-            )
+            try:
+                return await run_gemini_prompt(
+                    prompt,
+                    workspace,
+                    timeout_seconds,
+                    model=use_model,
+                )
+            except RuntimeError as exc:
+                if (
+                    gemini_fallback_model
+                    and use_model != gemini_fallback_model
+                    and "reset after" in str(exc)
+                ):
+                    _cb_record_failure("gemini", use_model, exc)
+                    log.info(
+                        "retrying gemini triage with fallback model %s %s",
+                        gemini_fallback_model,
+                        pr.url,
+                    )
+                    return await run_gemini_prompt(
+                        prompt,
+                        workspace,
+                        timeout_seconds,
+                        model=gemini_fallback_model,
+                    )
+                raise
         raise RuntimeError(f"unsupported triage backend: {b}")
 
     try:
