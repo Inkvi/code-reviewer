@@ -42,6 +42,7 @@ from code_reviewer.reviewers import (
     run_codex_review_via_agents_sdk,
     run_gemini_review,
     run_lightweight_review,
+    run_opencode_review,
     run_triage,
 )
 from code_reviewer.reviewers._circuit_breaker import is_open as _circuit_is_open
@@ -154,6 +155,25 @@ def _all_failed_review() -> str:
         "### Test Gaps\n"
         "- None noted."
     )
+
+
+def _scale_max_findings(base: int, additions: int, deletions: int) -> int:
+    """Scale max_findings based on diff size so large diffs aren't under-reported."""
+    total_lines = additions + deletions
+    if total_lines <= 200:
+        return base
+    # +1 per 200 additional lines, up to double the base (capped at 20)
+    extra = (total_lines - 200) // 200
+    return min(base + extra, 20)
+
+
+def _scale_max_test_gaps(base: int, additions: int, deletions: int) -> int:
+    """Scale max_test_gaps based on diff size."""
+    total_lines = additions + deletions
+    if total_lines <= 300:
+        return base
+    extra = (total_lines - 300) // 300
+    return min(base + extra, 10)
 
 
 def _start_codex_review_task(config: AppConfig, pr: PRCandidate, workdir: Path) -> asyncio.Task:
@@ -291,8 +311,11 @@ def _resolve_reconciler_settings(
     elif primary == "codex":
         model = config.reconciler_model or config.codex_model
         reasoning_effort = config.reconciler_reasoning_effort or config.codex_reasoning_effort
-    else:
+    elif primary == "gemini":
         model = config.reconciler_model or config.gemini_model
+        reasoning_effort = None
+    else:
+        model = config.reconciler_model or config.opencode_model
         reasoning_effort = None
     backend_timeouts: dict[str, int] = {}
     for b in backends:
@@ -300,8 +323,10 @@ def _resolve_reconciler_settings(
             backend_timeouts[b] = config.claude_timeout_seconds
         elif b == "codex":
             backend_timeouts[b] = config.codex_timeout_seconds
-        else:
+        elif b == "gemini":
             backend_timeouts[b] = config.gemini_timeout_seconds
+        else:
+            backend_timeouts[b] = config.opencode_timeout_seconds
     return backends, backend_timeouts, model, reasoning_effort
 
 
@@ -691,6 +716,34 @@ async def _run_reviewers_with_monitoring(
     else:
         info(f"Gemini reviewer disabled {pr.url}")
 
+    if "opencode" in enabled_reviewer_set:
+        opened, reason = _circuit_is_open("opencode", config.opencode_model)
+        if opened:
+            warn(f"skipping OpenCode review (circuit open: {reason}) {pr.url}")
+            progress.set_reviewer_skipped("opencode", reason or "")
+        else:
+            allowed, usage_reason = _backend_has_available_usage("opencode", config.opencode_model)
+            if not allowed:
+                warn(f"skipping OpenCode review (usage gate: {usage_reason}) {pr.url}")
+                progress.set_reviewer_skipped("opencode", usage_reason or "")
+            else:
+                info(
+                    f"starting OpenCode review "
+                    f"(model={config.opencode_model or 'default'}) {pr.url}"
+                )
+                pending_tasks["opencode"] = asyncio.create_task(
+                    run_opencode_review(
+                        pr,
+                        workdir,
+                        config.opencode_timeout_seconds,
+                        model=config.opencode_model,
+                        prompt_path=config.full_review_prompt_path,
+                    )
+                )
+                progress.set_reviewer_started("opencode")
+    else:
+        info(f"OpenCode reviewer disabled {pr.url}")
+
     await progress.update()
 
     reviewer_outputs: dict[str, ReviewerOutput] = {}
@@ -744,6 +797,7 @@ async def _run_reviewers_with_monitoring(
                     _reviewer_model = reviewer_models.get(reviewer_name) or {
                         "claude": config.claude_model,
                         "codex": config.codex_model,
+                        "opencode": config.opencode_model,
                     }.get(reviewer_name)
                     if output.status == "ok":
                         _circuit_record_success(reviewer_name, _reviewer_model)
@@ -919,6 +973,26 @@ async def _run_local_reviewers(
                 )
             )
 
+    if "opencode" in enabled_reviewer_set:
+        opened, reason = _circuit_is_open("opencode", config.opencode_model)
+        if opened:
+            warn(f"skipping OpenCode review (circuit open: {reason})")
+        else:
+            allowed, usage_reason = _backend_has_available_usage("opencode", config.opencode_model)
+            if not allowed:
+                warn(f"skipping OpenCode review (usage gate: {usage_reason})")
+            else:
+                info(f"starting OpenCode review (model={config.opencode_model or 'default'})")
+                pending_tasks["opencode"] = asyncio.create_task(
+                    run_opencode_review(
+                        pr,
+                        workdir,
+                        config.opencode_timeout_seconds,
+                        model=config.opencode_model,
+                        prompt_path=config.full_review_prompt_path,
+                    )
+                )
+
     reviewer_outputs: dict[str, ReviewerOutput] = {}
     while pending_tasks:
         done, _ = await asyncio.wait(
@@ -943,6 +1017,7 @@ async def _run_local_reviewers(
                 _reviewer_model = reviewer_models.get(reviewer_name) or {
                     "claude": config.claude_model,
                     "codex": config.codex_model,
+                    "opencode": config.opencode_model,
                 }.get(reviewer_name)
                 if output.status == "ok":
                     _circuit_record_success(reviewer_name, _reviewer_model)
@@ -1103,8 +1178,10 @@ async def process_local_review(
                 reconciler_backend=reconciler_backend,
                 reconciler_model=reconciler_model,
                 reconciler_reasoning_effort=reconciler_reasoning_effort,
-                max_findings=config.max_findings,
-                max_test_gaps=config.max_test_gaps,
+                max_findings=_scale_max_findings(config.max_findings, pr.additions, pr.deletions),
+                max_test_gaps=_scale_max_test_gaps(
+                    config.max_test_gaps, pr.additions, pr.deletions
+                ),
                 prompt_path=config.reconcile_prompt_path,
                 claude_backend=config.claude_backend,
                 gemini_fallback_model=config.gemini_fallback_model,
@@ -1333,12 +1410,18 @@ async def process_candidate(
                 warn(f"failed to fetch remote skills: {exc} {pr.url}")
                 raise
 
-        # Fetch PR comments for prompt context
+        # Fetch PR comments and prior review findings for prompt context
         if not pr.is_local and pr.number > 0:
             try:
                 pr.pr_comments = await asyncio.to_thread(client.get_pr_issue_comments, pr)
             except Exception as exc:  # noqa: BLE001
                 warn(f"failed to fetch PR comments: {exc} {pr.url}")
+            try:
+                pr.prior_review_findings = await asyncio.to_thread(
+                    client.get_pr_review_findings, pr
+                )
+            except Exception as exc:  # noqa: BLE001
+                warn(f"failed to fetch prior review findings: {exc} {pr.url}")
 
         # Triage: classify PR as simple or full_review
         triage_result, triage_bundle = await run_triage(
@@ -1568,8 +1651,10 @@ async def process_candidate(
                 reconciler_backend=reconciler_backend,
                 reconciler_model=reconciler_model,
                 reconciler_reasoning_effort=reconciler_reasoning_effort,
-                max_findings=config.max_findings,
-                max_test_gaps=config.max_test_gaps,
+                max_findings=_scale_max_findings(config.max_findings, pr.additions, pr.deletions),
+                max_test_gaps=_scale_max_test_gaps(
+                    config.max_test_gaps, pr.additions, pr.deletions
+                ),
                 prompt_path=config.reconcile_prompt_path,
                 claude_backend=config.claude_backend,
                 gemini_fallback_model=config.gemini_fallback_model,

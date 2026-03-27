@@ -13,12 +13,12 @@
   - `webhook.py`: GitHub App webhook receiver (FastAPI/Starlette)
   - `local_review.py`: local diff review (uncommitted changes, branch comparisons)
   - `github_app_auth.py`: GitHub App JWT + installation token generation (env-var driven, no-op when unconfigured)
-- `src/code_reviewer/reviewers/`: reviewer backends and reconciliation (`claude_sdk`, `codex_cli`, `codex_agents_sdk`, `gemini_cli`, `triage`, `lightweight`, `reconcile`)
+- `src/code_reviewer/reviewers/`: reviewer backends and reconciliation (`claude_sdk`, `codex_cli`, `codex_agents_sdk`, `gemini_cli`, `opencode_cli`, `triage`, `lightweight`, `reconcile`)
 - `tests/`: pytest suite mirrored by module name (e.g., `test_processor.py` for `processor.py`)
 - `reviews/<org>/<repo>/`: latest review artifacts (`pr-<number>.md`, `pr-<number>.raw.md`) plus versioned history under `pr-<number>/`
   - `reviews/` is gitignored — local artifact storage only
 - Config: `pyproject.toml`, `config.example.toml`
-- All model interactions go through CLI/SDK runners (`_run_claude_prompt`, `run_codex_prompt`, `run_gemini_prompt`) — no direct API calls
+- All model interactions go through CLI/SDK runners (`_run_claude_prompt`, `run_codex_prompt`, `run_gemini_prompt`, `run_opencode_prompt`) — no direct API calls
 
 ## Code Patterns
 - All `gh` CLI calls go through `shell.py` (`run_command`, `run_json`, `run_command_async`) with a global throttle (`_GH_MIN_INTERVAL`) to avoid GitHub rate limits
@@ -27,7 +27,7 @@
 - Config fields use Pydantic field validators; cross-field validation uses model validators
 - CLI overrides follow `_apply_field_override` pattern in `cli.py`
 - `_run_claude_prompt` passes `env={"CLAUDECODE": ""}` to `ClaudeAgentOptions` so the Agent SDK works when invoked from inside Claude Code (avoids nested execution block)
-- Backend functions support claude/codex/gemini with graceful fallback on errors
+- Backend functions support claude/codex/gemini/opencode with graceful fallback on errors
 - Keep CLI orchestration in `cli.py`; isolate reusable logic in testable modules
 - `github_app_auth.refresh_github_token()` is no-op when `GITHUB_APP_*` env vars are absent — safe to call unconditionally
 - Preflight `gh api user` falls back to `gh api /app` for GitHub App installation tokens (which return 403 on `/user`)
@@ -60,7 +60,7 @@
 
 ## Dockerfile
 - Runs as non-root user (UID 1000, `appuser`)
-- Installs Claude CLI (`@anthropic-ai/claude-code`), Codex CLI (`@openai/codex`), Gemini CLI (`@google/gemini-cli`)
+- Installs Claude CLI (`@anthropic-ai/claude-code`), Codex CLI (`@openai/codex`), Gemini CLI (`@google/gemini-cli`), OpenCode CLI (`opencode-ai`)
 - Gemini code-review extension: use `git clone` to `~/.gemini/extensions/code-review` — `gemini extensions install` has bugs in non-interactive Docker builds
 - Default CMD is `start` (polling daemon); override with `webhook` for webhook mode
 

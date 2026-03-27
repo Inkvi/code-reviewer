@@ -4,6 +4,7 @@ from code_reviewer.reviewers.codex_agents_sdk import run_codex_review_via_agents
 from code_reviewer.reviewers.codex_cli import run_codex_review
 from code_reviewer.reviewers.gemini_cli import run_gemini_review
 from code_reviewer.reviewers.lightweight import run_lightweight_review
+from code_reviewer.reviewers.opencode_cli import run_opencode_review
 from code_reviewer.reviewers.reconcile import reconcile_reviews
 from code_reviewer.reviewers.triage import TriageResult, run_triage
 
@@ -14,6 +15,7 @@ __all__ = [
     "run_codex_review",
     "run_codex_review_via_agents_sdk",
     "run_gemini_review",
+    "run_opencode_review",
     "run_lightweight_review",
     "run_triage",
     "reconcile_reviews",

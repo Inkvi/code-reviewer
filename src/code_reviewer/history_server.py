@@ -27,12 +27,14 @@ KNOWN_STAGES = (
     "claude",
     "codex",
     "gemini",
+    "opencode",
     "reconcile",
     "triage.prompt",
     "lightweight.prompt",
     "claude.prompt",
     "codex.prompt",
     "gemini.prompt",
+    "opencode.prompt",
     "reconcile.prompt",
 )
 _VERSION_RE = re.compile(r"^(\d{8}T\d{6}Z)-([a-f0-9]+)$")
@@ -96,7 +98,7 @@ def _detect_stages(repo_dir: Path, number: int) -> list[str]:
 def _detect_review_type(stages: list[str]) -> str:
     if "lightweight" in stages:
         return "lightweight"
-    if any(s in stages for s in ("claude", "codex", "gemini")):
+    if any(s in stages for s in ("claude", "codex", "gemini", "opencode")):
         return "full"
     return "unknown"
 

@@ -1,6 +1,6 @@
 # code-reviewer
 
-AI code review tool powered by Claude, Codex, and Gemini. Works as a GitHub PR daemon or as a local review tool for git repositories.
+AI code review tool powered by Claude, Codex, Gemini, and OpenCode. Works as a GitHub PR daemon or as a local review tool for git repositories.
 
 ## Requirements
 
@@ -12,6 +12,7 @@ AI code review tool powered by Claude, Codex, and Gemini. Works as a GitHub PR d
 - if using `gemini` reviewer: `gemini` authenticated
 - Gemini full review uses the `code-review` extension by default; install it unless `full_review_prompt_path` is set
   (`gemini extensions install https://github.com/gemini-cli-extensions/code-review`)
+- if using `opencode` reviewer: `opencode` installed and configured with a provider
 - for `codex_backend = "agents_sdk"`: OpenAI Agents SDK package + `OPENAI_API_KEY`
 
 ## Setup
@@ -114,6 +115,7 @@ enabled_reviewers = ["claude", "codex"]
 # enabled_reviewers = ["codex"]
 # enabled_reviewers = ["claude"]
 # enabled_reviewers = ["gemini"]
+# enabled_reviewers = ["opencode"]
 ```
 
 ### Codex backend
@@ -142,7 +144,10 @@ codex_reasoning_effort = "low"       # low|medium|high
 # Gemini
 # gemini_model = "gemini-3.1-pro-preview"
 
-# Reconciler (claude|codex|gemini)
+# OpenCode (access models via OpenRouter, OpenAI, Google, etc.)
+# opencode_model = "openrouter/zhipu/glm-5"
+
+# Reconciler (claude|codex|gemini|opencode)
 reconciler_backend = "claude"
 # reconciler_model = "claude-opus-4-1"
 # reconciler_reasoning_effort = "high"    # claude: low|medium|high|max, codex: low|medium|high
@@ -153,11 +158,11 @@ reconciler_backend = "claude"
 Every PR goes through triage first. Simple changes (config, version bumps, image tags) get a lightweight single-model checklist review. Complex changes go through the full multi-reviewer pipeline.
 
 ```toml
-triage_backend = "gemini"              # claude|codex|gemini
+triage_backend = "gemini"              # claude|codex|gemini|opencode
 triage_model = "gemini-3-flash-preview"
 triage_timeout_seconds = 60
 
-lightweight_review_backend = "gemini"  # claude|codex|gemini
+lightweight_review_backend = "gemini"  # claude|codex|gemini|opencode
 lightweight_review_model = "gemini-3-flash-preview"
 # lightweight_review_reasoning_effort = "low"   # low|medium|high|max
 lightweight_review_timeout_seconds = 300
@@ -199,7 +204,7 @@ Supported placeholders:
 
 Notes:
 
-- `full_review_prompt_path` applies to Claude, Codex CLI, Codex Agents SDK, and Gemini
+- `full_review_prompt_path` applies to Claude, Codex CLI, Codex Agents SDK, Gemini, and OpenCode
 - Gemini uses the `code-review` extension when `full_review_prompt_path` is unset; when it is set, Gemini switches to prompt execution for full review
 - for Codex Agents SDK, `system_prompt` is used as the agent instruction layer
 - `code-reviewer check` shows whether each step is using the default prompt or an override path
@@ -286,6 +291,7 @@ max_mid_review_restarts = 2    # 0-5, restart review when new commits land mid-f
 claude_timeout_seconds = 900
 codex_timeout_seconds = 900
 gemini_timeout_seconds = 900
+opencode_timeout_seconds = 900
 output_dir = "./reviews"
 state_file = "./.state/pr-reviewer-state.json"
 clone_root = "./.tmp/workspaces"
@@ -303,6 +309,7 @@ uv run code-reviewer run-once --codex-model gpt-5.3-codex --codex-reasoning-effo
 uv run code-reviewer run-once --claude-model claude-sonnet-4-5 --claude-reasoning-effort medium
 uv run code-reviewer run-once --reconciler-backend codex --reconciler-model gpt-5.3-codex
 uv run code-reviewer run-once --reconciler-backend gemini --reconciler-model gemini-3.1-pro-preview
+uv run code-reviewer run-once --enabled-reviewer opencode --opencode-model openrouter/zhipu/glm-5
 uv run code-reviewer start --slash-command-enabled
 uv run code-reviewer start --no-slash-command-enabled
 uv run code-reviewer run-once --triage-backend claude --triage-model claude-sonnet-4-5
@@ -316,7 +323,7 @@ flowchart TD
     Start([PR or local changes]) --> Triage
 
     subgraph Triage
-        T[Run triage classifier<br><i>claude / codex / gemini</i>]
+        T[Run triage classifier<br><i>claude / codex / gemini / opencode</i>]
         T --> Simple{simple?}
     end
 
@@ -335,13 +342,15 @@ flowchart TD
         Launch --> Claude[Claude<br><i>Agent SDK</i>]
         Launch --> Codex[Codex<br><i>CLI exec or Agents SDK</i>]
         Launch --> Gemini[Gemini<br><i>CLI extension or prompt</i>]
+        Launch --> OpenCode[OpenCode<br><i>any model via providers</i>]
 
         Claude --> Collect[Collect outputs]
         Codex --> Collect
         Gemini --> Collect
+        OpenCode --> Collect
 
         Collect --> Multi{multiple<br>reviewers?}
-        Multi -->|yes| Reconcile[Reconciler<br><i>claude / codex / gemini</i><br>merges + deduplicates findings]
+        Multi -->|yes| Reconcile[Reconciler<br><i>claude / codex / gemini / opencode</i><br>merges + deduplicates findings]
         Multi -->|no| Single[Use single reviewer output]
     end
 

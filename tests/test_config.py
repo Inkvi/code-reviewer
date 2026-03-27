@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from code_reviewer.config import default_config, load_config
+from code_reviewer.config import AppConfig, default_config, load_config
 
 
 def test_load_config_success(tmp_path: Path) -> None:
@@ -632,3 +632,23 @@ def test_gemini_fallback_model_strips_whitespace(tmp_path: Path) -> None:
     )
     cfg = load_config(path)
     assert cfg.gemini_fallback_model == "gemini-3-flash"
+
+
+def test_opencode_in_enabled_reviewers() -> None:
+    config = AppConfig(enabled_reviewers=["opencode"])
+    assert config.enabled_reviewers == ["opencode"]
+
+
+def test_opencode_model_config() -> None:
+    config = AppConfig(opencode_model="openrouter/zhipu/glm-5")
+    assert config.opencode_model == "openrouter/zhipu/glm-5"
+
+
+def test_opencode_in_triage_backend() -> None:
+    config = AppConfig(triage_backend=["opencode"])
+    assert config.triage_backend == ["opencode"]
+
+
+def test_opencode_in_reconciler_backend() -> None:
+    config = AppConfig(reconciler_backend=["opencode"])
+    assert config.reconciler_backend == ["opencode"]

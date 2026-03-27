@@ -38,6 +38,12 @@ def run_preflight(config: AppConfig) -> PreflightResult:
         or "gemini" in triage_backends
         or "gemini" in lightweight_backends
     )
+    uses_opencode_cli = (
+        "opencode" in enabled
+        or "opencode" in reconciler_backends
+        or "opencode" in triage_backends
+        or "opencode" in lightweight_backends
+    )
     uses_gemini_extension_review = "gemini" in enabled and config.full_review_prompt_path is None
 
     if uses_claude_runtime:
@@ -46,6 +52,8 @@ def run_preflight(config: AppConfig) -> PreflightResult:
         required.append("codex")
     if uses_gemini_cli:
         required.append("gemini")
+    if uses_opencode_cli:
+        required.append("opencode")
 
     missing = [cmd for cmd in required if shutil.which(cmd) is None]
     if missing:
@@ -121,6 +129,9 @@ def run_preflight(config: AppConfig) -> PreflightResult:
                 raise RuntimeError(
                     "codex_backend=agents_sdk requires the OpenAI Agents SDK package."
                 ) from exc
+
+    if uses_opencode_cli:
+        run_command(["opencode", "--version"])
 
     if uses_gemini_cli:
         run_command(["gemini", "--version"])

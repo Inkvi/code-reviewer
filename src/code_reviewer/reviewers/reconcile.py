@@ -12,6 +12,7 @@ from code_reviewer.reviewers.claude_cli import run_claude_cli_prompt
 from code_reviewer.reviewers.claude_sdk import _run_claude_prompt
 from code_reviewer.reviewers.codex_cli import run_codex_prompt
 from code_reviewer.reviewers.gemini_cli import run_gemini_prompt
+from code_reviewer.reviewers.opencode_cli import run_opencode_prompt
 
 log = logging.getLogger(__name__)
 
@@ -124,6 +125,14 @@ async def reconcile_reviews(
                         )
                         return text, None
                 raise
+        if b == "opencode":
+            text, _ = await run_opencode_prompt(
+                prompt,
+                workspace,
+                t,
+                model=use_model,
+            )
+            return text, None
         raise RuntimeError(f"Unsupported reconciler backend: {b}")
 
     models_map: dict[str, str | None] = {}

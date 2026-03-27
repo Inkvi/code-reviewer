@@ -8,7 +8,7 @@ from pathlib import Path
 
 from code_reviewer.shell import run_command, run_json
 
-_SUPPORTED_BACKENDS = {"claude", "codex", "gemini"}
+_SUPPORTED_BACKENDS = {"claude", "codex", "gemini", "opencode"}
 _PREFERRED_LIMIT_ORDER = ("five_hour", "seven_day", "seven_day_sonnet", "seven_day_opus")
 _CODEX_LIMIT_MAP = {
     "primary": "five_hour",

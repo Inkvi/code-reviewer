@@ -49,6 +49,7 @@ select = ["E", "F", "I", "UP", "B", "W"]
 "src/code_reviewer/reviewers/lightweight.py" = ["E501"]
 "src/code_reviewer/prompts.py" = ["E501"]
 "src/code_reviewer/processor.py" = ["E501"]
+"tests/test_opencode_cli.py" = ["E501"]
 
 [tool.pytest.ini_options]
 addopts = "-q"

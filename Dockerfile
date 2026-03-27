@@ -32,6 +32,9 @@ RUN npm install -g @openai/codex
 # Install Gemini CLI
 RUN npm install -g @google/gemini-cli
 
+# Install OpenCode CLI
+RUN npm install -g opencode-ai
+
 # Install uv for fast Python dependency management
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 

@@ -107,7 +107,7 @@ ReconcilerBackendOption = Annotated[
     str | None,
     typer.Option(
         "--reconciler-backend",
-        help="Override reconciler_backend from config. Allowed: claude, codex, gemini.",
+        help="Override reconciler_backend from config. Allowed: claude, codex, gemini, opencode.",
     ),
 ]
 CodexModelOption = Annotated[
@@ -138,6 +138,13 @@ GeminiFallbackModelOption = Annotated[
         help="Override gemini_fallback_model from config.",
     ),
 ]
+OpenCodeModelOption = Annotated[
+    str | None,
+    typer.Option(
+        "--opencode-model",
+        help="Override opencode_model from config.",
+    ),
+]
 AutoPostReviewOption = Annotated[
     bool | None,
     typer.Option(
@@ -156,7 +163,7 @@ TriageBackendOption = Annotated[
     str | None,
     typer.Option(
         "--triage-backend",
-        help="Override triage_backend from config. Allowed: claude, codex, gemini.",
+        help="Override triage_backend from config. Allowed: claude, codex, gemini, opencode.",
     ),
 ]
 TriageModelOption = Annotated[
@@ -170,7 +177,8 @@ LightweightReviewBackendOption = Annotated[
     str | None,
     typer.Option(
         "--lightweight-review-backend",
-        help="Override lightweight_review_backend from config. Allowed: claude, codex, gemini.",
+        help="Override lightweight_review_backend from config."
+        " Allowed: claude, codex, gemini, opencode.",
     ),
 ]
 LightweightReviewModelOption = Annotated[
@@ -344,6 +352,7 @@ def _load_config_with_overrides(
     auto_post_review: bool | None,
     gemini_model: str | None,
     gemini_fallback_model: str | None,
+    opencode_model: str | None,
     slash_command_enabled: bool | None,
     triage_backend: str | None,
     triage_model: str | None,
@@ -397,6 +406,7 @@ def _load_config_with_overrides(
     config = _apply_field_override(
         config, "gemini_fallback_model", gemini_fallback_model, "--gemini-fallback-model"
     )
+    config = _apply_field_override(config, "opencode_model", opencode_model, "--opencode-model")
     config = _apply_bool_override(
         config,
         "slash_command_enabled",
@@ -438,6 +448,7 @@ def _load_runtime(
     auto_post_review: bool | None,
     gemini_model: str | None,
     gemini_fallback_model: str | None,
+    opencode_model: str | None,
     slash_command_enabled: bool | None,
     triage_backend: str | None,
     triage_model: str | None,
@@ -460,6 +471,7 @@ def _load_runtime(
         auto_post_review,
         gemini_model,
         gemini_fallback_model,
+        opencode_model,
         slash_command_enabled,
         triage_backend,
         triage_model,
@@ -500,6 +512,7 @@ def check_command(
     auto_post_review: AutoPostReviewOption = None,
     gemini_model: GeminiModelOption = None,
     gemini_fallback_model: GeminiFallbackModelOption = None,
+    opencode_model: OpenCodeModelOption = None,
     slash_command_enabled: SlashCommandEnabledOption = None,
     triage_backend: TriageBackendOption = None,
     triage_model: TriageModelOption = None,
@@ -550,6 +563,7 @@ def check_command(
     cfg = _apply_field_override(
         cfg, "gemini_fallback_model", gemini_fallback_model, "--gemini-fallback-model"
     )
+    cfg = _apply_field_override(cfg, "opencode_model", opencode_model, "--opencode-model")
     cfg = _apply_bool_override(
         cfg,
         "slash_command_enabled",
@@ -648,6 +662,7 @@ def run_once_command(
     auto_post_review: AutoPostReviewOption = None,
     gemini_model: GeminiModelOption = None,
     gemini_fallback_model: GeminiFallbackModelOption = None,
+    opencode_model: OpenCodeModelOption = None,
     slash_command_enabled: SlashCommandEnabledOption = None,
     triage_backend: TriageBackendOption = None,
     triage_model: TriageModelOption = None,
@@ -685,6 +700,7 @@ def run_once_command(
         auto_post_review,
         gemini_model,
         gemini_fallback_model,
+        opencode_model,
         slash_command_enabled,
         triage_backend,
         triage_model,
@@ -758,6 +774,7 @@ def start_command(
     auto_post_review: AutoPostReviewOption = None,
     gemini_model: GeminiModelOption = None,
     gemini_fallback_model: GeminiFallbackModelOption = None,
+    opencode_model: OpenCodeModelOption = None,
     slash_command_enabled: SlashCommandEnabledOption = None,
     triage_backend: TriageBackendOption = None,
     triage_model: TriageModelOption = None,
@@ -787,6 +804,7 @@ def start_command(
         auto_post_review,
         gemini_model,
         gemini_fallback_model,
+        opencode_model,
         slash_command_enabled,
         triage_backend,
         triage_model,
@@ -812,6 +830,7 @@ def start_command(
             auto_post_review,
             gemini_model,
             gemini_fallback_model,
+            opencode_model,
             slash_command_enabled,
             triage_backend,
             triage_model,
@@ -902,6 +921,7 @@ def _load_config_with_reviewer_overrides(
     codex_reasoning_effort: str | None,
     gemini_model: str | None,
     gemini_fallback_model: str | None,
+    opencode_model: str | None,
     triage_backend: str | None,
     triage_model: str | None,
     lightweight_review_backend: str | None,
@@ -943,6 +963,7 @@ def _load_config_with_reviewer_overrides(
     cfg = _apply_field_override(
         cfg, "gemini_fallback_model", gemini_fallback_model, "--gemini-fallback-model"
     )
+    cfg = _apply_field_override(cfg, "opencode_model", opencode_model, "--opencode-model")
     cfg = _apply_field_override(cfg, "triage_backend", triage_backend, "--triage-backend")
     cfg = _apply_field_override(cfg, "triage_model", triage_model, "--triage-model")
     cfg = _apply_field_override(
@@ -987,6 +1008,7 @@ def review_command(
     codex_reasoning_effort: CodexReasoningEffortOption = None,
     gemini_model: GeminiModelOption = None,
     gemini_fallback_model: GeminiFallbackModelOption = None,
+    opencode_model: OpenCodeModelOption = None,
     triage_backend: TriageBackendOption = None,
     triage_model: TriageModelOption = None,
     lightweight_review_backend: LightweightReviewBackendOption = None,
@@ -1049,6 +1071,7 @@ def review_command(
         codex_reasoning_effort,
         gemini_model,
         gemini_fallback_model,
+        opencode_model,
         triage_backend,
         triage_model,
         lightweight_review_backend,

@@ -186,6 +186,18 @@ def test_triage_prompt_instructs_to_use_diff_over_title() -> None:
     assert "base your classification on the actual diff content" in prompt.lower()
 
 
+def test_triage_opencode_backend(monkeypatch, tmp_path: Path) -> None:
+    """Triage dispatches to opencode when configured."""
+    pr = _sample_pr()
+
+    async def fake_opencode(prompt, cwd, timeout, *, model=None):
+        return '{"classification": "simple"}', None
+
+    monkeypatch.setattr("code_reviewer.reviewers.triage.run_opencode_prompt", fake_opencode)
+    result, _ = asyncio.run(run_triage(pr, tmp_path, 30, backend=["opencode"]))
+    assert result == TriageResult.SIMPLE
+
+
 def test_get_diff_snippet_returns_empty_on_non_git_dir(tmp_path: Path) -> None:
     pr = _sample_pr()
     result = _get_diff_snippet(tmp_path, pr)
