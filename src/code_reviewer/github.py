@@ -149,6 +149,10 @@ class GitHubClient:
             ):
                 continue
 
+            # Skip bot status-table comments (e.g. "Review in progress")
+            if login.lower() == self.viewer_login.lower() and "Review in progress" in body:
+                continue
+
             condensed = self._collapse_whitespace(body).strip()
             if not condensed:
                 continue
@@ -159,6 +163,58 @@ class GitHubClient:
         if max_comments <= 0:
             return []
         return comments[-max_comments:]
+
+    def get_pr_review_findings(
+        self,
+        pr: PRCandidate,
+        *,
+        max_reviews: int = 10,
+        per_review_chars: int = 3000,
+    ) -> list[str]:
+        """Fetch prior review bodies posted by the viewer (bot) that contain findings."""
+        endpoint = f"repos/{pr.owner}/{pr.repo}/pulls/{pr.number}/reviews"
+        proc = run_command(
+            [
+                "gh",
+                "api",
+                "--paginate",
+                endpoint,
+                "--jq",
+                ".[] | [.user.login, .submitted_at, .body, .state] | @json",
+            ]
+        )
+
+        findings: list[str] = []
+        viewer = self.viewer_login.lower()
+        for line in proc.stdout.splitlines():
+            try:
+                payload = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(payload, list) or len(payload) != 4:
+                continue
+            login, submitted_at, body, state = payload
+            if (
+                not isinstance(login, str)
+                or not isinstance(body, str)
+                or not isinstance(state, str)
+            ):
+                continue
+            if login.lower() != viewer:
+                continue
+            if "### Findings" not in body:
+                continue
+
+            condensed = body.strip()
+            if not condensed:
+                continue
+            if len(condensed) > per_review_chars:
+                condensed = f"{condensed[: per_review_chars - 1]}…"
+            findings.append(f"Review ({submitted_at}, {state}):\n{condensed}")
+
+        if max_reviews <= 0:
+            return []
+        return findings[-max_reviews:]
 
     def discover_pr_candidates(self, config: AppConfig) -> list[PRCandidate]:
         candidates_by_key: dict[str, PRCandidate] = {}

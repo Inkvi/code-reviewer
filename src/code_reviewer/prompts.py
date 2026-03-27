@@ -39,6 +39,13 @@ def _format_pr_comments(pr_comments: list[str]) -> str:
     return "\n".join(sections)
 
 
+def _format_prior_findings(prior_findings: list[str]) -> str:
+    if not prior_findings:
+        return "_No prior reviews._"
+    sections = [_escape_delimiters(entry) for entry in prior_findings]
+    return "\n\n---\n\n".join(sections)
+
+
 _DEFAULT_PROMPT_SPEC_DIR = Path(__file__).with_name("prompt_specs")
 _DEFAULT_PROMPT_SPEC_FILES: dict[PromptStep, str] = {
     "triage": "triage.toml",
@@ -88,6 +95,7 @@ _ALLOWED_PLACEHOLDERS: dict[PromptStep, set[str]] = {
         "deletions",
         "workspace",
         "pr_comments",
+        "prior_findings",
     },
     "reconcile": {
         "url_label",
@@ -101,6 +109,7 @@ _ALLOWED_PLACEHOLDERS: dict[PromptStep, set[str]] = {
         "deletions",
         "workspace",
         "pr_comments",
+        "prior_findings",
         "reviewer_sources",
         "max_findings",
         "max_test_gaps",
@@ -235,6 +244,7 @@ def _common_values(pr: PRCandidate, workspace: Path) -> dict[str, object]:
         "deletions": pr.deletions,
         "workspace": str(workspace.resolve()),
         "pr_comments": _format_pr_comments(pr.pr_comments),
+        "prior_findings": _format_prior_findings(pr.prior_review_findings),
     }
 
 

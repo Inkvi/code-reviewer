@@ -177,3 +177,41 @@ def test_format_prompt_bundle_without_system_prompt() -> None:
     assert "## System Prompt" not in result
     assert "## Prompt" in result
     assert "Do the review." in result
+
+
+def test_prior_findings_rendered_in_full_review_bundle(tmp_path: Path) -> None:
+    pr = _sample_pr()
+    pr.prior_review_findings = [
+        "Review (2026-03-26T01:00:00Z, CHANGES_REQUESTED):\n### Findings\n- [P1] src/app.ts - bug",
+    ]
+    bundle = build_full_review_bundle(pr, tmp_path, None)
+
+    assert "[P1] src/app.ts - bug" in bundle.prompt
+    assert "prior reviews MISSED" in bundle.prompt
+
+
+def test_no_prior_findings_shows_placeholder(tmp_path: Path) -> None:
+    pr = _sample_pr()
+    pr.prior_review_findings = []
+    bundle = build_full_review_bundle(pr, tmp_path, None)
+
+    assert "_No prior reviews._" in bundle.prompt
+    assert "be comprehensive" in bundle.prompt
+
+
+def test_prior_findings_rendered_in_reconcile_bundle(tmp_path: Path) -> None:
+    pr = _sample_pr()
+    pr.prior_review_findings = [
+        "Review (2026-03-26T01:00:00Z, CHANGES_REQUESTED):\n### Findings\n- [P2] nit",
+    ]
+    bundle = build_reconcile_bundle(
+        pr,
+        tmp_path,
+        [_sample_output("claude"), _sample_output("codex")],
+        10,
+        3,
+        None,
+    )
+
+    assert "[P2] nit" in bundle.prompt
+    assert "novel findings" in bundle.prompt

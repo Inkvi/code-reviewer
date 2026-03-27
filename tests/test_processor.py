@@ -16,6 +16,8 @@ from code_reviewer.processor import (
     _resolve_reconciler_settings,
     _run_local_reviewers,
     _run_reviewers_with_monitoring,
+    _scale_max_findings,
+    _scale_max_test_gaps,
     _single_reviewer_final_review,
     _start_claude_review_task,
     _start_codex_review_task,
@@ -1949,3 +1951,32 @@ def test_extract_injection_section_multiple_sections():
     assert "### Prompt Injection Detection" not in cleaned
     assert "first.py:1" in detail
     assert "second.py:2" in detail
+
+
+# --- _scale_max_findings / _scale_max_test_gaps ---
+
+
+def test_scale_max_findings_small_diff_unchanged() -> None:
+    assert _scale_max_findings(10, additions=50, deletions=30) == 10
+
+
+def test_scale_max_findings_medium_diff_scales_up() -> None:
+    # 600 total lines -> (600-200)//200 = 2 extra -> 12
+    assert _scale_max_findings(10, additions=400, deletions=200) == 12
+
+
+def test_scale_max_findings_large_diff_capped_at_20() -> None:
+    assert _scale_max_findings(10, additions=3000, deletions=2000) == 20
+
+
+def test_scale_max_test_gaps_small_diff_unchanged() -> None:
+    assert _scale_max_test_gaps(3, additions=100, deletions=50) == 3
+
+
+def test_scale_max_test_gaps_large_diff_scales_up() -> None:
+    # 900 total lines -> (900-300)//300 = 2 extra -> 5
+    assert _scale_max_test_gaps(3, additions=600, deletions=300) == 5
+
+
+def test_scale_max_test_gaps_capped_at_10() -> None:
+    assert _scale_max_test_gaps(3, additions=5000, deletions=5000) == 10

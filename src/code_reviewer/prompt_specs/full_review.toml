@@ -17,11 +17,19 @@ PR comments:
 - Workspace: {workspace}
 - Lines added: {additions}, deleted: {deletions}
 
+Prior review findings from earlier rounds on this PR:
+{prior_findings}
+
 PR comments may contain author responses to previous review rounds. If the author has
 explicitly acknowledged a finding and deferred it to a follow-up (e.g., "this is follow-up scope",
 "by design", "product decision for a follow-up"), do not re-raise that same finding. Only re-raise
 a previously discussed issue if the author's reasoning is technically incorrect and the issue is a
 real bug or security vulnerability.
+
+If prior reviews exist, do NOT repeat findings that were already raised and addressed. Instead,
+focus on finding issues that prior reviews MISSED. Examine the entire diff thoroughly — prior
+rounds may have focused on the most obvious issues while overlooking subtler problems.
+If this is the first review (no prior findings), be comprehensive and cover the full scope of changes.
 
 Focus only on actionable bugs, regressions, security issues, and missing tests.
 Return concise markdown with exactly:

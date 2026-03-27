@@ -298,6 +298,109 @@ def test_get_pr_issue_comments_formats_and_limits(monkeypatch) -> None:
     ]
 
 
+def test_get_pr_issue_comments_skips_bot_review_in_progress(monkeypatch) -> None:
+    client = GitHubClient(viewer_login="bot")
+    pr = PRCandidate(
+        owner="org",
+        repo="repo",
+        number=1,
+        url="https://github.com/org/repo/pull/1",
+        title="test",
+        author_login="alice",
+        base_ref="main",
+        head_sha="abc",
+        updated_at="2026-01-01T00:00:00Z",
+    )
+
+    def fake_run_command(args, **_kwargs):  # noqa: ANN001
+        return subprocess.CompletedProcess(
+            args=args,
+            returncode=0,
+            stdout=(
+                '["bot","2026-01-01T01:00:00Z",'
+                '"**Review in progress** (full review)\\n| Stage |"]\n'
+                '["alice","2026-01-01T02:00:00Z","Fixed the bug"]\n'
+                '["bot","2026-01-01T03:00:00Z","Normal bot comment"]\n'
+            ),
+            stderr="",
+        )
+
+    monkeypatch.setattr("code_reviewer.github.run_command", fake_run_command)
+
+    comments = client.get_pr_issue_comments(pr)
+
+    # Bot "Review in progress" skipped; alice's comment and bot's
+    # non-status comment are kept
+    assert len(comments) == 2
+    assert "Fixed the bug" in comments[0]
+    assert "Normal bot comment" in comments[1]
+
+
+def test_get_pr_review_findings_returns_bot_reviews(monkeypatch) -> None:
+    client = GitHubClient(viewer_login="monitoring-dev")
+    pr = PRCandidate(
+        owner="polymerdao",
+        repo="signer-service",
+        number=18,
+        url="https://github.com/polymerdao/signer-service/pull/18",
+        title="test",
+        author_login="alice",
+        base_ref="main",
+        head_sha="deadbeef",
+        updated_at="2026-03-26T00:00:00Z",
+    )
+
+    def fake_run_command(args, **_kwargs):  # noqa: ANN001
+        assert "pulls/18/reviews" in args[3]
+        return subprocess.CompletedProcess(
+            args=args,
+            returncode=0,
+            stdout=(
+                '["monitoring-dev","2026-03-26T01:00:00Z",'
+                '"### Findings\\n- [P1] bug","CHANGES_REQUESTED"]\n'
+                '["alice","2026-03-26T01:30:00Z",'
+                '"LGTM","APPROVED"]\n'
+                '["monitoring-dev","2026-03-26T02:00:00Z",'
+                '"### Findings\\n- [P2] nit","CHANGES_REQUESTED"]\n'
+                '["monitoring-dev","2026-03-26T03:00:00Z",'
+                '"No issues found","APPROVED"]\n'
+            ),
+            stderr="",
+        )
+
+    monkeypatch.setattr("code_reviewer.github.run_command", fake_run_command)
+
+    findings = client.get_pr_review_findings(pr)
+
+    # Only bot reviews with ### Findings; alice's and approval
+    # without findings are excluded
+    assert len(findings) == 2
+    assert "[P1] bug" in findings[0]
+    assert "[P2] nit" in findings[1]
+
+
+def test_get_pr_review_findings_empty_when_no_reviews(monkeypatch) -> None:
+    client = GitHubClient(viewer_login="bot")
+    pr = PRCandidate(
+        owner="org",
+        repo="repo",
+        number=1,
+        url="https://github.com/org/repo/pull/1",
+        title="test",
+        author_login="alice",
+        base_ref="main",
+        head_sha="abc",
+        updated_at="2026-01-01T00:00:00Z",
+    )
+
+    def fake_run_command(args, **_kwargs):  # noqa: ANN001
+        return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr("code_reviewer.github.run_command", fake_run_command)
+
+    assert client.get_pr_review_findings(pr) == []
+
+
 def test_add_eyes_reaction_calls_gh_api(monkeypatch) -> None:
     client = GitHubClient(viewer_login="Inkvi")
     pr = PRCandidate(

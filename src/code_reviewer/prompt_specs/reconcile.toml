@@ -15,11 +15,17 @@ PR comments:
 
 {reviewer_sources}
 
+Prior review findings from earlier rounds on this PR:
+{prior_findings}
+
 PR comments may contain author responses to previous review rounds. If the author has
 explicitly acknowledged a finding and deferred it to a follow-up (e.g., "this is follow-up scope",
 "by design", "product decision for a follow-up"), discard that finding. Only keep a previously
 discussed finding if the author's reasoning is technically incorrect and the issue is a real bug
 or security vulnerability.
+
+If prior reviews exist, discard any finding that duplicates an already-raised and addressed issue.
+Prioritize novel findings that prior rounds missed.
 
 Your primary job is validation, not aggregation. Treat all findings as suspects:
 - Reviewers can be wrong. Findings may be hallucinated, misread, or based on incorrect assumptions.
