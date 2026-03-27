@@ -6,6 +6,7 @@ from pathlib import Path
 from code_reviewer.logger import info
 from code_reviewer.models import PRCandidate, TokenUsage
 from code_reviewer.prompts import PromptBundle, build_lightweight_bundle
+from code_reviewer.reviewers._circuit_breaker import is_open as _cb_is_open
 from code_reviewer.reviewers._circuit_breaker import record_failure as _cb_record_failure
 from code_reviewer.reviewers._fallback import run_with_fallback
 from code_reviewer.reviewers._sanitize import _escape_delimiters
@@ -48,6 +49,14 @@ async def run_lightweight_review(
         f"(backends={' > '.join(backends)}, model={model or 'default'}) {pr.url}"
     )
 
+    # Resolve effective gemini model: if primary's circuit is open, use fallback
+    _base_gemini_model = model if backends[0] == "gemini" else None
+    _effective_gemini_model = _base_gemini_model
+    if gemini_fallback_model and gemini_fallback_model != _base_gemini_model:
+        opened, _ = _cb_is_open("gemini", _base_gemini_model)
+        if opened:
+            _effective_gemini_model = gemini_fallback_model
+
     async def _try(b: str) -> tuple[str, TokenUsage | None]:
         is_primary = b == backends[0]
         use_model = model if is_primary else None
@@ -83,6 +92,7 @@ async def run_lightweight_review(
             )
             return text, None
         if b == "gemini":
+            use_model = _effective_gemini_model
             try:
                 text = await run_gemini_prompt(
                     prompt,
@@ -98,21 +108,27 @@ async def run_lightweight_review(
                     and "reset after" in str(exc)
                 ):
                     _cb_record_failure("gemini", use_model, exc)
-                    log.info(
-                        "retrying gemini lightweight review with fallback model %s %s",
-                        gemini_fallback_model,
-                        pr.url,
-                    )
-                    text = await run_gemini_prompt(
-                        prompt,
-                        workspace,
-                        timeout_seconds,
-                        model=gemini_fallback_model,
-                    )
-                    return text, None
+                    fb_opened, _ = _cb_is_open("gemini", gemini_fallback_model)
+                    if not fb_opened:
+                        log.info(
+                            "retrying gemini lightweight review with fallback model %s %s",
+                            gemini_fallback_model,
+                            pr.url,
+                        )
+                        text = await run_gemini_prompt(
+                            prompt,
+                            workspace,
+                            timeout_seconds,
+                            model=gemini_fallback_model,
+                        )
+                        return text, None
                 raise
         raise RuntimeError(f"Unsupported lightweight review backend: {b}")
 
-    models_map = {b: (model if b == backends[0] else None) for b in backends}
+    models_map: dict[str, str | None] = {}
+    for b in backends:
+        models_map[b] = (
+            _effective_gemini_model if b == "gemini" else (model if b == backends[0] else None)
+        )
     text, usage = await run_with_fallback(backends, _try, "lightweight", pr.url, models=models_map)
     return text, usage, bundle

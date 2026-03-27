@@ -10,6 +10,7 @@ from pathlib import Path
 from code_reviewer.logger import info, warn
 from code_reviewer.models import PRCandidate
 from code_reviewer.prompts import PromptBundle, build_triage_bundle
+from code_reviewer.reviewers._circuit_breaker import is_open as _cb_is_open
 from code_reviewer.reviewers._circuit_breaker import record_failure as _cb_record_failure
 from code_reviewer.reviewers._fallback import run_with_fallback
 from code_reviewer.reviewers._sanitize import _escape_delimiters
@@ -103,6 +104,14 @@ async def run_triage(
     prompt = bundle.prompt
     info(f"running triage (backends={' > '.join(backends)}, model={model or 'default'}) {pr.url}")
 
+    # Resolve effective gemini model: if primary's circuit is open, use fallback
+    _base_gemini_model = model if backends[0] == "gemini" else None
+    _effective_gemini_model = _base_gemini_model
+    if gemini_fallback_model and gemini_fallback_model != _base_gemini_model:
+        opened, _ = _cb_is_open("gemini", _base_gemini_model)
+        if opened:
+            _effective_gemini_model = gemini_fallback_model
+
     async def _try(b: str) -> str:
         use_model = model if b == backends[0] else None
         if b == "claude":
@@ -134,6 +143,7 @@ async def run_triage(
             )
             return text
         if b == "gemini":
+            use_model = _effective_gemini_model
             try:
                 return await run_gemini_prompt(
                     prompt,
@@ -148,22 +158,28 @@ async def run_triage(
                     and "reset after" in str(exc)
                 ):
                     _cb_record_failure("gemini", use_model, exc)
-                    log.info(
-                        "retrying gemini triage with fallback model %s %s",
-                        gemini_fallback_model,
-                        pr.url,
-                    )
-                    return await run_gemini_prompt(
-                        prompt,
-                        workspace,
-                        timeout_seconds,
-                        model=gemini_fallback_model,
-                    )
+                    fb_opened, _ = _cb_is_open("gemini", gemini_fallback_model)
+                    if not fb_opened:
+                        log.info(
+                            "retrying gemini triage with fallback model %s %s",
+                            gemini_fallback_model,
+                            pr.url,
+                        )
+                        return await run_gemini_prompt(
+                            prompt,
+                            workspace,
+                            timeout_seconds,
+                            model=gemini_fallback_model,
+                        )
                 raise
         raise RuntimeError(f"unsupported triage backend: {b}")
 
     try:
-        models_map = {b: (model if b == backends[0] else None) for b in backends}
+        models_map: dict[str, str | None] = {}
+        for b in backends:
+            models_map[b] = (
+                _effective_gemini_model if b == "gemini" else (model if b == backends[0] else None)
+            )
         text = await run_with_fallback(backends, _try, "triage", pr.url, models=models_map)
     except Exception as exc:  # noqa: BLE001
         warn(f"triage failed, falling back to full review: {exc} {pr.url}")
