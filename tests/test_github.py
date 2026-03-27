@@ -364,6 +364,9 @@ def test_get_pr_review_findings_returns_bot_reviews(monkeypatch) -> None:
                 '"### Findings\\n- [P2] nit","CHANGES_REQUESTED"]\n'
                 '["monitoring-dev","2026-03-26T03:00:00Z",'
                 '"No issues found","APPROVED"]\n'
+                '["monitoring-dev","2026-03-26T04:00:00Z",'
+                '"### Findings\\n- No material findings.\\n\\n'
+                '### Test Gaps\\n- None noted.","APPROVED"]\n'
             ),
             stderr="",
         )
@@ -372,8 +375,8 @@ def test_get_pr_review_findings_returns_bot_reviews(monkeypatch) -> None:
 
     findings = client.get_pr_review_findings(pr)
 
-    # Only bot reviews with ### Findings; alice's and approval
-    # without findings are excluded
+    # Only bot reviews with real findings; alice's review, approval
+    # without findings, and clean "No material findings" are excluded
     assert len(findings) == 2
     assert "[P1] bug" in findings[0]
     assert "[P2] nit" in findings[1]

@@ -82,6 +82,7 @@ _ALLOWED_PLACEHOLDERS: dict[PromptStep, set[str]] = {
         "workspace",
         "diff_section",
         "pr_comments",
+        "prior_findings",
     },
     "full_review": {
         "url_label",

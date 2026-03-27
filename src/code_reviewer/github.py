@@ -204,6 +204,8 @@ class GitHubClient:
                 continue
             if "### Findings" not in body:
                 continue
+            if "No material findings" in body:
+                continue
 
             condensed = body.strip()
             if not condensed:

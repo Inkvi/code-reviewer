@@ -19,6 +19,9 @@ Diff:
 - Head SHA: {head_sha}
 - Lines added: {additions}, deleted: {deletions}
 
+Prior review findings from earlier rounds on this PR:
+{prior_findings}
+
 Review checklist — evaluate each item:
 1. **Syntax & format**: Are the changed files valid and well-formed? (YAML indentation, JSON brackets, TOML syntax, etc.)
 2. **Secrets & credentials**: Are there any hardcoded secrets, API keys, passwords, or tokens?
