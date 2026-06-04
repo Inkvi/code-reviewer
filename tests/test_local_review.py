@@ -381,7 +381,7 @@ def test_process_local_review_reconciler_path(
     repo = _init_git_repo(tmp_path)
 
     config = _make_config(
-        enabled_reviewers=["claude", "gemini"],
+        enabled_reviewers=["claude", "antigravity"],
         output_dir=str(tmp_path / "reviews"),
     )
 
@@ -406,8 +406,8 @@ def test_process_local_review_reconciler_path(
     async def mock_claude_review(*args, **kwargs):  # noqa: ANN002, ANN003
         return _ok_reviewer_output("claude")
 
-    async def mock_gemini_review(*args, **kwargs):  # noqa: ANN002, ANN003
-        return _ok_reviewer_output("gemini")
+    async def mock_antigravity_review(*args, **kwargs):  # noqa: ANN002, ANN003
+        return _ok_reviewer_output("antigravity")
 
     async def mock_reconcile(*args, **kwargs):  # noqa: ANN002, ANN003
         return (
@@ -417,7 +417,7 @@ def test_process_local_review_reconciler_path(
         )
 
     monkeypatch.setattr("code_reviewer.processor.run_claude_review", mock_claude_review)
-    monkeypatch.setattr("code_reviewer.processor.run_gemini_review", mock_gemini_review)
+    monkeypatch.setattr("code_reviewer.processor.run_antigravity_review", mock_antigravity_review)
     monkeypatch.setattr("code_reviewer.processor.reconcile_reviews", mock_reconcile)
 
     result = asyncio.run(process_local_review(config, candidate, repo))

@@ -185,20 +185,20 @@ def test_target_pr_urls_for_run_once_dedupes_values() -> None:
     ]
 
 
-def test_apply_enabled_reviewer_override_gemini_only() -> None:
+def test_apply_enabled_reviewer_override_antigravity_only() -> None:
     cfg = AppConfig(github_orgs=["polymerdao"])
 
-    out = _apply_enabled_reviewer_override(cfg, ["gemini"])
+    out = _apply_enabled_reviewer_override(cfg, ["antigravity"])
 
-    assert out.enabled_reviewers == ["gemini"]
+    assert out.enabled_reviewers == ["antigravity"]
 
 
-def test_apply_field_override_gemini_model() -> None:
+def test_apply_field_override_antigravity_model() -> None:
     cfg = AppConfig(github_orgs=["polymerdao"])
 
-    out = _apply_field_override(cfg, "gemini_model", "gemini-3.1-pro-preview", "--gemini-model")
+    out = _apply_field_override(cfg, "antigravity_model", "agy-pro", "--antigravity-model")
 
-    assert out.gemini_model == "gemini-3.1-pro-preview"
+    assert out.antigravity_model == "agy-pro"
 
 
 def test_output_format_json_requires_pr_url() -> None:

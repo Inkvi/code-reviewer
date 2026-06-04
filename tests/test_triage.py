@@ -73,13 +73,15 @@ def test_triage_falls_back_to_full_review_on_exception(tmp_path: Path) -> None:
     assert result == TriageResult.FULL_REVIEW
 
 
-def test_triage_gemini_backend(tmp_path: Path) -> None:
-    async def fake_gemini_prompt(prompt, cwd, timeout, **kwargs):
+def test_triage_antigravity_backend(tmp_path: Path) -> None:
+    async def fake_antigravity_prompt(prompt, cwd, timeout, **kwargs):
         return '{"classification": "simple"}'
 
-    with patch("code_reviewer.reviewers.triage.run_gemini_prompt", side_effect=fake_gemini_prompt):
+    with patch(
+        "code_reviewer.reviewers.triage.run_antigravity_prompt", side_effect=fake_antigravity_prompt
+    ):
         result, _bundle = asyncio.run(
-            run_triage(_sample_pr(), tmp_path, timeout_seconds=60, backend=["gemini"])
+            run_triage(_sample_pr(), tmp_path, timeout_seconds=60, backend=["antigravity"])
         )
     assert result == TriageResult.SIMPLE
 
@@ -216,16 +218,19 @@ def test_get_diff_snippet_local_uncommitted(tmp_path: Path) -> None:
 def test_run_triage_passes_diff_to_prompt(tmp_path: Path) -> None:
     captured_prompts: list[str] = []
 
-    async def fake_gemini_prompt(prompt, cwd, timeout, **kwargs):
+    async def fake_antigravity_prompt(prompt, cwd, timeout, **kwargs):
         captured_prompts.append(prompt)
         return '{"classification": "simple"}'
 
     fake_diff = "--- a/f\n+++ b/f\n-old\n+new"
     with (
-        patch("code_reviewer.reviewers.triage.run_gemini_prompt", side_effect=fake_gemini_prompt),
+        patch(
+            "code_reviewer.reviewers.triage.run_antigravity_prompt",
+            side_effect=fake_antigravity_prompt,
+        ),
         patch("code_reviewer.reviewers.triage._get_diff_snippet", return_value=fake_diff),
     ):
-        asyncio.run(run_triage(_sample_pr(), tmp_path, timeout_seconds=60, backend=["gemini"]))
+        asyncio.run(run_triage(_sample_pr(), tmp_path, timeout_seconds=60, backend=["antigravity"]))
 
     assert len(captured_prompts) == 1
     assert "<untrusted_data>" in captured_prompts[0]
@@ -233,34 +238,42 @@ def test_run_triage_passes_diff_to_prompt(tmp_path: Path) -> None:
 
 
 def test_triage_falls_back_to_second_backend(tmp_path: Path) -> None:
-    async def failing_gemini(prompt, cwd, timeout, **kwargs):
-        raise RuntimeError("gemini down")
+    async def failing_antigravity(prompt, cwd, timeout, **kwargs):
+        raise RuntimeError("antigravity down")
 
     async def ok_claude(prompt, cwd, timeout, **kwargs):
         return '{"classification": "simple"}', None, None
 
     with (
-        patch("code_reviewer.reviewers.triage.run_gemini_prompt", side_effect=failing_gemini),
+        patch(
+            "code_reviewer.reviewers.triage.run_antigravity_prompt", side_effect=failing_antigravity
+        ),
         patch("code_reviewer.reviewers.triage._run_claude_prompt", side_effect=ok_claude),
     ):
         result, _bundle = asyncio.run(
-            run_triage(_sample_pr(), tmp_path, timeout_seconds=60, backend=["gemini", "claude"])
+            run_triage(
+                _sample_pr(), tmp_path, timeout_seconds=60, backend=["antigravity", "claude"]
+            )
         )
     assert result == TriageResult.SIMPLE
 
 
 def test_triage_all_backends_fail_returns_full_review(tmp_path: Path) -> None:
-    async def failing_gemini(prompt, cwd, timeout, **kwargs):
-        raise RuntimeError("gemini down")
+    async def failing_antigravity(prompt, cwd, timeout, **kwargs):
+        raise RuntimeError("antigravity down")
 
     async def failing_claude(prompt, cwd, timeout, **kwargs):
         raise RuntimeError("claude down")
 
     with (
-        patch("code_reviewer.reviewers.triage.run_gemini_prompt", side_effect=failing_gemini),
+        patch(
+            "code_reviewer.reviewers.triage.run_antigravity_prompt", side_effect=failing_antigravity
+        ),
         patch("code_reviewer.reviewers.triage._run_claude_prompt", side_effect=failing_claude),
     ):
         result, _bundle = asyncio.run(
-            run_triage(_sample_pr(), tmp_path, timeout_seconds=60, backend=["gemini", "claude"])
+            run_triage(
+                _sample_pr(), tmp_path, timeout_seconds=60, backend=["antigravity", "claude"]
+            )
         )
     assert result == TriageResult.FULL_REVIEW

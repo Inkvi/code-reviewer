@@ -11,7 +11,11 @@ from code_reviewer.preflight import run_preflight
 def test_run_preflight_requires_claude_for_multi_reviewer_without_claude_enabled(
     monkeypatch,
 ) -> None:
-    cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["codex", "gemini"])
+    cfg = AppConfig(
+        github_orgs=["polymerdao"],
+        enabled_reviewers=["codex", "antigravity"],
+        full_review_prompt_path="/tmp/full_review.toml",
+    )
 
     def fake_which(cmd: str) -> str | None:
         if cmd == "claude":
@@ -24,11 +28,15 @@ def test_run_preflight_requires_claude_for_multi_reviewer_without_claude_enabled
         run_preflight(cfg)
 
 
-def test_run_preflight_does_not_require_claude_for_single_gemini_reviewer(monkeypatch) -> None:
-    cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["gemini"])
+def test_run_preflight_does_not_require_claude_for_single_antigravity_reviewer(monkeypatch) -> None:
+    cfg = AppConfig(
+        github_orgs=["polymerdao"],
+        enabled_reviewers=["antigravity"],
+        full_review_prompt_path="/tmp/full_review.toml",
+    )
 
     def fake_which(cmd: str) -> str | None:
-        if cmd in {"gh", "gemini"}:
+        if cmd in {"gh", "agy"}:
             return f"/usr/bin/{cmd}"
         return None
 
@@ -38,8 +46,6 @@ def test_run_preflight_does_not_require_claude_for_single_gemini_reviewer(monkey
         commands.append(args)
         if args[:3] == ["gh", "api", "user"]:
             stdout = "Inkvi\n"
-        elif args == ["gemini", "extensions", "list"]:
-            stdout = "✓ code-review (0.1.0)\n"
         else:
             stdout = ""
         return subprocess.CompletedProcess(args=args, returncode=0, stdout=stdout, stderr="")
@@ -50,34 +56,21 @@ def test_run_preflight_does_not_require_claude_for_single_gemini_reviewer(monkey
     result = run_preflight(cfg)
 
     assert result.viewer_login == "Inkvi"
-    assert ["gemini", "--version"] in commands
-    assert ["gemini", "extensions", "list"] in commands
+    assert ["agy", "--version"] in commands
     assert all(command[0] != "claude" for command in commands)
 
 
-def test_run_preflight_rejects_missing_gemini_code_review_extension(monkeypatch, tmp_path) -> None:
-    cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["gemini"])
+def test_run_preflight_rejects_antigravity_reviewer_without_prompt_path(monkeypatch) -> None:
+    cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["antigravity"])
 
     def fake_which(cmd: str) -> str | None:
-        if cmd in {"gh", "gemini"}:
+        if cmd in {"gh", "agy"}:
             return f"/usr/bin/{cmd}"
         return None
 
-    def fake_run_command(args: list[str], **_kwargs) -> subprocess.CompletedProcess[str]:
-        if args[:3] == ["gh", "api", "user"]:
-            stdout = "Inkvi\n"
-        elif args == ["gemini", "extensions", "list"]:
-            stdout = "✓ another-extension (0.1.0)\n"
-        else:
-            stdout = ""
-        return subprocess.CompletedProcess(args=args, returncode=0, stdout=stdout, stderr="")
-
     monkeypatch.setattr("code_reviewer.preflight.shutil.which", fake_which)
-    monkeypatch.setattr("code_reviewer.preflight.run_command", fake_run_command)
-    # Use tmp_path as home so filesystem fallback doesn't find the real extension
-    monkeypatch.setattr("pathlib.Path.home", classmethod(lambda cls: tmp_path))
 
-    with pytest.raises(RuntimeError, match=r"requires the `code-review` extension"):
+    with pytest.raises(RuntimeError, match=r"requires full_review_prompt_path"):
         run_preflight(cfg)
 
 
@@ -150,12 +143,13 @@ def test_run_preflight_skips_sdk_import_for_claude_cli_triage_backend(monkeypatc
 def test_run_preflight_does_not_require_claude_for_codex_reconciler(monkeypatch) -> None:
     cfg = AppConfig(
         github_orgs=["polymerdao"],
-        enabled_reviewers=["codex", "gemini"],
+        enabled_reviewers=["codex", "antigravity"],
         reconciler_backend="codex",
+        full_review_prompt_path="/tmp/full_review.toml",
     )
 
     def fake_which(cmd: str) -> str | None:
-        if cmd in {"gh", "codex", "gemini"}:
+        if cmd in {"gh", "codex", "agy"}:
             return f"/usr/bin/{cmd}"
         return None
 
@@ -165,8 +159,6 @@ def test_run_preflight_does_not_require_claude_for_codex_reconciler(monkeypatch)
         commands.append(args)
         if args[:3] == ["gh", "api", "user"]:
             stdout = "Inkvi\n"
-        elif args == ["gemini", "extensions", "list"]:
-            stdout = "✓ code-review (0.1.0)\n"
         else:
             stdout = ""
         return subprocess.CompletedProcess(args=args, returncode=0, stdout=stdout, stderr="")
@@ -180,17 +172,17 @@ def test_run_preflight_does_not_require_claude_for_codex_reconciler(monkeypatch)
     assert all(command[0] != "claude" for command in commands)
 
 
-def test_run_preflight_gemini_reconciler_does_not_require_extension_when_not_reviewer(
+def test_run_preflight_antigravity_reconciler_only(
     monkeypatch,
 ) -> None:
     cfg = AppConfig(
         github_orgs=["polymerdao"],
         enabled_reviewers=["codex", "claude"],
-        reconciler_backend="gemini",
+        reconciler_backend="antigravity",
     )
 
     def fake_which(cmd: str) -> str | None:
-        if cmd in {"gh", "codex", "claude", "gemini"}:
+        if cmd in {"gh", "codex", "claude", "agy"}:
             return f"/usr/bin/{cmd}"
         return None
 
@@ -213,21 +205,20 @@ def test_run_preflight_gemini_reconciler_does_not_require_extension_when_not_rev
     result = run_preflight(cfg)
 
     assert result.viewer_login == "Inkvi"
-    assert ["gemini", "--version"] in commands
-    assert ["gemini", "extensions", "list"] not in commands
+    assert ["agy", "--version"] in commands
 
 
-def test_run_preflight_gemini_reviewer_with_prompt_override_does_not_require_extension(
+def test_run_preflight_antigravity_reviewer_with_prompt_override(
     monkeypatch,
 ) -> None:
     cfg = AppConfig(
         github_orgs=["polymerdao"],
-        enabled_reviewers=["gemini"],
+        enabled_reviewers=["antigravity"],
         full_review_prompt_path="/tmp/full_review.toml",
     )
 
     def fake_which(cmd: str) -> str | None:
-        if cmd in {"gh", "gemini"}:
+        if cmd in {"gh", "agy"}:
             return f"/usr/bin/{cmd}"
         return None
 
@@ -247,30 +238,29 @@ def test_run_preflight_gemini_reviewer_with_prompt_override_does_not_require_ext
     result = run_preflight(cfg)
 
     assert result.viewer_login == "Inkvi"
-    assert ["gemini", "--version"] in commands
-    assert ["gemini", "extensions", "list"] not in commands
+    assert ["agy", "--version"] in commands
 
 
 def test_run_preflight_uses_app_slug_for_github_app_auth(monkeypatch) -> None:
     import io
     import json
 
-    cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["gemini"])
+    cfg = AppConfig(
+        github_orgs=["polymerdao"],
+        enabled_reviewers=["antigravity"],
+        full_review_prompt_path="/tmp/full_review.toml",
+    )
 
     monkeypatch.setenv("GITHUB_APP_ID", "12345")
     monkeypatch.setenv("GITHUB_APP_INSTALLATION_ID", "67890")
     monkeypatch.setenv("GITHUB_APP_PRIVATE_KEY", "fake-key")
 
     def fake_which(cmd: str) -> str | None:
-        if cmd in {"gh", "gemini"}:
+        if cmd in {"gh", "agy"}:
             return f"/usr/bin/{cmd}"
         return None
 
     def fake_run_command(args: list[str], **_kwargs) -> subprocess.CompletedProcess[str]:
-        if args == ["gemini", "extensions", "list"]:
-            return subprocess.CompletedProcess(
-                args=args, returncode=0, stdout="✓ code-review (0.1.0)\n", stderr=""
-            )
         return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
 
     def fake_urlopen(req):
@@ -296,14 +286,18 @@ def test_run_preflight_uses_app_slug_for_github_app_auth(monkeypatch) -> None:
 def test_run_preflight_raises_when_app_slug_fails(monkeypatch) -> None:
     from urllib.error import HTTPError
 
-    cfg = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["gemini"])
+    cfg = AppConfig(
+        github_orgs=["polymerdao"],
+        enabled_reviewers=["antigravity"],
+        full_review_prompt_path="/tmp/full_review.toml",
+    )
 
     monkeypatch.setenv("GITHUB_APP_ID", "12345")
     monkeypatch.setenv("GITHUB_APP_INSTALLATION_ID", "67890")
     monkeypatch.setenv("GITHUB_APP_PRIVATE_KEY", "fake-key")
 
     def fake_which(cmd: str) -> str | None:
-        if cmd in {"gh", "gemini"}:
+        if cmd in {"gh", "agy"}:
             return f"/usr/bin/{cmd}"
         return None
 

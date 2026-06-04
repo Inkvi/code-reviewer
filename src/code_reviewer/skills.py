@@ -1,7 +1,7 @@
 """Skill injection for review workspaces.
 
 Copies skill folders (containing SKILL.md) into ``target/.agents/skills/``
-so that agent backends (Claude, Codex, Gemini) discover them natively.
+so that agent backends (Claude, Codex, Antigravity) discover them natively.
 """
 
 from __future__ import annotations

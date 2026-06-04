@@ -8,8 +8,6 @@ from code_reviewer.config import AppConfig
 from code_reviewer.github_app_auth import is_github_app_auth
 from code_reviewer.shell import CommandError, run_command
 
-_GEMINI_CODE_REVIEW_EXTENSION = "code-review"
-
 
 @dataclass(slots=True)
 class PreflightResult:
@@ -32,11 +30,11 @@ def run_preflight(config: AppConfig) -> PreflightResult:
     uses_codex_cli = ("codex" in enabled and config.codex_backend == "cli") or (
         "codex" in reconciler_backends
     )
-    uses_gemini_cli = (
-        "gemini" in enabled
-        or "gemini" in reconciler_backends
-        or "gemini" in triage_backends
-        or "gemini" in lightweight_backends
+    uses_antigravity_cli = (
+        "antigravity" in enabled
+        or "antigravity" in reconciler_backends
+        or "antigravity" in triage_backends
+        or "antigravity" in lightweight_backends
     )
     uses_opencode_cli = (
         "opencode" in enabled
@@ -44,14 +42,19 @@ def run_preflight(config: AppConfig) -> PreflightResult:
         or "opencode" in triage_backends
         or "opencode" in lightweight_backends
     )
-    uses_gemini_extension_review = "gemini" in enabled and config.full_review_prompt_path is None
+
+    if "antigravity" in enabled and config.full_review_prompt_path is None:
+        raise RuntimeError(
+            "Antigravity reviewer requires full_review_prompt_path to be set "
+            "(prompt mode is the only supported mode)."
+        )
 
     if uses_claude_runtime:
         required.append("claude")
     if uses_codex_cli:
         required.append("codex")
-    if uses_gemini_cli:
-        required.append("gemini")
+    if uses_antigravity_cli:
+        required.append("agy")
     if uses_opencode_cli:
         required.append("opencode")
 
@@ -133,29 +136,7 @@ def run_preflight(config: AppConfig) -> PreflightResult:
     if uses_opencode_cli:
         run_command(["opencode", "--version"])
 
-    if uses_gemini_cli:
-        run_command(["gemini", "--version"])
-    if uses_gemini_extension_review:
-        found_extension = False
-        try:
-            extension_proc = run_command(["gemini", "extensions", "list"])
-            listing = f"{extension_proc.stdout}\n{extension_proc.stderr}".lower()
-            found_extension = _GEMINI_CODE_REVIEW_EXTENSION in listing
-        except CommandError:
-            pass
-        # Fallback: check filesystem directly (covers Docker git-clone installs)
-        if not found_extension:
-            from pathlib import Path
-
-            home = Path.home()
-            ext_dir = home / ".gemini" / "extensions" / _GEMINI_CODE_REVIEW_EXTENSION
-            found_extension = ext_dir.is_dir()
-        if not found_extension:
-            raise RuntimeError(
-                "Gemini reviewer requires the `code-review` extension when "
-                "`full_review_prompt_path` is unset. Install with: "
-                "gemini extensions install "
-                "https://github.com/gemini-cli-extensions/code-review"
-            )
+    if uses_antigravity_cli:
+        run_command(["agy", "--version"])
 
     return PreflightResult(viewer_login=viewer_login)
