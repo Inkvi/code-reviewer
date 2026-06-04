@@ -367,3 +367,54 @@ def test_get_version_detail_includes_conversation(tmp_path: Path) -> None:
     assert convs is not None
     assert "claude" in convs
     assert len(convs["claude"]) == 1
+
+
+# ---------------------------------------------------------------------------
+# Legacy gemini and new antigravity stage categorization
+# ---------------------------------------------------------------------------
+
+
+def test_gemini_stage_categorized_as_full(tmp_path: Path) -> None:
+    """Legacy records with a gemini stage must render as review_type=full."""
+    reviews = tmp_path / "reviews"
+    repo_dir = reviews / "org" / "repo"
+    repo_dir.mkdir(parents=True)
+    (repo_dir / "pr-3.md").write_text("No issues.\n")
+    (repo_dir / "pr-3.gemini.md").write_text("Gemini: no issues.\n")
+
+    prs = list_prs(reviews, "org", "repo")
+    assert len(prs) == 1
+    assert prs[0]["review_type"] == "full"
+    assert "gemini" in prs[0]["stages"]
+
+    detail = get_pr_detail(reviews, "org", "repo", 3)
+    assert detail is not None
+    assert detail["review_type"] == "full"
+    assert "gemini" in detail["stage_contents"]
+
+    content = get_stage_content(reviews, "org", "repo", 3, "gemini")
+    assert content is not None
+    assert "Gemini: no issues" in content
+
+
+def test_antigravity_stage_categorized_as_full(tmp_path: Path) -> None:
+    """New records with an antigravity stage must render as review_type=full."""
+    reviews = tmp_path / "reviews"
+    repo_dir = reviews / "org" / "repo"
+    repo_dir.mkdir(parents=True)
+    (repo_dir / "pr-4.md").write_text("No issues.\n")
+    (repo_dir / "pr-4.antigravity.md").write_text("Antigravity: no issues.\n")
+
+    prs = list_prs(reviews, "org", "repo")
+    assert len(prs) == 1
+    assert prs[0]["review_type"] == "full"
+    assert "antigravity" in prs[0]["stages"]
+
+    detail = get_pr_detail(reviews, "org", "repo", 4)
+    assert detail is not None
+    assert detail["review_type"] == "full"
+    assert "antigravity" in detail["stage_contents"]
+
+    content = get_stage_content(reviews, "org", "repo", 4, "antigravity")
+    assert content is not None
+    assert "Antigravity: no issues" in content
