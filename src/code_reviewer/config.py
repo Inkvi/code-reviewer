@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field, ValidationError, field_validator, model_v
 
 from code_reviewer.prompts import PromptStep, validate_prompt_override_file
 
-_ALLOWED_BACKENDS = {"claude", "codex", "gemini", "opencode"}
+_ALLOWED_BACKENDS = {"claude", "codex", "antigravity", "opencode"}
 
 
 def _normalize_backend_list(value: str | list[str], field_name: str) -> list[str]:
@@ -28,7 +28,7 @@ def _normalize_backend_list(value: str | list[str], field_name: str) -> list[str
             continue
         if cleaned not in _ALLOWED_BACKENDS:
             raise ValueError(
-                f"{field_name} entries must be one of: claude, codex, gemini, opencode"
+                f"{field_name} entries must be one of: claude, codex, antigravity, opencode"
             )
         seen.add(cleaned)
         normalized.append(cleaned)
@@ -59,9 +59,9 @@ class AppConfig(BaseModel):
     codex_backend: str = "cli"
     codex_model: str = Field(default="gpt-5.3-codex", min_length=1)
     codex_reasoning_effort: str | None = "low"
-    gemini_model: str | None = None
-    gemini_fallback_model: str | None = None
-    gemini_timeout_seconds: int = Field(default=900, ge=30)
+    antigravity_model: str | None = None
+    antigravity_fallback_model: str | None = None
+    antigravity_timeout_seconds: int = Field(default=900, ge=30)
     opencode_model: str | None = None
     opencode_timeout_seconds: int = Field(default=900, ge=30)
     skip_own_prs: bool = True
@@ -83,13 +83,13 @@ class AppConfig(BaseModel):
     prompt_injection_protection: bool = True
 
     # Triage
-    triage_backend: list[str] = Field(default_factory=lambda: ["gemini"])
-    triage_model: str | None = "gemini-3-flash-preview"
+    triage_backend: list[str] = Field(default_factory=lambda: ["antigravity"])
+    triage_model: str | None = None
     triage_timeout_seconds: int = Field(default=60, ge=10)
 
     # Lightweight review
-    lightweight_review_backend: list[str] = Field(default_factory=lambda: ["gemini"])
-    lightweight_review_model: str | None = "gemini-3-flash-preview"
+    lightweight_review_backend: list[str] = Field(default_factory=lambda: ["antigravity"])
+    lightweight_review_model: str | None = None
     lightweight_review_reasoning_effort: str | None = None
     lightweight_review_timeout_seconds: int = Field(default=300, ge=30)
     triage_prompt_path: str | None = None
@@ -154,14 +154,14 @@ class AppConfig(BaseModel):
     def validate_enabled_reviewers(cls, value: list[str]) -> list[str]:
         normalized: list[str] = []
         seen: set[str] = set()
-        allowed = {"claude", "codex", "gemini", "opencode"}
+        allowed = {"claude", "codex", "antigravity", "opencode"}
         for entry in value:
             reviewer = entry.strip().lower()
             if not reviewer or reviewer in seen:
                 continue
             if reviewer not in allowed:
                 raise ValueError(
-                    "enabled_reviewers entries must be one of: claude, codex, gemini, opencode"
+                    "enabled_reviewers entries must be one of: claude, codex, antigravity, opencode"
                 )
             seen.add(reviewer)
             normalized.append(reviewer)
@@ -297,14 +297,14 @@ class AppConfig(BaseModel):
             raise ValueError("reconciler_model cannot be empty")
         return cleaned
 
-    @field_validator("gemini_model")
+    @field_validator("antigravity_model")
     @classmethod
-    def validate_gemini_model(cls, value: str | None) -> str | None:
+    def validate_antigravity_model(cls, value: str | None) -> str | None:
         if value is None:
             return None
         cleaned = value.strip()
         if not cleaned:
-            raise ValueError("gemini_model cannot be empty")
+            raise ValueError("antigravity_model cannot be empty")
         return cleaned
 
     @field_validator("opencode_model")
@@ -317,14 +317,14 @@ class AppConfig(BaseModel):
             raise ValueError("opencode_model cannot be empty")
         return cleaned
 
-    @field_validator("gemini_fallback_model")
+    @field_validator("antigravity_fallback_model")
     @classmethod
-    def validate_gemini_fallback_model(cls, value: str | None) -> str | None:
+    def validate_antigravity_fallback_model(cls, value: str | None) -> str | None:
         if value is None:
             return None
         cleaned = value.strip()
         if not cleaned:
-            raise ValueError("gemini_fallback_model cannot be empty")
+            raise ValueError("antigravity_fallback_model cannot be empty")
         return cleaned
 
     @field_validator("trigger_mode")

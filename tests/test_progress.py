@@ -45,7 +45,7 @@ def test_render_after_triage_full():
     assert "full review" in text.lower()
     assert "Claude" in text
     assert "Codex" in text
-    assert "Gemini" not in text
+    assert "Antigravity" not in text
     assert "Reconciliation" in text
 
 
@@ -116,17 +116,17 @@ def test_render_reason_multiline_uses_first_line():
 
 def test_render_reason_extracts_error_class():
     pc = ProgressComment(FakeClient(), FakePR())
-    pc.set_triage_done("full", enabled_reviewers=["gemini"])
+    pc.set_triage_done("full", enabled_reviewers=["antigravity"])
     error = (
-        "gemini exited with status 1: Error when talking to Gemini API "
-        "Full report available at: /tmp/gemini-client-error.json "
+        "agy exited with status 1: Error when talking to Antigravity API "
+        "Full report available at: /tmp/agy-client-error.json "
         "TerminalQuotaError: You have exhausted your capacity. Resets after 17h59m42s."
     )
-    pc.set_reviewer_failed("gemini", error)
+    pc.set_reviewer_failed("antigravity", error)
     text = pc.render()
     assert "TerminalQuotaError:" in text
     assert "Resets after 17h59m42s" in text
-    assert "/tmp/gemini-client-error.json" not in text
+    assert "/tmp/agy-client-error.json" not in text
 
 
 def test_render_reconciliation_skipped():

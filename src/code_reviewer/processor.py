@@ -36,11 +36,11 @@ from code_reviewer.review_decision import ReviewDecision, infer_review_decision
 from code_reviewer.reviewers import (
     TriageResult,
     reconcile_reviews,
+    run_antigravity_review,
     run_claude_cli_review,
     run_claude_review,
     run_codex_review,
     run_codex_review_via_agents_sdk,
-    run_gemini_review,
     run_lightweight_review,
     run_opencode_review,
     run_triage,
@@ -228,17 +228,7 @@ def _usage_snapshot_for_model(
     snapshot: BackendUsageSnapshot,
     model: str | None,
 ) -> BackendUsageSnapshot | None:
-    if snapshot.backend != "gemini" or not model:
-        return snapshot
-    window = snapshot.latest_by_limit.get(model)
-    if window is None:
-        return None
-    return BackendUsageSnapshot(
-        backend=snapshot.backend,
-        events_scanned=snapshot.events_scanned,
-        latest_by_limit={model: window},
-        account_type=snapshot.account_type,
-    )
+    return snapshot
 
 
 def _backend_has_available_usage(
@@ -272,30 +262,36 @@ def _backend_has_available_usage(
     return True, None
 
 
-def _resolve_gemini_review_model(
+def _resolve_antigravity_review_model(
     config: AppConfig,
     context: str,
 ) -> tuple[bool, str | None]:
-    """Pick the best available Gemini model, trying fallback if primary is blocked.
+    """Pick the best available Antigravity model, trying fallback if primary is blocked.
 
     Returns (available, model). available=False means all models are blocked.
     model may be None when using the CLI default.
     """
-    candidates = [("primary", config.gemini_model)]
-    if config.gemini_fallback_model and config.gemini_fallback_model != config.gemini_model:
-        candidates.append(("fallback", config.gemini_fallback_model))
+    candidates = [("primary", config.antigravity_model)]
+    if (
+        config.antigravity_fallback_model
+        and config.antigravity_fallback_model != config.antigravity_model
+    ):
+        candidates.append(("fallback", config.antigravity_fallback_model))
 
     for label, model in candidates:
-        opened, reason = _circuit_is_open("gemini", model)
+        opened, reason = _circuit_is_open("antigravity", model)
         if opened:
-            warn(f"Gemini {label} model {model or 'default'} circuit open: {reason} {context}")
+            warn(f"Antigravity {label} model {model or 'default'} circuit open: {reason} {context}")
             continue
-        allowed, usage_reason = _backend_has_available_usage("gemini", model)
+        allowed, usage_reason = _backend_has_available_usage("antigravity", model)
         if not allowed:
-            warn(f"Gemini {label} model {model or 'default'} usage gate: {usage_reason} {context}")
+            warn(
+                f"Antigravity {label} model {model or 'default'} usage gate: "
+                f"{usage_reason} {context}"
+            )
             continue
         if label == "fallback":
-            info(f"using Gemini fallback model {model} {context}")
+            info(f"using Antigravity fallback model {model} {context}")
         return True, model
     return False, None
 
@@ -311,8 +307,8 @@ def _resolve_reconciler_settings(
     elif primary == "codex":
         model = config.reconciler_model or config.codex_model
         reasoning_effort = config.reconciler_reasoning_effort or config.codex_reasoning_effort
-    elif primary == "gemini":
-        model = config.reconciler_model or config.gemini_model
+    elif primary == "antigravity":
+        model = config.reconciler_model or config.antigravity_model
         reasoning_effort = None
     else:
         model = config.reconciler_model or config.opencode_model
@@ -323,8 +319,8 @@ def _resolve_reconciler_settings(
             backend_timeouts[b] = config.claude_timeout_seconds
         elif b == "codex":
             backend_timeouts[b] = config.codex_timeout_seconds
-        elif b == "gemini":
-            backend_timeouts[b] = config.gemini_timeout_seconds
+        elif b == "antigravity":
+            backend_timeouts[b] = config.antigravity_timeout_seconds
         else:
             backend_timeouts[b] = config.opencode_timeout_seconds
     return backends, backend_timeouts, model, reasoning_effort
@@ -456,11 +452,11 @@ def _build_review_meta(
             elif name == "codex":
                 r["model"] = config.codex_model
                 r["backend"] = config.codex_backend
-            elif name == "gemini":
-                if config.gemini_model:
-                    r["model"] = config.gemini_model
-                if config.gemini_fallback_model:
-                    r["fallback_model"] = config.gemini_fallback_model
+            elif name == "antigravity":
+                if config.antigravity_model:
+                    r["model"] = config.antigravity_model
+                if config.antigravity_fallback_model:
+                    r["fallback_model"] = config.antigravity_fallback_model
             if reviewer_outputs and name in reviewer_outputs:
                 out = reviewer_outputs[name]
                 r["status"] = out.status
@@ -695,26 +691,26 @@ async def _run_reviewers_with_monitoring(
 
     reviewer_models: dict[str, str | None] = {}
 
-    if "gemini" in enabled_reviewer_set:
-        gemini_available, gemini_model = _resolve_gemini_review_model(config, pr.url)
-        if not gemini_available:
-            warn(f"skipping Gemini review (all models exhausted) {pr.url}")
-            progress.set_reviewer_skipped("gemini", "all models exhausted")
+    if "antigravity" in enabled_reviewer_set:
+        antigravity_available, antigravity_model = _resolve_antigravity_review_model(config, pr.url)
+        if not antigravity_available:
+            warn(f"skipping Antigravity review (all models exhausted) {pr.url}")
+            progress.set_reviewer_skipped("antigravity", "all models exhausted")
         else:
-            reviewer_models["gemini"] = gemini_model
-            info(f"starting Gemini review (model={gemini_model or 'default'}) {pr.url}")
-            pending_tasks["gemini"] = asyncio.create_task(
-                run_gemini_review(
+            reviewer_models["antigravity"] = antigravity_model
+            info(f"starting Antigravity review (model={antigravity_model or 'default'}) {pr.url}")
+            pending_tasks["antigravity"] = asyncio.create_task(
+                run_antigravity_review(
                     pr,
                     workdir,
-                    config.gemini_timeout_seconds,
-                    model=gemini_model,
+                    config.antigravity_timeout_seconds,
+                    model=antigravity_model,
                     prompt_path=config.full_review_prompt_path,
                 )
             )
-            progress.set_reviewer_started("gemini")
+            progress.set_reviewer_started("antigravity")
     else:
-        info(f"Gemini reviewer disabled {pr.url}")
+        info(f"Antigravity reviewer disabled {pr.url}")
 
     if "opencode" in enabled_reviewer_set:
         opened, reason = _circuit_is_open("opencode", config.opencode_model)
@@ -806,30 +802,33 @@ async def _run_reviewers_with_monitoring(
                         _circuit_record_failure(
                             reviewer_name, _reviewer_model, RuntimeError(output.error)
                         )
-                        # Retry Gemini with fallback model on quota error
+                        # Retry Antigravity with fallback model on quota error
                         if (
-                            reviewer_name == "gemini"
+                            reviewer_name == "antigravity"
                             and "reset after" in output.error
-                            and config.gemini_fallback_model
-                            and config.gemini_fallback_model != reviewer_models.get("gemini")
+                            and config.antigravity_fallback_model
+                            and config.antigravity_fallback_model
+                            != reviewer_models.get("antigravity")
                         ):
-                            fb_opened, _ = _circuit_is_open("gemini", config.gemini_fallback_model)
+                            fb_opened, _ = _circuit_is_open(
+                                "antigravity", config.antigravity_fallback_model
+                            )
                             if not fb_opened:
                                 info(
-                                    f"retrying Gemini with fallback model "
-                                    f"{config.gemini_fallback_model} {pr.url}"
+                                    f"retrying Antigravity with fallback model "
+                                    f"{config.antigravity_fallback_model} {pr.url}"
                                 )
-                                reviewer_models["gemini"] = config.gemini_fallback_model
-                                pending_tasks["gemini"] = asyncio.create_task(
-                                    run_gemini_review(
+                                reviewer_models["antigravity"] = config.antigravity_fallback_model
+                                pending_tasks["antigravity"] = asyncio.create_task(
+                                    run_antigravity_review(
                                         pr,
                                         workdir,
-                                        config.gemini_timeout_seconds,
-                                        model=config.gemini_fallback_model,
+                                        config.antigravity_timeout_seconds,
+                                        model=config.antigravity_fallback_model,
                                         prompt_path=config.full_review_prompt_path,
                                     )
                                 )
-                                progress.set_reviewer_started("gemini")
+                                progress.set_reviewer_started("antigravity")
                                 await progress.update()
                                 continue
                         progress.set_reviewer_failed(reviewer_name, output.error)
@@ -956,19 +955,19 @@ async def _run_local_reviewers(
 
     reviewer_models: dict[str, str | None] = {}
 
-    if "gemini" in enabled_reviewer_set:
-        gemini_available, gemini_model = _resolve_gemini_review_model(config, pr.url)
-        if not gemini_available:
-            warn("skipping Gemini review (all models exhausted)")
+    if "antigravity" in enabled_reviewer_set:
+        antigravity_available, antigravity_model = _resolve_antigravity_review_model(config, pr.url)
+        if not antigravity_available:
+            warn("skipping Antigravity review (all models exhausted)")
         else:
-            reviewer_models["gemini"] = gemini_model
-            info(f"starting Gemini review (model={gemini_model or 'default'})")
-            pending_tasks["gemini"] = asyncio.create_task(
-                run_gemini_review(
+            reviewer_models["antigravity"] = antigravity_model
+            info(f"starting Antigravity review (model={antigravity_model or 'default'})")
+            pending_tasks["antigravity"] = asyncio.create_task(
+                run_antigravity_review(
                     pr,
                     workdir,
-                    config.gemini_timeout_seconds,
-                    model=gemini_model,
+                    config.antigravity_timeout_seconds,
+                    model=antigravity_model,
                     prompt_path=config.full_review_prompt_path,
                 )
             )
@@ -1025,26 +1024,28 @@ async def _run_local_reviewers(
                     _circuit_record_failure(
                         reviewer_name, _reviewer_model, RuntimeError(output.error)
                     )
-                    # Retry Gemini with fallback model on quota error
+                    # Retry Antigravity with fallback model on quota error
                     if (
-                        reviewer_name == "gemini"
+                        reviewer_name == "antigravity"
                         and "reset after" in output.error
-                        and config.gemini_fallback_model
-                        and config.gemini_fallback_model != reviewer_models.get("gemini")
+                        and config.antigravity_fallback_model
+                        and config.antigravity_fallback_model != reviewer_models.get("antigravity")
                     ):
-                        fb_opened, _ = _circuit_is_open("gemini", config.gemini_fallback_model)
+                        fb_opened, _ = _circuit_is_open(
+                            "antigravity", config.antigravity_fallback_model
+                        )
                         if not fb_opened:
                             info(
-                                f"retrying Gemini with fallback model "
-                                f"{config.gemini_fallback_model}"
+                                f"retrying Antigravity with fallback model "
+                                f"{config.antigravity_fallback_model}"
                             )
-                            reviewer_models["gemini"] = config.gemini_fallback_model
-                            pending_tasks["gemini"] = asyncio.create_task(
-                                run_gemini_review(
+                            reviewer_models["antigravity"] = config.antigravity_fallback_model
+                            pending_tasks["antigravity"] = asyncio.create_task(
+                                run_antigravity_review(
                                     pr,
                                     workdir,
-                                    config.gemini_timeout_seconds,
-                                    model=config.gemini_fallback_model,
+                                    config.antigravity_timeout_seconds,
+                                    model=config.antigravity_fallback_model,
                                     prompt_path=config.full_review_prompt_path,
                                 )
                             )
@@ -1089,7 +1090,7 @@ async def process_local_review(
             model=config.triage_model,
             prompt_path=config.triage_prompt_path,
             claude_backend=config.claude_backend,
-            gemini_fallback_model=config.gemini_fallback_model,
+            antigravity_fallback_model=config.antigravity_fallback_model,
         )
 
         if triage_result == TriageResult.SIMPLE:
@@ -1107,7 +1108,7 @@ async def process_local_review(
                     reasoning_effort=config.lightweight_review_reasoning_effort,
                     prompt_path=config.lightweight_review_prompt_path,
                     claude_backend=config.claude_backend,
-                    gemini_fallback_model=config.gemini_fallback_model,
+                    antigravity_fallback_model=config.antigravity_fallback_model,
                 )
             except PromptOverrideError:
                 raise
@@ -1184,7 +1185,7 @@ async def process_local_review(
                 ),
                 prompt_path=config.reconcile_prompt_path,
                 claude_backend=config.claude_backend,
-                gemini_fallback_model=config.gemini_fallback_model,
+                antigravity_fallback_model=config.antigravity_fallback_model,
             )
             final_review = _validate_review_format(
                 final_review, pr_url=pr.url, injection_protection=config.prompt_injection_protection
@@ -1432,7 +1433,7 @@ async def process_candidate(
             model=config.triage_model,
             prompt_path=config.triage_prompt_path,
             claude_backend=config.claude_backend,
-            gemini_fallback_model=config.gemini_fallback_model,
+            antigravity_fallback_model=config.antigravity_fallback_model,
         )
 
         if triage_result == TriageResult.SIMPLE:
@@ -1473,7 +1474,7 @@ async def process_candidate(
                     reasoning_effort=config.lightweight_review_reasoning_effort,
                     prompt_path=config.lightweight_review_prompt_path,
                     claude_backend=config.claude_backend,
-                    gemini_fallback_model=config.gemini_fallback_model,
+                    antigravity_fallback_model=config.antigravity_fallback_model,
                 )
 
                 lightweight_duration = (datetime.now(UTC) - lightweight_start).total_seconds()
@@ -1632,7 +1633,9 @@ async def process_candidate(
             ) = _resolve_reconciler_settings(config)
             primary_backend = reconciler_backend[0]
             effort_label = (
-                reconciler_reasoning_effort or "default" if primary_backend != "gemini" else "n/a"
+                reconciler_reasoning_effort or "default"
+                if primary_backend != "antigravity"
+                else "n/a"
             )
             info(
                 f"reconciling {reviewer_names} outputs "
@@ -1657,7 +1660,7 @@ async def process_candidate(
                 ),
                 prompt_path=config.reconcile_prompt_path,
                 claude_backend=config.claude_backend,
-                gemini_fallback_model=config.gemini_fallback_model,
+                antigravity_fallback_model=config.antigravity_fallback_model,
             )
             reconcile_duration = (datetime.now(UTC) - reconcile_start).total_seconds()
             progress.set_reconciliation_done(reconcile_duration)

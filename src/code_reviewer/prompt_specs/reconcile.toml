@@ -61,7 +61,7 @@ Strict output rules:
   - Severity mapping from reviewer-native formats:
     - Codex (P0-P3): use as-is.
     - Claude (confidence 80+): map to P0-P1 for bugs/security, P2 for other confirmed issues.
-    - Gemini (CRITICAL/HIGH/MEDIUM/LOW): CRITICAL→P0, HIGH→P1, MEDIUM→P2, LOW→P3.
+    - Antigravity (CRITICAL/HIGH/MEDIUM/LOW): CRITICAL→P0, HIGH→P1, MEDIUM→P2, LOW→P3.
   - Each bullet format:
     `- [P0|P1|P2|P3] path[:line] - issue. Impact. Recommended fix.`
   - If no material issues, write exactly:

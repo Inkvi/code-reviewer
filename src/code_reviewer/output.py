@@ -64,7 +64,7 @@ def write_stage_markdown(
     """Write a per-stage review output to its own markdown file.
 
     ``stage`` identifies the pipeline step, e.g. "lightweight", "claude",
-    "codex", "gemini", or "reconcile".  Files are written as
+    "codex", "antigravity", or "reconcile".  Files are written as
     ``pr-{number}.{stage}.md`` (stable) and
     ``{version}.{stage}.md`` (versioned history).
     """

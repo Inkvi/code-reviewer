@@ -27,8 +27,8 @@ def test_load_config_success(tmp_path: Path) -> None:
     assert cfg.codex_backend == "cli"
     assert cfg.codex_model == "gpt-5.3-codex"
     assert cfg.codex_reasoning_effort == "low"
-    assert cfg.gemini_model is None
-    assert cfg.gemini_timeout_seconds == 900
+    assert cfg.antigravity_model is None
+    assert cfg.antigravity_timeout_seconds == 900
     assert cfg.trigger_mode == "rerequest_only"
 
 
@@ -217,32 +217,32 @@ def test_load_config_rejects_reconciler_max_effort_for_codex_backend(tmp_path: P
         load_config(path)
 
 
-def test_load_config_accepts_gemini_reviewer(tmp_path: Path) -> None:
+def test_load_config_accepts_antigravity_reviewer(tmp_path: Path) -> None:
     path = tmp_path / "config.toml"
     path.write_text(
-        'github_orgs=["polymerdao"]\nenabled_reviewers = ["gemini"]\n',
+        'github_orgs=["polymerdao"]\nenabled_reviewers = ["antigravity"]\n',
         encoding="utf-8",
     )
 
     cfg = load_config(path)
-    assert cfg.enabled_reviewers == ["gemini"]
+    assert cfg.enabled_reviewers == ["antigravity"]
 
 
 def test_load_config_accepts_all_three_reviewers(tmp_path: Path) -> None:
     path = tmp_path / "config.toml"
     path.write_text(
-        'github_orgs=["polymerdao"]\nenabled_reviewers = ["claude", "codex", "gemini"]\n',
+        'github_orgs=["polymerdao"]\nenabled_reviewers = ["claude", "codex", "antigravity"]\n',
         encoding="utf-8",
     )
 
     cfg = load_config(path)
-    assert cfg.enabled_reviewers == ["claude", "codex", "gemini"]
+    assert cfg.enabled_reviewers == ["claude", "codex", "antigravity"]
 
 
-def test_load_config_rejects_empty_gemini_model(tmp_path: Path) -> None:
+def test_load_config_rejects_empty_antigravity_model(tmp_path: Path) -> None:
     path = tmp_path / "config.toml"
     path.write_text(
-        'github_orgs=["polymerdao"]\ngemini_model = ""\n',
+        'github_orgs=["polymerdao"]\nantigravity_model = ""\n',
         encoding="utf-8",
     )
 
@@ -290,8 +290,8 @@ def test_load_config_triage_defaults(tmp_path: Path) -> None:
     path = tmp_path / "config.toml"
     path.write_text('github_orgs=["Inkvi"]\n', encoding="utf-8")
     cfg = load_config(path)
-    assert cfg.triage_backend == ["gemini"]
-    assert cfg.triage_model == "gemini-3-flash-preview"
+    assert cfg.triage_backend == ["antigravity"]
+    assert cfg.triage_model is None
     assert cfg.triage_timeout_seconds == 60
 
 
@@ -299,8 +299,8 @@ def test_load_config_lightweight_review_defaults(tmp_path: Path) -> None:
     path = tmp_path / "config.toml"
     path.write_text('github_orgs=["Inkvi"]\n', encoding="utf-8")
     cfg = load_config(path)
-    assert cfg.lightweight_review_backend == ["gemini"]
-    assert cfg.lightweight_review_model == "gemini-3-flash-preview"
+    assert cfg.lightweight_review_backend == ["antigravity"]
+    assert cfg.lightweight_review_model is None
     assert cfg.lightweight_review_reasoning_effort is None
     assert cfg.lightweight_review_timeout_seconds == 300
 
@@ -467,8 +467,8 @@ def test_default_config_returns_valid_config() -> None:
     assert cfg.enabled_reviewers == ["claude", "codex"]
     assert cfg.poll_interval_seconds == 60
     assert cfg.auto_post_review is False
-    assert cfg.triage_backend == ["gemini"]
-    assert cfg.lightweight_review_backend == ["gemini"]
+    assert cfg.triage_backend == ["antigravity"]
+    assert cfg.lightweight_review_backend == ["antigravity"]
 
 
 def test_load_config_rejects_invalid_trigger_mode(tmp_path: Path) -> None:
@@ -488,11 +488,11 @@ def test_load_config_rejects_invalid_trigger_mode(tmp_path: Path) -> None:
 def test_triage_backend_accepts_list(tmp_path: Path) -> None:
     path = tmp_path / "config.toml"
     path.write_text(
-        'github_orgs=["Inkvi"]\ntriage_backend = ["gemini", "claude"]\n',
+        'github_orgs=["Inkvi"]\ntriage_backend = ["antigravity", "claude"]\n',
         encoding="utf-8",
     )
     cfg = load_config(path)
-    assert cfg.triage_backend == ["gemini", "claude"]
+    assert cfg.triage_backend == ["antigravity", "claude"]
 
 
 def test_triage_backend_string_normalized_to_list(tmp_path: Path) -> None:
@@ -508,11 +508,11 @@ def test_triage_backend_string_normalized_to_list(tmp_path: Path) -> None:
 def test_triage_backend_deduplicates(tmp_path: Path) -> None:
     path = tmp_path / "config.toml"
     path.write_text(
-        'github_orgs=["Inkvi"]\ntriage_backend = ["gemini", "GEMINI", "claude"]\n',
+        'github_orgs=["Inkvi"]\ntriage_backend = ["antigravity", "ANTIGRAVITY", "claude"]\n',
         encoding="utf-8",
     )
     cfg = load_config(path)
-    assert cfg.triage_backend == ["gemini", "claude"]
+    assert cfg.triage_backend == ["antigravity", "claude"]
 
 
 def test_triage_backend_rejects_empty_list(tmp_path: Path) -> None:
@@ -528,21 +528,21 @@ def test_triage_backend_rejects_empty_list(tmp_path: Path) -> None:
 def test_reconciler_backend_accepts_list(tmp_path: Path) -> None:
     path = tmp_path / "config.toml"
     path.write_text(
-        'github_orgs=["Inkvi"]\nreconciler_backend = ["claude", "gemini"]\n',
+        'github_orgs=["Inkvi"]\nreconciler_backend = ["claude", "antigravity"]\n',
         encoding="utf-8",
     )
     cfg = load_config(path)
-    assert cfg.reconciler_backend == ["claude", "gemini"]
+    assert cfg.reconciler_backend == ["claude", "antigravity"]
 
 
 def test_lightweight_review_backend_accepts_list(tmp_path: Path) -> None:
     path = tmp_path / "config.toml"
     path.write_text(
-        'github_orgs=["Inkvi"]\nlightweight_review_backend = ["gemini", "claude", "codex"]\n',
+        'github_orgs=["Inkvi"]\nlightweight_review_backend = ["antigravity", "claude", "codex"]\n',
         encoding="utf-8",
     )
     cfg = load_config(path)
-    assert cfg.lightweight_review_backend == ["gemini", "claude", "codex"]
+    assert cfg.lightweight_review_backend == ["antigravity", "claude", "codex"]
 
 
 def test_reconciler_allows_max_effort_when_codex_is_fallback(tmp_path: Path) -> None:
@@ -576,12 +576,12 @@ def test_lightweight_allows_max_effort_when_codex_is_fallback(tmp_path: Path) ->
     path = tmp_path / "config.toml"
     path.write_text(
         'github_orgs=["Inkvi"]\n'
-        'lightweight_review_backend = ["gemini", "codex"]\n'
+        'lightweight_review_backend = ["antigravity", "codex"]\n'
         'lightweight_review_reasoning_effort = "max"\n',
         encoding="utf-8",
     )
     cfg = load_config(path)
-    assert cfg.lightweight_review_backend == ["gemini", "codex"]
+    assert cfg.lightweight_review_backend == ["antigravity", "codex"]
     assert cfg.lightweight_review_reasoning_effort == "max"
 
 
@@ -597,41 +597,41 @@ def test_lightweight_rejects_max_effort_when_codex_is_primary(tmp_path: Path) ->
         load_config(path)
 
 
-def test_load_config_accepts_gemini_fallback_model(tmp_path: Path) -> None:
+def test_load_config_accepts_antigravity_fallback_model(tmp_path: Path) -> None:
     path = tmp_path / "config.toml"
     path.write_text(
         'github_orgs=["polymerdao"]\n'
-        'gemini_model = "gemini-3-pro"\n'
-        'gemini_fallback_model = "gemini-3-flash-preview"\n',
+        'antigravity_model = "agy-pro"\n'
+        'antigravity_fallback_model = "agy-flash"\n',
         encoding="utf-8",
     )
     cfg = load_config(path)
-    assert cfg.gemini_fallback_model == "gemini-3-flash-preview"
+    assert cfg.antigravity_fallback_model == "agy-flash"
 
 
-def test_load_config_rejects_empty_gemini_fallback_model(tmp_path: Path) -> None:
+def test_load_config_rejects_empty_antigravity_fallback_model(tmp_path: Path) -> None:
     path = tmp_path / "config.toml"
     path.write_text(
-        'github_orgs=["polymerdao"]\ngemini_fallback_model = ""\n',
+        'github_orgs=["polymerdao"]\nantigravity_fallback_model = ""\n',
         encoding="utf-8",
     )
     with pytest.raises(ValueError):
         load_config(path)
 
 
-def test_default_config_gemini_fallback_model_is_none() -> None:
+def test_default_config_antigravity_fallback_model_is_none() -> None:
     cfg = default_config()
-    assert cfg.gemini_fallback_model is None
+    assert cfg.antigravity_fallback_model is None
 
 
-def test_gemini_fallback_model_strips_whitespace(tmp_path: Path) -> None:
+def test_antigravity_fallback_model_strips_whitespace(tmp_path: Path) -> None:
     path = tmp_path / "config.toml"
     path.write_text(
-        'github_orgs=["polymerdao"]\ngemini_fallback_model = "  gemini-3-flash  "\n',
+        'github_orgs=["polymerdao"]\nantigravity_fallback_model = "  agy-flash  "\n',
         encoding="utf-8",
     )
     cfg = load_config(path)
-    assert cfg.gemini_fallback_model == "gemini-3-flash"
+    assert cfg.antigravity_fallback_model == "agy-flash"
 
 
 def test_opencode_in_enabled_reviewers() -> None:

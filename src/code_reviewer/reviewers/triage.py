@@ -14,10 +14,10 @@ from code_reviewer.reviewers._circuit_breaker import is_open as _cb_is_open
 from code_reviewer.reviewers._circuit_breaker import record_failure as _cb_record_failure
 from code_reviewer.reviewers._fallback import run_with_fallback
 from code_reviewer.reviewers._sanitize import _escape_delimiters
+from code_reviewer.reviewers.antigravity_cli import run_antigravity_prompt
 from code_reviewer.reviewers.claude_cli import run_claude_cli_prompt
 from code_reviewer.reviewers.claude_sdk import _run_claude_prompt
 from code_reviewer.reviewers.codex_cli import run_codex_prompt
-from code_reviewer.reviewers.gemini_cli import run_gemini_prompt
 from code_reviewer.reviewers.opencode_cli import run_opencode_prompt
 
 log = logging.getLogger(__name__)
@@ -92,11 +92,11 @@ async def run_triage(
     workspace: Path,
     timeout_seconds: int,
     *,
-    backend: list[str] | str = "gemini",
+    backend: list[str] | str = "antigravity",
     model: str | None = None,
     prompt_path: str | None = None,
     claude_backend: str = "sdk",
-    gemini_fallback_model: str | None = None,
+    antigravity_fallback_model: str | None = None,
 ) -> tuple[TriageResult, PromptBundle]:
     backends = [backend] if isinstance(backend, str) else list(backend)
     diff_snippet = _get_diff_snippet(workspace, pr)
@@ -105,13 +105,13 @@ async def run_triage(
     prompt = bundle.prompt
     info(f"running triage (backends={' > '.join(backends)}, model={model or 'default'}) {pr.url}")
 
-    # Resolve effective gemini model: if primary's circuit is open, use fallback
-    _base_gemini_model = model if backends[0] == "gemini" else None
-    _effective_gemini_model = _base_gemini_model
-    if gemini_fallback_model and gemini_fallback_model != _base_gemini_model:
-        opened, _ = _cb_is_open("gemini", _base_gemini_model)
+    # Resolve effective antigravity model: if primary's circuit is open, use fallback
+    _base_antigravity_model = model if backends[0] == "antigravity" else None
+    _effective_antigravity_model = _base_antigravity_model
+    if antigravity_fallback_model and antigravity_fallback_model != _base_antigravity_model:
+        opened, _ = _cb_is_open("antigravity", _base_antigravity_model)
         if opened:
-            _effective_gemini_model = gemini_fallback_model
+            _effective_antigravity_model = antigravity_fallback_model
 
     async def _try(b: str) -> str:
         use_model = model if b == backends[0] else None
@@ -143,10 +143,10 @@ async def run_triage(
                 model=use_model,
             )
             return text
-        if b == "gemini":
-            use_model = _effective_gemini_model
+        if b == "antigravity":
+            use_model = _effective_antigravity_model
             try:
-                return await run_gemini_prompt(
+                return await run_antigravity_prompt(
                     prompt,
                     workspace,
                     timeout_seconds,
@@ -154,23 +154,23 @@ async def run_triage(
                 )
             except RuntimeError as exc:
                 if (
-                    gemini_fallback_model
-                    and use_model != gemini_fallback_model
+                    antigravity_fallback_model
+                    and use_model != antigravity_fallback_model
                     and "reset after" in str(exc)
                 ):
-                    _cb_record_failure("gemini", use_model, exc)
-                    fb_opened, _ = _cb_is_open("gemini", gemini_fallback_model)
+                    _cb_record_failure("antigravity", use_model, exc)
+                    fb_opened, _ = _cb_is_open("antigravity", antigravity_fallback_model)
                     if not fb_opened:
                         log.info(
-                            "retrying gemini triage with fallback model %s %s",
-                            gemini_fallback_model,
+                            "retrying antigravity triage with fallback model %s %s",
+                            antigravity_fallback_model,
                             pr.url,
                         )
-                        return await run_gemini_prompt(
+                        return await run_antigravity_prompt(
                             prompt,
                             workspace,
                             timeout_seconds,
-                            model=gemini_fallback_model,
+                            model=antigravity_fallback_model,
                         )
                 raise
         if b == "opencode":
@@ -187,7 +187,9 @@ async def run_triage(
         models_map: dict[str, str | None] = {}
         for b in backends:
             models_map[b] = (
-                _effective_gemini_model if b == "gemini" else (model if b == backends[0] else None)
+                _effective_antigravity_model
+                if b == "antigravity"
+                else (model if b == backends[0] else None)
             )
         text = await run_with_fallback(backends, _try, "triage", pr.url, models=models_map)
     except Exception as exc:  # noqa: BLE001

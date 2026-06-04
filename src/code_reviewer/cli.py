@@ -107,7 +107,8 @@ ReconcilerBackendOption = Annotated[
     str | None,
     typer.Option(
         "--reconciler-backend",
-        help="Override reconciler_backend from config. Allowed: claude, codex, gemini, opencode.",
+        help="Override reconciler_backend from config."
+        " Allowed: claude, codex, antigravity, opencode.",
     ),
 ]
 CodexModelOption = Annotated[
@@ -124,18 +125,18 @@ CodexReasoningEffortOption = Annotated[
         help="Override codex_reasoning_effort from config. Allowed: low, medium, high.",
     ),
 ]
-GeminiModelOption = Annotated[
+AntigravityModelOption = Annotated[
     str | None,
     typer.Option(
-        "--gemini-model",
-        help="Override gemini_model from config.",
+        "--antigravity-model",
+        help="Override antigravity_model from config.",
     ),
 ]
-GeminiFallbackModelOption = Annotated[
+AntigravityFallbackModelOption = Annotated[
     str | None,
     typer.Option(
-        "--gemini-fallback-model",
-        help="Override gemini_fallback_model from config.",
+        "--antigravity-fallback-model",
+        help="Override antigravity_fallback_model from config.",
     ),
 ]
 OpenCodeModelOption = Annotated[
@@ -163,7 +164,7 @@ TriageBackendOption = Annotated[
     str | None,
     typer.Option(
         "--triage-backend",
-        help="Override triage_backend from config. Allowed: claude, codex, gemini, opencode.",
+        help="Override triage_backend from config. Allowed: claude, codex, antigravity, opencode.",
     ),
 ]
 TriageModelOption = Annotated[
@@ -178,7 +179,7 @@ LightweightReviewBackendOption = Annotated[
     typer.Option(
         "--lightweight-review-backend",
         help="Override lightweight_review_backend from config."
-        " Allowed: claude, codex, gemini, opencode.",
+        " Allowed: claude, codex, antigravity, opencode.",
     ),
 ]
 LightweightReviewModelOption = Annotated[
@@ -326,7 +327,7 @@ def _resolve_reconciler_settings(config: AppConfig) -> tuple[list[str], str | No
         model = config.reconciler_model or config.codex_model
         reasoning_effort = config.reconciler_reasoning_effort or config.codex_reasoning_effort
     else:
-        model = config.reconciler_model or config.gemini_model
+        model = config.reconciler_model or config.antigravity_model
         reasoning_effort = None
     return backends, model, reasoning_effort
 
@@ -350,8 +351,8 @@ def _load_config_with_overrides(
     codex_model: str | None,
     codex_reasoning_effort: str | None,
     auto_post_review: bool | None,
-    gemini_model: str | None,
-    gemini_fallback_model: str | None,
+    antigravity_model: str | None,
+    antigravity_fallback_model: str | None,
     opencode_model: str | None,
     slash_command_enabled: bool | None,
     triage_backend: str | None,
@@ -402,9 +403,14 @@ def _load_config_with_overrides(
         auto_post_review,
         "--auto-post-review/--no-auto-post-review",
     )
-    config = _apply_field_override(config, "gemini_model", gemini_model, "--gemini-model")
     config = _apply_field_override(
-        config, "gemini_fallback_model", gemini_fallback_model, "--gemini-fallback-model"
+        config, "antigravity_model", antigravity_model, "--antigravity-model"
+    )
+    config = _apply_field_override(
+        config,
+        "antigravity_fallback_model",
+        antigravity_fallback_model,
+        "--antigravity-fallback-model",
     )
     config = _apply_field_override(config, "opencode_model", opencode_model, "--opencode-model")
     config = _apply_bool_override(
@@ -446,8 +452,8 @@ def _load_runtime(
     codex_model: str | None,
     codex_reasoning_effort: str | None,
     auto_post_review: bool | None,
-    gemini_model: str | None,
-    gemini_fallback_model: str | None,
+    antigravity_model: str | None,
+    antigravity_fallback_model: str | None,
     opencode_model: str | None,
     slash_command_enabled: bool | None,
     triage_backend: str | None,
@@ -469,8 +475,8 @@ def _load_runtime(
         codex_model,
         codex_reasoning_effort,
         auto_post_review,
-        gemini_model,
-        gemini_fallback_model,
+        antigravity_model,
+        antigravity_fallback_model,
         opencode_model,
         slash_command_enabled,
         triage_backend,
@@ -510,8 +516,8 @@ def check_command(
     codex_model: CodexModelOption = None,
     codex_reasoning_effort: CodexReasoningEffortOption = None,
     auto_post_review: AutoPostReviewOption = None,
-    gemini_model: GeminiModelOption = None,
-    gemini_fallback_model: GeminiFallbackModelOption = None,
+    antigravity_model: AntigravityModelOption = None,
+    antigravity_fallback_model: AntigravityFallbackModelOption = None,
     opencode_model: OpenCodeModelOption = None,
     slash_command_enabled: SlashCommandEnabledOption = None,
     triage_backend: TriageBackendOption = None,
@@ -559,9 +565,12 @@ def check_command(
         auto_post_review,
         "--auto-post-review/--no-auto-post-review",
     )
-    cfg = _apply_field_override(cfg, "gemini_model", gemini_model, "--gemini-model")
+    cfg = _apply_field_override(cfg, "antigravity_model", antigravity_model, "--antigravity-model")
     cfg = _apply_field_override(
-        cfg, "gemini_fallback_model", gemini_fallback_model, "--gemini-fallback-model"
+        cfg,
+        "antigravity_fallback_model",
+        antigravity_fallback_model,
+        "--antigravity-fallback-model",
     )
     cfg = _apply_field_override(cfg, "opencode_model", opencode_model, "--opencode-model")
     cfg = _apply_bool_override(
@@ -608,7 +617,7 @@ def check_command(
     )
     reconciler_primary = reconciler_backend_value[0]
     reconciler_effort_display = (
-        reconciler_effort_value or "default" if reconciler_primary != "gemini" else "n/a"
+        reconciler_effort_value or "default" if reconciler_primary != "antigravity" else "n/a"
     )
     table.add_row("Reconciler backend", " > ".join(reconciler_backend_value))
     table.add_row("Reconciler model", reconciler_model_value or "default")
@@ -616,8 +625,8 @@ def check_command(
     table.add_row("Codex backend", cfg.codex_backend)
     table.add_row("Codex model", cfg.codex_model)
     table.add_row("Codex reasoning effort", cfg.codex_reasoning_effort or "default")
-    table.add_row("Gemini model", cfg.gemini_model or "default")
-    table.add_row("Gemini fallback model", cfg.gemini_fallback_model or "none")
+    table.add_row("Antigravity model", cfg.antigravity_model or "default")
+    table.add_row("Antigravity fallback model", cfg.antigravity_fallback_model or "none")
     table.add_row("Slash command enabled", str(cfg.slash_command_enabled))
     table.add_row("Triage backend", " > ".join(cfg.triage_backend))
     table.add_row("Triage model", cfg.triage_model or "default")
@@ -660,8 +669,8 @@ def run_once_command(
     codex_model: CodexModelOption = None,
     codex_reasoning_effort: CodexReasoningEffortOption = None,
     auto_post_review: AutoPostReviewOption = None,
-    gemini_model: GeminiModelOption = None,
-    gemini_fallback_model: GeminiFallbackModelOption = None,
+    antigravity_model: AntigravityModelOption = None,
+    antigravity_fallback_model: AntigravityFallbackModelOption = None,
     opencode_model: OpenCodeModelOption = None,
     slash_command_enabled: SlashCommandEnabledOption = None,
     triage_backend: TriageBackendOption = None,
@@ -698,8 +707,8 @@ def run_once_command(
         codex_model,
         codex_reasoning_effort,
         auto_post_review,
-        gemini_model,
-        gemini_fallback_model,
+        antigravity_model,
+        antigravity_fallback_model,
         opencode_model,
         slash_command_enabled,
         triage_backend,
@@ -772,8 +781,8 @@ def start_command(
     codex_model: CodexModelOption = None,
     codex_reasoning_effort: CodexReasoningEffortOption = None,
     auto_post_review: AutoPostReviewOption = None,
-    gemini_model: GeminiModelOption = None,
-    gemini_fallback_model: GeminiFallbackModelOption = None,
+    antigravity_model: AntigravityModelOption = None,
+    antigravity_fallback_model: AntigravityFallbackModelOption = None,
     opencode_model: OpenCodeModelOption = None,
     slash_command_enabled: SlashCommandEnabledOption = None,
     triage_backend: TriageBackendOption = None,
@@ -802,8 +811,8 @@ def start_command(
         codex_model,
         codex_reasoning_effort,
         auto_post_review,
-        gemini_model,
-        gemini_fallback_model,
+        antigravity_model,
+        antigravity_fallback_model,
         opencode_model,
         slash_command_enabled,
         triage_backend,
@@ -828,8 +837,8 @@ def start_command(
             codex_model,
             codex_reasoning_effort,
             auto_post_review,
-            gemini_model,
-            gemini_fallback_model,
+            antigravity_model,
+            antigravity_fallback_model,
             opencode_model,
             slash_command_enabled,
             triage_backend,
@@ -919,8 +928,8 @@ def _load_config_with_reviewer_overrides(
     reconciler_reasoning_effort: str | None,
     codex_model: str | None,
     codex_reasoning_effort: str | None,
-    gemini_model: str | None,
-    gemini_fallback_model: str | None,
+    antigravity_model: str | None,
+    antigravity_fallback_model: str | None,
     opencode_model: str | None,
     triage_backend: str | None,
     triage_model: str | None,
@@ -959,9 +968,12 @@ def _load_config_with_reviewer_overrides(
         codex_reasoning_effort,
         "--codex-reasoning-effort",
     )
-    cfg = _apply_field_override(cfg, "gemini_model", gemini_model, "--gemini-model")
+    cfg = _apply_field_override(cfg, "antigravity_model", antigravity_model, "--antigravity-model")
     cfg = _apply_field_override(
-        cfg, "gemini_fallback_model", gemini_fallback_model, "--gemini-fallback-model"
+        cfg,
+        "antigravity_fallback_model",
+        antigravity_fallback_model,
+        "--antigravity-fallback-model",
     )
     cfg = _apply_field_override(cfg, "opencode_model", opencode_model, "--opencode-model")
     cfg = _apply_field_override(cfg, "triage_backend", triage_backend, "--triage-backend")
@@ -1006,8 +1018,8 @@ def review_command(
     reconciler_reasoning_effort: ReconcilerReasoningEffortOption = None,
     codex_model: CodexModelOption = None,
     codex_reasoning_effort: CodexReasoningEffortOption = None,
-    gemini_model: GeminiModelOption = None,
-    gemini_fallback_model: GeminiFallbackModelOption = None,
+    antigravity_model: AntigravityModelOption = None,
+    antigravity_fallback_model: AntigravityFallbackModelOption = None,
     opencode_model: OpenCodeModelOption = None,
     triage_backend: TriageBackendOption = None,
     triage_model: TriageModelOption = None,
@@ -1069,8 +1081,8 @@ def review_command(
         reconciler_reasoning_effort,
         codex_model,
         codex_reasoning_effort,
-        gemini_model,
-        gemini_fallback_model,
+        antigravity_model,
+        antigravity_fallback_model,
         opencode_model,
         triage_backend,
         triage_model,

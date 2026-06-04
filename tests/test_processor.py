@@ -12,7 +12,7 @@ from code_reviewer.processor import (
     _compute_processing_decision,
     _extract_injection_section,
     _NewCommitDetected,
-    _resolve_gemini_review_model,
+    _resolve_antigravity_review_model,
     _resolve_reconciler_settings,
     _run_local_reviewers,
     _run_reviewers_with_monitoring,
@@ -303,34 +303,34 @@ def test_resolve_reconciler_settings_can_use_codex_backend() -> None:
     assert reasoning_effort == "medium"
 
 
-def test_resolve_reconciler_settings_can_use_gemini_backend() -> None:
+def test_resolve_reconciler_settings_can_use_antigravity_backend() -> None:
     cfg = AppConfig(
         github_orgs=["polymerdao"],
-        reconciler_backend="gemini",
-        gemini_model="gemini-3.1-pro-preview",
-        gemini_timeout_seconds=123,
+        reconciler_backend="antigravity",
+        antigravity_model="agy-pro",
+        antigravity_timeout_seconds=123,
     )
 
     backends, backend_timeouts, model, reasoning_effort = _resolve_reconciler_settings(cfg)
 
-    assert backends == ["gemini"]
-    assert backend_timeouts == {"gemini": 123}
-    assert model == "gemini-3.1-pro-preview"
+    assert backends == ["antigravity"]
+    assert backend_timeouts == {"antigravity": 123}
+    assert model == "agy-pro"
     assert reasoning_effort is None
 
 
 def test_resolve_reconciler_settings_multi_backend_timeouts() -> None:
     cfg = AppConfig(
         github_orgs=["polymerdao"],
-        reconciler_backend=["claude", "gemini"],
+        reconciler_backend=["claude", "antigravity"],
         claude_timeout_seconds=900,
-        gemini_timeout_seconds=600,
+        antigravity_timeout_seconds=600,
     )
 
     backends, backend_timeouts, _, _ = _resolve_reconciler_settings(cfg)
 
-    assert backends == ["claude", "gemini"]
-    assert backend_timeouts == {"claude": 900, "gemini": 600}
+    assert backends == ["claude", "antigravity"]
+    assert backend_timeouts == {"claude": 900, "antigravity": 600}
 
 
 def test_backend_has_available_usage_rejects_low_codex_usage(monkeypatch) -> None:
@@ -363,31 +363,31 @@ def test_backend_has_available_usage_rejects_low_codex_usage(monkeypatch) -> Non
     assert "4% < 10%" in reason
 
 
-def test_backend_has_available_usage_uses_configured_gemini_model_bucket(monkeypatch) -> None:
+def test_backend_has_available_usage_uses_configured_antigravity_model_bucket(monkeypatch) -> None:
     now = datetime(2026, 3, 23, 6, 30, tzinfo=UTC)
     snapshot = BackendUsageSnapshot(
-        backend="gemini",
+        backend="antigravity",
         events_scanned=2,
         latest_by_limit={
-            "gemini-3-flash-preview": BackendUsageWindow(
-                backend="gemini",
-                limit_key="gemini-3-flash-preview",
-                raw_limit_key="gemini-3-flash-preview",
+            "agy-flash": BackendUsageWindow(
+                backend="antigravity",
+                limit_key="agy-flash",
+                raw_limit_key="agy-flash",
                 seen_at=now,
                 resets_at=now,
                 used_percent=10.0,
                 status="allowed",
-                source=Path("/tmp/gemini-settings.json"),
+                source=Path("/tmp/agy-settings.json"),
             ),
-            "gemini-3.1-pro-preview": BackendUsageWindow(
-                backend="gemini",
-                limit_key="gemini-3.1-pro-preview",
-                raw_limit_key="gemini-3.1-pro-preview",
+            "agy-pro": BackendUsageWindow(
+                backend="antigravity",
+                limit_key="agy-pro",
+                raw_limit_key="agy-pro",
                 seen_at=now,
                 resets_at=now,
                 used_percent=96.0,
                 status="allowed",
-                source=Path("/tmp/gemini-settings.json"),
+                source=Path("/tmp/agy-settings.json"),
             ),
         },
     )
@@ -396,11 +396,11 @@ def test_backend_has_available_usage_uses_configured_gemini_model_bucket(monkeyp
         lambda backend: snapshot,
     )
 
-    allowed, reason = _backend_has_available_usage("gemini", "gemini-3.1-pro-preview")
+    allowed, reason = _backend_has_available_usage("antigravity", "agy-pro")
 
     assert allowed is False
     assert reason is not None
-    assert "gemini-3.1-pro-preview" in reason
+    assert "agy-pro" in reason
 
 
 def test_backend_has_available_usage_allows_when_signal_unavailable(monkeypatch) -> None:
@@ -409,13 +409,13 @@ def test_backend_has_available_usage_allows_when_signal_unavailable(monkeypatch)
         lambda backend: (_ for _ in ()).throw(RuntimeError("probe failed")),
     )
 
-    allowed, reason = _backend_has_available_usage("gemini", "gemini-3.1-pro-preview")
+    allowed, reason = _backend_has_available_usage("antigravity", "agy-pro")
 
     assert allowed is True
     assert reason is None
 
 
-def test_resolve_gemini_model_returns_primary_when_available(monkeypatch) -> None:
+def test_resolve_antigravity_model_returns_primary_when_available(monkeypatch) -> None:
     monkeypatch.setattr(
         "code_reviewer.processor._circuit_is_open",
         lambda backend, model: (False, None),
@@ -426,17 +426,17 @@ def test_resolve_gemini_model_returns_primary_when_available(monkeypatch) -> Non
     )
     cfg = AppConfig(
         github_orgs=["test"],
-        gemini_model="gemini-3-pro",
-        gemini_fallback_model="gemini-3-flash",
+        antigravity_model="agy-pro",
+        antigravity_fallback_model="agy-flash",
     )
-    available, model = _resolve_gemini_review_model(cfg, "test")
+    available, model = _resolve_antigravity_review_model(cfg, "test")
     assert available is True
-    assert model == "gemini-3-pro"
+    assert model == "agy-pro"
 
 
-def test_resolve_gemini_model_falls_back_when_primary_circuit_open(monkeypatch) -> None:
+def test_resolve_antigravity_model_falls_back_when_primary_circuit_open(monkeypatch) -> None:
     def fake_circuit(backend, model):
-        if model == "gemini-3-pro":
+        if model == "agy-pro":
             return True, "quota exhausted"
         return False, None
 
@@ -447,40 +447,40 @@ def test_resolve_gemini_model_falls_back_when_primary_circuit_open(monkeypatch) 
     )
     cfg = AppConfig(
         github_orgs=["test"],
-        gemini_model="gemini-3-pro",
-        gemini_fallback_model="gemini-3-flash",
+        antigravity_model="agy-pro",
+        antigravity_fallback_model="agy-flash",
     )
-    available, model = _resolve_gemini_review_model(cfg, "test")
+    available, model = _resolve_antigravity_review_model(cfg, "test")
     assert available is True
-    assert model == "gemini-3-flash"
+    assert model == "agy-flash"
 
 
-def test_resolve_gemini_model_both_exhausted(monkeypatch) -> None:
+def test_resolve_antigravity_model_both_exhausted(monkeypatch) -> None:
     monkeypatch.setattr(
         "code_reviewer.processor._circuit_is_open",
         lambda backend, model: (True, "quota exhausted"),
     )
     cfg = AppConfig(
         github_orgs=["test"],
-        gemini_model="gemini-3-pro",
-        gemini_fallback_model="gemini-3-flash",
+        antigravity_model="agy-pro",
+        antigravity_fallback_model="agy-flash",
     )
-    available, model = _resolve_gemini_review_model(cfg, "test")
+    available, model = _resolve_antigravity_review_model(cfg, "test")
     assert available is False
 
 
-def test_resolve_gemini_model_no_fallback_configured(monkeypatch) -> None:
+def test_resolve_antigravity_model_no_fallback_configured(monkeypatch) -> None:
     monkeypatch.setattr(
         "code_reviewer.processor._circuit_is_open",
         lambda backend, model: (True, "quota exhausted"),
     )
-    cfg = AppConfig(github_orgs=["test"], gemini_model="gemini-3-pro")
-    available, model = _resolve_gemini_review_model(cfg, "test")
+    cfg = AppConfig(github_orgs=["test"], antigravity_model="agy-pro")
+    available, model = _resolve_antigravity_review_model(cfg, "test")
     assert available is False
 
 
-def test_resolve_gemini_model_default_model_available(monkeypatch) -> None:
-    """When gemini_model is None (use CLI default), should still succeed."""
+def test_resolve_antigravity_model_default_model_available(monkeypatch) -> None:
+    """When antigravity_model is None (use CLI default), should still succeed."""
     monkeypatch.setattr(
         "code_reviewer.processor._circuit_is_open",
         lambda backend, model: (False, None),
@@ -490,31 +490,31 @@ def test_resolve_gemini_model_default_model_available(monkeypatch) -> None:
         lambda backend, model: (True, None),
     )
     cfg = AppConfig(github_orgs=["test"])
-    available, model = _resolve_gemini_review_model(cfg, "test")
+    available, model = _resolve_antigravity_review_model(cfg, "test")
     assert available is True
     assert model is None
 
 
-def test_resolve_gemini_model_falls_back_on_usage_gate(monkeypatch) -> None:
+def test_resolve_antigravity_model_falls_back_on_usage_gate(monkeypatch) -> None:
     monkeypatch.setattr(
         "code_reviewer.processor._circuit_is_open",
         lambda backend, model: (False, None),
     )
 
     def fake_usage(backend, model):
-        if model == "gemini-3-pro":
+        if model == "agy-pro":
             return False, "usage too low"
         return True, None
 
     monkeypatch.setattr("code_reviewer.processor._backend_has_available_usage", fake_usage)
     cfg = AppConfig(
         github_orgs=["test"],
-        gemini_model="gemini-3-pro",
-        gemini_fallback_model="gemini-3-flash",
+        antigravity_model="agy-pro",
+        antigravity_fallback_model="agy-flash",
     )
-    available, model = _resolve_gemini_review_model(cfg, "test")
+    available, model = _resolve_antigravity_review_model(cfg, "test")
     assert available is True
-    assert model == "gemini-3-flash"
+    assert model == "agy-flash"
 
 
 def test_run_local_reviewers_skips_backend_when_usage_gate_blocks(monkeypatch, tmp_path) -> None:
@@ -1023,10 +1023,10 @@ def test_process_candidate_reconcile_uses_enabled_reviewer_order(monkeypatch, tm
         started_at=now,
         ended_at=now,
     )
-    gemini_output = ReviewerOutput(
-        reviewer="gemini",
+    antigravity_output = ReviewerOutput(
+        reviewer="antigravity",
         status="ok",
-        markdown="### Findings\n- [P3] b.py:2 - gemini note.\n\n### Test Gaps\n- None noted.",
+        markdown="### Findings\n- [P3] b.py:2 - antigravity note.\n\n### Test Gaps\n- None noted.",
         stdout="",
         stderr="",
         error=None,
@@ -1039,8 +1039,8 @@ def test_process_candidate_reconcile_uses_enabled_reviewer_order(monkeypatch, tm
     ):
         return codex_output
 
-    async def fake_gemini(_pr, _workdir, _timeout, *, model=None, prompt_path=None):  # noqa: ANN001
-        return gemini_output
+    async def fake_antigravity(_pr, _workdir, _timeout, *, model=None, prompt_path=None):  # noqa: ANN001
+        return antigravity_output
 
     seen_order: list[str] = []
     seen_reconciler_backend: str | None = None
@@ -1073,7 +1073,7 @@ def test_process_candidate_reconcile_uses_enabled_reviewer_order(monkeypatch, tm
         )
 
     monkeypatch.setattr("code_reviewer.processor.run_codex_review", fake_codex)
-    monkeypatch.setattr("code_reviewer.processor.run_gemini_review", fake_gemini)
+    monkeypatch.setattr("code_reviewer.processor.run_antigravity_review", fake_antigravity)
     monkeypatch.setattr(
         GitHubClient,
         "get_pr_issue_comments",
@@ -1091,7 +1091,7 @@ def test_process_candidate_reconcile_uses_enabled_reviewer_order(monkeypatch, tm
 
     cfg = AppConfig(
         github_orgs=["polymerdao"],
-        enabled_reviewers=["gemini", "codex"],
+        enabled_reviewers=["antigravity", "codex"],
         reconciler_backend="codex",
         codex_model="gpt-5.3-codex",
         codex_reasoning_effort="medium",
@@ -1101,7 +1101,7 @@ def test_process_candidate_reconcile_uses_enabled_reviewer_order(monkeypatch, tm
     result = asyncio.run(process_candidate(cfg, client, store, workspace, _sample_pr()))
 
     assert result.processed is True
-    assert seen_order == ["gemini", "codex"]
+    assert seen_order == ["antigravity", "codex"]
     assert seen_pr is not None
     assert seen_pr.pr_comments == ["@alice (2026-03-03T00:00:00Z): please verify x"]
     assert seen_reconciler_backend == ["codex"]
@@ -1127,10 +1127,10 @@ def test_process_candidate_reconcile_falls_back_to_claude_settings(monkeypatch, 
         started_at=now,
         ended_at=now,
     )
-    gemini_output = ReviewerOutput(
-        reviewer="gemini",
+    antigravity_output = ReviewerOutput(
+        reviewer="antigravity",
         status="ok",
-        markdown="### Findings\n- [P3] b.py:2 - gemini note.\n\n### Test Gaps\n- None noted.",
+        markdown="### Findings\n- [P3] b.py:2 - antigravity note.\n\n### Test Gaps\n- None noted.",
         stdout="",
         stderr="",
         error=None,
@@ -1143,8 +1143,8 @@ def test_process_candidate_reconcile_falls_back_to_claude_settings(monkeypatch, 
     ):
         return codex_output
 
-    async def fake_gemini(_pr, _workdir, _timeout, *, model=None, prompt_path=None):  # noqa: ANN001
-        return gemini_output
+    async def fake_antigravity(_pr, _workdir, _timeout, *, model=None, prompt_path=None):  # noqa: ANN001
+        return antigravity_output
 
     seen_reconciler_backend: str | None = None
     seen_reconciler_model: str | None = None
@@ -1173,7 +1173,7 @@ def test_process_candidate_reconcile_falls_back_to_claude_settings(monkeypatch, 
         )
 
     monkeypatch.setattr("code_reviewer.processor.run_codex_review", fake_codex)
-    monkeypatch.setattr("code_reviewer.processor.run_gemini_review", fake_gemini)
+    monkeypatch.setattr("code_reviewer.processor.run_antigravity_review", fake_antigravity)
     monkeypatch.setattr(GitHubClient, "get_pr_issue_comments", lambda _self, _pr: [])
     monkeypatch.setattr("code_reviewer.processor.reconcile_reviews", fake_reconcile)
     monkeypatch.setattr(
@@ -1187,7 +1187,7 @@ def test_process_candidate_reconcile_falls_back_to_claude_settings(monkeypatch, 
 
     cfg = AppConfig(
         github_orgs=["polymerdao"],
-        enabled_reviewers=["gemini", "codex"],
+        enabled_reviewers=["antigravity", "codex"],
         claude_model="claude-sonnet-4-5",
         claude_reasoning_effort="medium",
     )

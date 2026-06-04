@@ -43,18 +43,20 @@ def test_lightweight_review_claude_returns_formatted_output(tmp_path: Path) -> N
     assert usage == token_usage
 
 
-def test_lightweight_review_gemini_backend(tmp_path: Path) -> None:
+def test_lightweight_review_antigravity_backend(tmp_path: Path) -> None:
     review_text = "### Findings\n- No material findings.\n\n### Test Gaps\n- None noted."
 
-    async def fake_gemini_prompt(prompt, cwd, timeout, **kwargs):
+    async def fake_antigravity_prompt(prompt, cwd, timeout, **kwargs):
         return review_text
 
     with patch(
-        "code_reviewer.reviewers.lightweight.run_gemini_prompt",
-        side_effect=fake_gemini_prompt,
+        "code_reviewer.reviewers.lightweight.run_antigravity_prompt",
+        side_effect=fake_antigravity_prompt,
     ):
         text, usage, _bundle = asyncio.run(
-            run_lightweight_review(_sample_pr(), tmp_path, timeout_seconds=300, backend=["gemini"])
+            run_lightweight_review(
+                _sample_pr(), tmp_path, timeout_seconds=300, backend=["antigravity"]
+            )
         )
 
     assert "### Findings" in text
@@ -141,8 +143,8 @@ def test_lightweight_claude_system_prompt_warns_about_untrusted(tmp_path: Path) 
 
 
 def test_lightweight_falls_back_to_second_backend(tmp_path: Path) -> None:
-    async def failing_gemini(prompt, cwd, timeout, **kwargs):
-        raise RuntimeError("gemini down")
+    async def failing_antigravity(prompt, cwd, timeout, **kwargs):
+        raise RuntimeError("antigravity down")
 
     review_text = "### Findings\n- No material findings.\n\n### Test Gaps\n- None noted."
 
@@ -151,8 +153,8 @@ def test_lightweight_falls_back_to_second_backend(tmp_path: Path) -> None:
 
     with (
         patch(
-            "code_reviewer.reviewers.lightweight.run_gemini_prompt",
-            side_effect=failing_gemini,
+            "code_reviewer.reviewers.lightweight.run_antigravity_prompt",
+            side_effect=failing_antigravity,
         ),
         patch(
             "code_reviewer.reviewers.lightweight._run_claude_prompt",
@@ -161,7 +163,7 @@ def test_lightweight_falls_back_to_second_backend(tmp_path: Path) -> None:
     ):
         text, usage, _bundle = asyncio.run(
             run_lightweight_review(
-                _sample_pr(), tmp_path, timeout_seconds=300, backend=["gemini", "claude"]
+                _sample_pr(), tmp_path, timeout_seconds=300, backend=["antigravity", "claude"]
             )
         )
 

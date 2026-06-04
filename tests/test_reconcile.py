@@ -55,7 +55,7 @@ async def test_reconcile_reviews_uses_codex_backend(monkeypatch, tmp_path: Path)
     result = await reconcile_reviews(
         _sample_pr(),
         tmp_path,
-        [_sample_output("claude"), _sample_output("gemini")],
+        [_sample_output("claude"), _sample_output("antigravity")],
         30,
         reconciler_backend="codex",
         reconciler_model="gpt-5.3-codex",
@@ -72,25 +72,27 @@ async def test_reconcile_reviews_uses_codex_backend(monkeypatch, tmp_path: Path)
 
 
 @pytest.mark.asyncio
-async def test_reconcile_reviews_uses_gemini_backend(monkeypatch, tmp_path: Path) -> None:
+async def test_reconcile_reviews_uses_antigravity_backend(monkeypatch, tmp_path: Path) -> None:
     captured: dict[str, object] = {}
 
-    async def fake_gemini_prompt(prompt, workspace, timeout_seconds, *, model=None):  # noqa: ANN001
+    async def fake_antigravity_prompt(prompt, workspace, timeout_seconds, *, model=None):  # noqa: ANN001
         captured["prompt"] = prompt
         captured["workspace"] = workspace
         captured["timeout_seconds"] = timeout_seconds
         captured["model"] = model
         return "### Findings\n- No material findings.\n\n### Test Gaps\n- None noted."
 
-    monkeypatch.setattr("code_reviewer.reviewers.reconcile.run_gemini_prompt", fake_gemini_prompt)
+    monkeypatch.setattr(
+        "code_reviewer.reviewers.reconcile.run_antigravity_prompt", fake_antigravity_prompt
+    )
 
     result = await reconcile_reviews(
         _sample_pr(),
         tmp_path,
         [_sample_output("claude"), _sample_output("codex")],
         45,
-        reconciler_backend="gemini",
-        reconciler_model="gemini-3.1-pro-preview",
+        reconciler_backend="antigravity",
+        reconciler_model="agy-pro",
         reconciler_reasoning_effort="high",
     )
 
@@ -99,7 +101,7 @@ async def test_reconcile_reviews_uses_gemini_backend(monkeypatch, tmp_path: Path
     assert usage is None
     assert captured["workspace"] == tmp_path
     assert captured["timeout_seconds"] == 45
-    assert captured["model"] == "gemini-3.1-pro-preview"
+    assert captured["model"] == "agy-pro"
 
 
 @pytest.mark.asyncio
@@ -119,18 +121,18 @@ async def test_reconcile_reviews_falls_back_on_failure(monkeypatch, tmp_path: Pa
     async def failing_claude(prompt, workspace, timeout_seconds, **kwargs):
         raise RuntimeError("claude down")
 
-    async def ok_gemini(prompt, workspace, timeout_seconds, *, model=None):
+    async def ok_antigravity(prompt, workspace, timeout_seconds, *, model=None):
         return "### Findings\n- No material findings.\n\n### Test Gaps\n- None noted."
 
     monkeypatch.setattr("code_reviewer.reviewers.reconcile._run_claude_prompt", failing_claude)
-    monkeypatch.setattr("code_reviewer.reviewers.reconcile.run_gemini_prompt", ok_gemini)
+    monkeypatch.setattr("code_reviewer.reviewers.reconcile.run_antigravity_prompt", ok_antigravity)
 
     text, usage, _bundle = await reconcile_reviews(
         _sample_pr(),
         tmp_path,
         [_sample_output("claude"), _sample_output("codex")],
         30,
-        reconciler_backend=["claude", "gemini"],
+        reconciler_backend=["claude", "antigravity"],
     )
 
     assert "No material findings" in text
