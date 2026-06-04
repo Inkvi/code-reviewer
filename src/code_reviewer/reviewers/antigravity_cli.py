@@ -92,7 +92,7 @@ def _summarize_antigravity_error(stderr: str) -> str:
     return stderr.strip()[:200]
 
 
-def _extract_antigravity_review_text(stdout: str, stderr: str) -> str:
+def _extract_antigravity_review_text(stdout: str) -> str:
     """Extract review text from agy output, trying JSON then plain text."""
     markdown = _extract_antigravity_markdown_from_json(stdout)
     if markdown:
@@ -186,7 +186,7 @@ async def run_antigravity_prompt(
             detail = raw_stdout.strip()[:500] or "(no output)"
         raise RuntimeError(f"agy exited with status {code}: {detail}")
 
-    markdown = _extract_antigravity_review_text(raw_stdout, stderr)
+    markdown = _extract_antigravity_review_text(raw_stdout)
     if not markdown:
         raise RuntimeError("Antigravity returned an empty response")
     return markdown

@@ -47,17 +47,15 @@ def test_build_antigravity_prompt_command_with_model() -> None:
 
 def test_extract_antigravity_review_text_from_stdout() -> None:
     stdout = "### Findings\n- [P2] file.rs:10 - issue"
-    stderr = "logs"
 
-    result = _extract_antigravity_review_text(stdout, stderr)
+    result = _extract_antigravity_review_text(stdout)
     assert result == stdout
 
 
 def test_extract_antigravity_review_text_from_json() -> None:
     stdout = '{"response": "### Findings\\n- No material findings."}'
-    stderr = ""
 
-    result = _extract_antigravity_review_text(stdout, stderr)
+    result = _extract_antigravity_review_text(stdout)
     assert "No material findings" in result
 
 
@@ -67,30 +65,27 @@ def test_extract_antigravity_review_text_from_multiline_json() -> None:
         '{\n  "session_id": "abc",\n'
         '  "response": "### Findings\\n- No material findings."\n}\n'
     )
-    stderr = ""
 
-    result = _extract_antigravity_review_text(stdout, stderr)
+    result = _extract_antigravity_review_text(stdout)
     assert "No material findings" in result
 
 
 def test_extract_antigravity_review_text_from_json_with_parts() -> None:
     stdout = '{"parts": [{"text": "agy review content"}]}'
-    stderr = ""
 
-    result = _extract_antigravity_review_text(stdout, stderr)
+    result = _extract_antigravity_review_text(stdout)
     assert result == "agy review content"
 
 
 def test_extract_antigravity_review_text_joins_json_parts() -> None:
     stdout = '{"parts": [{"text": "part one"}, {"text": "part two"}]}'
-    stderr = ""
 
-    result = _extract_antigravity_review_text(stdout, stderr)
+    result = _extract_antigravity_review_text(stdout)
     assert result == "part one\npart two"
 
 
 def test_extract_antigravity_review_text_empty() -> None:
-    result = _extract_antigravity_review_text("", "")
+    result = _extract_antigravity_review_text("")
     assert result == ""
 
 
