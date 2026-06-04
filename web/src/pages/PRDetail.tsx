@@ -107,6 +107,15 @@ const REVIEWER_THEMES: Record<string, ReviewerTheme> = {
     underline: "bg-emerald-400",
     icon: GeminiIcon,
   },
+  antigravity: {
+    label: "Antigravity",
+    color: "emerald",
+    activeText: "text-emerald-400",
+    hoverText: "hover:text-emerald-300",
+    underline: "bg-emerald-400",
+    // same visual family as Gemini; reuse the Google four-pointed star mark
+    icon: GeminiIcon,
+  },
   reconcile: {
     label: "Reconciled",
     color: "purple",

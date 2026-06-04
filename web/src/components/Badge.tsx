@@ -62,6 +62,7 @@ export function StageBadge({ stage }: { stage: string }) {
     claude: "amber",
     codex: "blue",
     gemini: "green",
+    antigravity: "green",
     reconcile: "purple",
     lightweight: "cyan",
   };
