@@ -1,6 +1,6 @@
 # code-reviewer
 
-AI code review tool powered by Claude, Codex, Gemini, and OpenCode. Works as a GitHub PR daemon or as a local review tool for git repositories.
+AI code review tool powered by Claude, Codex, Antigravity, and OpenCode. Works as a GitHub PR daemon or as a local review tool for git repositories.
 
 ## Requirements
 
@@ -9,9 +9,7 @@ AI code review tool powered by Claude, Codex, Gemini, and OpenCode. Works as a G
 - `gh` authenticated (`gh auth login`)
 - `codex` authenticated
 - `claude` authenticated (Agent SDK depends on Claude Code runtime)
-- if using `gemini` reviewer: `gemini` authenticated
-- Gemini full review uses the `code-review` extension by default; install it unless `full_review_prompt_path` is set
-  (`gemini extensions install https://github.com/gemini-cli-extensions/code-review`)
+- if using `antigravity` reviewer: `agy` (Antigravity CLI) installed and authenticated
 - if using `opencode` reviewer: `opencode` installed and configured with a provider
 - for `codex_backend = "agents_sdk"`: OpenAI Agents SDK package + `OPENAI_API_KEY`
 
@@ -61,7 +59,7 @@ All reviewer/model override flags work with `review` too:
 
 ```bash
 uv run code-reviewer review --uncommitted --enabled-reviewer codex
-uv run code-reviewer review --base main --reconciler-backend gemini
+uv run code-reviewer review --base main --reconciler-backend antigravity
 ```
 
 ## PR Daemon
@@ -114,7 +112,7 @@ enabled_reviewers = ["claude", "codex"]
 # Single reviewer
 # enabled_reviewers = ["codex"]
 # enabled_reviewers = ["claude"]
-# enabled_reviewers = ["gemini"]
+# enabled_reviewers = ["antigravity"]
 # enabled_reviewers = ["opencode"]
 ```
 
@@ -141,13 +139,13 @@ Both backends use the same configurable full-review prompt.
 codex_model = "gpt-5.3-codex"
 codex_reasoning_effort = "low"       # low|medium|high
 
-# Gemini
-# gemini_model = "gemini-3.1-pro-preview"
+# Antigravity
+# antigravity_model = ""  # leave unset to use agy default
 
 # OpenCode (access models via OpenRouter, OpenAI, Google, etc.)
-# opencode_model = "openrouter/zhipu/glm-5"
+# opencode_model = "openrouter/zhiyu/glm-5"
 
-# Reconciler (claude|codex|gemini|opencode)
+# Reconciler (claude|codex|antigravity|opencode)
 reconciler_backend = "claude"
 # reconciler_model = "claude-opus-4-1"
 # reconciler_reasoning_effort = "high"    # claude: low|medium|high|max, codex: low|medium|high
@@ -158,12 +156,12 @@ reconciler_backend = "claude"
 Every PR goes through triage first. Simple changes (config, version bumps, image tags) get a lightweight single-model checklist review. Complex changes go through the full multi-reviewer pipeline.
 
 ```toml
-triage_backend = "gemini"              # claude|codex|gemini|opencode
-triage_model = "gemini-3-flash-preview"
+triage_backend = "claude"              # claude|codex|antigravity|opencode
+# triage_model = ""                    # leave unset to use backend default
 triage_timeout_seconds = 60
 
-lightweight_review_backend = "gemini"  # claude|codex|gemini|opencode
-lightweight_review_model = "gemini-3-flash-preview"
+lightweight_review_backend = "claude"  # claude|codex|antigravity|opencode
+# lightweight_review_model = ""        # leave unset to use backend default
 # lightweight_review_reasoning_effort = "low"   # low|medium|high|max
 lightweight_review_timeout_seconds = 300
 ```
@@ -204,8 +202,8 @@ Supported placeholders:
 
 Notes:
 
-- `full_review_prompt_path` applies to Claude, Codex CLI, Codex Agents SDK, Gemini, and OpenCode
-- Gemini uses the `code-review` extension when `full_review_prompt_path` is unset; when it is set, Gemini switches to prompt execution for full review
+- `full_review_prompt_path` applies to Claude, Codex CLI, Codex Agents SDK, Antigravity, and OpenCode
+- Antigravity only supports prompt execution and requires `full_review_prompt_path` to be set
 - for Codex Agents SDK, `system_prompt` is used as the agent instruction layer
 - `code-reviewer check` shows whether each step is using the default prompt or an override path
 
@@ -290,7 +288,7 @@ max_parallel_prs = 1
 max_mid_review_restarts = 2    # 0-5, restart review when new commits land mid-flight
 claude_timeout_seconds = 900
 codex_timeout_seconds = 900
-gemini_timeout_seconds = 900
+antigravity_timeout_seconds = 900
 opencode_timeout_seconds = 900
 output_dir = "./reviews"
 state_file = "./.state/pr-reviewer-state.json"
@@ -308,7 +306,7 @@ uv run code-reviewer run-once --codex-backend cli
 uv run code-reviewer run-once --codex-model gpt-5.3-codex --codex-reasoning-effort high
 uv run code-reviewer run-once --claude-model claude-sonnet-4-5 --claude-reasoning-effort medium
 uv run code-reviewer run-once --reconciler-backend codex --reconciler-model gpt-5.3-codex
-uv run code-reviewer run-once --reconciler-backend gemini --reconciler-model gemini-3.1-pro-preview
+uv run code-reviewer run-once --reconciler-backend antigravity
 uv run code-reviewer run-once --enabled-reviewer opencode --opencode-model openrouter/zhipu/glm-5
 uv run code-reviewer start --slash-command-enabled
 uv run code-reviewer start --no-slash-command-enabled
@@ -323,7 +321,7 @@ flowchart TD
     Start([PR or local changes]) --> Triage
 
     subgraph Triage
-        T[Run triage classifier<br><i>claude / codex / gemini / opencode</i>]
+        T[Run triage classifier<br><i>claude / codex / antigravity / opencode</i>]
         T --> Simple{simple?}
     end
 
@@ -341,16 +339,16 @@ flowchart TD
         Launch[Launch enabled reviewers<br>in parallel]
         Launch --> Claude[Claude<br><i>Agent SDK</i>]
         Launch --> Codex[Codex<br><i>CLI exec or Agents SDK</i>]
-        Launch --> Gemini[Gemini<br><i>CLI extension or prompt</i>]
+        Launch --> Antigravity[Antigravity<br><i>prompt only</i>]
         Launch --> OpenCode[OpenCode<br><i>any model via providers</i>]
 
         Claude --> Collect[Collect outputs]
         Codex --> Collect
-        Gemini --> Collect
+        Antigravity --> Collect
         OpenCode --> Collect
 
         Collect --> Multi{multiple<br>reviewers?}
-        Multi -->|yes| Reconcile[Reconciler<br><i>claude / codex / gemini / opencode</i><br>merges + deduplicates findings]
+        Multi -->|yes| Reconcile[Reconciler<br><i>claude / codex / antigravity / opencode</i><br>merges + deduplicates findings]
         Multi -->|no| Single[Use single reviewer output]
     end
 

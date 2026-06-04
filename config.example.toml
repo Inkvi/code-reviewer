@@ -10,11 +10,11 @@ enabled_reviewers = ["claude", "codex"]
 # claude_reasoning_effort = "medium"
 # Reconciler backend — single string or priority list (tries in order on failure):
 reconciler_backend = "claude"
-# reconciler_backend = ["claude", "gemini"]  # fallback: try gemini if claude fails
+# reconciler_backend = ["claude", "antigravity"]  # fallback: try antigravity if claude fails
 # Optional reconciliation tuning:
 # - when reconciler_backend="claude", falls back to claude_* when unset
 # - when reconciler_backend="codex", falls back to codex_* when unset
-# - when reconciler_backend="gemini", falls back to gemini_model when unset
+# - when reconciler_backend="antigravity", falls back to antigravity_model when unset
 # reconciler_model = "claude-opus-4-1"
 # reconciler_reasoning_effort = "high" # claude: low|medium|high|max, codex: low|medium|high
 # codex backend:
@@ -24,15 +24,14 @@ codex_backend = "cli"
 codex_model = "gpt-5.3-codex"
 # Default Codex tuning for development:
 codex_reasoning_effort = "low"
-# Optional Gemini tuning (requires `gemini` CLI installed/authenticated.
-# Full Gemini review also requires the `code-review` extension unless full_review_prompt_path is set):
-# Install extension: gemini extensions install https://github.com/gemini-cli-extensions/code-review
-# To enable: add "gemini" to enabled_reviewers, e.g. ["claude", "codex", "gemini"]
-# gemini_model = "gemini-3.1-pro-preview"
-# gemini_fallback_model = "gemini-3-flash-preview"  # used when primary model hits quota limits
-gemini_timeout_seconds = 900
+# Optional Antigravity tuning (requires `agy` CLI installed/authenticated).
+# Note: antigravity requires full_review_prompt_path to be set.
+# To enable: add "antigravity" to enabled_reviewers, e.g. ["claude", "codex", "antigravity"]
+# antigravity_model = ""        # leave unset to use the agy default model
+# antigravity_fallback_model = ""  # used when primary model hits quota limits
+antigravity_timeout_seconds = 900
 # Optional OpenCode tuning (requires `opencode` CLI installed/authenticated):
-# OpenCode enables access to models not covered by Claude/Codex/Gemini (e.g., GLM-5, Kimi-2.5).
+# OpenCode enables access to models not covered by Claude/Codex/Antigravity (e.g., GLM-5, Kimi-2.5).
 # To enable: add "opencode" to enabled_reviewers, e.g. ["claude", "codex", "opencode"]
 # Models use provider/model format: openrouter/zhipu/glm-5, openai/gpt-4.1, google/gemini-2.5-pro
 # opencode_model = "openrouter/zhipu/glm-5"
@@ -65,25 +64,25 @@ slash_command_enabled = true
 # prompt_injection_protection = false
 # Triage — classifies PRs as simple (lightweight review) or complex (full review)
 # Every PR goes through triage; no more hard skips.
-triage_backend = "gemini"   # single string or list: ["gemini", "claude"]
-# triage_backend = ["gemini", "claude"]  # fallback: try claude if gemini fails
-triage_model = "gemini-3-flash-preview"
+triage_backend = "antigravity"   # single string or list: ["antigravity", "claude"]
+# triage_backend = ["antigravity", "claude"]  # fallback: try claude if antigravity fails
+# triage_model = ""        # leave unset to use backend default
 # Timeout is per-attempt; worst case = N backends x timeout
 triage_timeout_seconds = 60
 # Optional prompt override TOML for triage:
 # Built-in default template: src/code_reviewer/prompt_specs/triage.toml
 # triage_prompt_path = "./prompts/triage.toml"
 # Lightweight review — single-model checklist review for simple PRs
-lightweight_review_backend = "gemini"   # single string or list: ["gemini", "claude"]
-# lightweight_review_backend = ["gemini", "claude"]  # fallback: try claude if gemini fails
-lightweight_review_model = "gemini-3-flash-preview"
+lightweight_review_backend = "antigravity"   # single string or list: ["antigravity", "claude"]
+# lightweight_review_backend = ["antigravity", "claude"]  # fallback: try claude if antigravity fails
+# lightweight_review_model = ""        # leave unset to use backend default
 # lightweight_review_reasoning_effort = "low"   # low | medium | high | max
 # Timeout is per-attempt; worst case = N backends x timeout
 lightweight_review_timeout_seconds = 300
 # Optional prompt override TOML for lightweight review:
 # Built-in default template: src/code_reviewer/prompt_specs/lightweight_review.toml
 # lightweight_review_prompt_path = "./prompts/lightweight_review.toml"
-# Optional prompt override TOML for all full-review backends (Claude, Codex, Gemini):
+# Optional prompt override TOML for all full-review backends (Claude, Codex, Antigravity, OpenCode):
 # Built-in default template: src/code_reviewer/prompt_specs/full_review.toml
 # full_review_prompt_path = "./prompts/full_review.toml"
 # Optional prompt override TOML for reconciliation:
