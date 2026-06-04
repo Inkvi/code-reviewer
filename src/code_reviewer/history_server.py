@@ -27,6 +27,7 @@ KNOWN_STAGES = (
     "claude",
     "codex",
     "gemini",
+    "antigravity",
     "opencode",
     "reconcile",
     "triage.prompt",
@@ -34,6 +35,7 @@ KNOWN_STAGES = (
     "claude.prompt",
     "codex.prompt",
     "gemini.prompt",
+    "antigravity.prompt",
     "opencode.prompt",
     "reconcile.prompt",
 )
@@ -98,7 +100,7 @@ def _detect_stages(repo_dir: Path, number: int) -> list[str]:
 def _detect_review_type(stages: list[str]) -> str:
     if "lightweight" in stages:
         return "lightweight"
-    if any(s in stages for s in ("claude", "codex", "gemini", "opencode")):
+    if any(s in stages for s in ("claude", "codex", "gemini", "antigravity", "opencode")):
         return "full"
     return "unknown"
 
