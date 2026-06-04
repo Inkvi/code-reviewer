@@ -363,7 +363,7 @@ def test_backend_has_available_usage_rejects_low_codex_usage(monkeypatch) -> Non
     assert "4% < 10%" in reason
 
 
-def test_backend_has_available_usage_uses_configured_antigravity_model_bucket(monkeypatch) -> None:
+def test_backend_has_available_usage_gates_on_low_remaining(monkeypatch) -> None:
     now = datetime(2026, 3, 23, 6, 30, tzinfo=UTC)
     snapshot = BackendUsageSnapshot(
         backend="antigravity",
