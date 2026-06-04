@@ -18,7 +18,7 @@ ARG GH_VERSION=2.74.1
 RUN curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_$(dpkg --print-architecture).tar.gz" \
     | tar -xz --strip-components=1 -C /usr/local
 
-# Install Node.js (required for Claude, Codex, and Gemini CLIs)
+# Install Node.js (required for Claude and Codex CLIs)
 RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
@@ -28,9 +28,6 @@ RUN npm install -g @anthropic-ai/claude-code
 
 # Install Codex CLI
 RUN npm install -g @openai/codex
-
-# Install Gemini CLI
-RUN npm install -g @google/gemini-cli
 
 # Install OpenCode CLI
 RUN npm install -g opencode-ai
@@ -64,10 +61,12 @@ RUN chown -R 1000:1000 /app
 
 USER 1000
 
-# Install Gemini code-review extension (clone directly to avoid CLI bugs in Docker)
-RUN mkdir -p /home/appuser/.gemini/extensions \
-    && git clone https://github.com/gemini-cli-extensions/code-review /home/appuser/.gemini/extensions/code-review \
-    && printf '{"code-review":{"overrides":["/*"]}}\n' > /home/appuser/.gemini/extensions/extension-enablement.json
+# Install Antigravity CLI (agy) and seed headless-safe settings
+RUN curl -fsSL https://antigravity.google/cli/install.sh | bash \
+    && mkdir -p /home/appuser/.gemini/antigravity-cli \
+    && printf '{"toolPermission": "always-proceed", "enableTelemetry": false}\n' \
+        > /home/appuser/.gemini/antigravity-cli/settings.json
+ENV PATH="/home/appuser/.local/bin:${PATH}"
 
 ENTRYPOINT ["uv", "run", "code-reviewer"]
 CMD ["start"]
