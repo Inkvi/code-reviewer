@@ -9,16 +9,24 @@ from code_reviewer.prompts import build_full_review_bundle
 from code_reviewer.shell import run_command_async
 
 
-def _build_antigravity_prompt_command(prompt: str, *, model: str | None) -> list[str]:
+def _build_antigravity_prompt_command(
+    prompt: str,
+    *,
+    model: str | None,
+    timeout_seconds: int,
+) -> list[str]:
+    # agy prints plain text (no JSON output mode); --print-timeout defaults to
+    # 5m which is shorter than review timeouts, so pass ours explicitly.
     args = [
         "agy",
         "-p",
         prompt,
-        "-o",
-        "json",
+        "--dangerously-skip-permissions",
+        "--print-timeout",
+        f"{timeout_seconds}s",
     ]
     if model:
-        args.extend(["-m", model])
+        args.extend(["--model", model])
     return args
 
 
@@ -173,7 +181,9 @@ async def run_antigravity_prompt(
 ) -> str:
     try:
         code, raw_stdout, stderr = await run_command_async(
-            _build_antigravity_prompt_command(prompt, model=model),
+            _build_antigravity_prompt_command(
+                prompt, model=model, timeout_seconds=timeout_seconds
+            ),
             cwd=workspace,
             timeout=timeout_seconds,
         )

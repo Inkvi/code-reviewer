@@ -61,10 +61,13 @@ RUN chown -R 1000:1000 /app
 
 USER 1000
 
-# Install Antigravity CLI (agy) and seed headless-safe settings
+# Install Antigravity CLI (agy) and seed headless-safe settings.
+# artifactReviewPolicy=always-proceed is required: without it agy generates the
+# review as an artifact and waits forever for interactive approval in -p mode.
 RUN curl -fsSL https://antigravity.google/cli/install.sh | bash \
+    && /home/appuser/.local/bin/agy --version \
     && mkdir -p /home/appuser/.gemini/antigravity-cli \
-    && printf '{"toolPermission": "always-proceed", "enableTelemetry": false}\n' \
+    && printf '{"toolPermission": "always-proceed", "artifactReviewPolicy": "always-proceed", "enableTelemetry": false}\n' \
         > /home/appuser/.gemini/antigravity-cli/settings.json
 ENV PATH="/home/appuser/.local/bin:${PATH}"
 
