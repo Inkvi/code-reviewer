@@ -24,9 +24,7 @@ def _sample_pr() -> PRCandidate:
 
 
 def test_build_antigravity_prompt_command_without_model() -> None:
-    args = _build_antigravity_prompt_command(
-        "Summarize findings", model=None, timeout_seconds=900
-    )
+    args = _build_antigravity_prompt_command("Summarize findings", model=None, timeout_seconds=900)
 
     assert args[0] == "agy"
     assert "-p" in args

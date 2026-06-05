@@ -152,7 +152,6 @@ def test_load_backend_usage_snapshot_reads_codex_primary_and_secondary(tmp_path:
 
 
 def test_load_backend_usage_snapshot_raises_for_unsupported_backend() -> None:
-
     with pytest.raises(ValueError, match="Unsupported backend"):
         load_backend_usage_snapshot("gemini")
 
