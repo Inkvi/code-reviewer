@@ -181,9 +181,7 @@ async def run_antigravity_prompt(
 ) -> str:
     try:
         code, raw_stdout, stderr = await run_command_async(
-            _build_antigravity_prompt_command(
-                prompt, model=model, timeout_seconds=timeout_seconds
-            ),
+            _build_antigravity_prompt_command(prompt, model=model, timeout_seconds=timeout_seconds),
             cwd=workspace,
             timeout=timeout_seconds,
         )
