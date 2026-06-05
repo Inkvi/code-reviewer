@@ -24,25 +24,30 @@ def _sample_pr() -> PRCandidate:
 
 
 def test_build_antigravity_prompt_command_without_model() -> None:
-    args = _build_antigravity_prompt_command("Summarize findings", model=None)
+    args = _build_antigravity_prompt_command(
+        "Summarize findings", model=None, timeout_seconds=900
+    )
 
     assert args[0] == "agy"
     assert "-p" in args
     prompt_idx = args.index("-p")
     assert args[prompt_idx + 1] == "Summarize findings"
-    assert "-o" in args
-    output_idx = args.index("-o")
-    assert args[output_idx + 1] == "json"
-    assert "-m" not in args
+    assert "--dangerously-skip-permissions" in args
+    assert "--print-timeout" in args
+    timeout_idx = args.index("--print-timeout")
+    assert args[timeout_idx + 1] == "900s"
+    assert "--model" not in args
 
 
 def test_build_antigravity_prompt_command_with_model() -> None:
-    args = _build_antigravity_prompt_command("Summarize findings", model="agy-default")
+    args = _build_antigravity_prompt_command(
+        "Summarize findings", model="Gemini 3.5 Flash (Low)", timeout_seconds=60
+    )
 
     assert args[0] == "agy"
-    assert "-m" in args
-    model_idx = args.index("-m")
-    assert args[model_idx + 1] == "agy-default"
+    assert "--model" in args
+    model_idx = args.index("--model")
+    assert args[model_idx + 1] == "Gemini 3.5 Flash (Low)"
 
 
 def test_extract_antigravity_review_text_from_stdout() -> None:

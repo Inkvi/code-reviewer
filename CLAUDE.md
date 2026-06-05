@@ -61,7 +61,7 @@
 ## Dockerfile
 - Runs as non-root user (UID 1000, `appuser`)
 - Installs Claude CLI (`@anthropic-ai/claude-code`), Codex CLI (`@openai/codex`), Antigravity CLI (`agy`), OpenCode CLI (`opencode-ai`)
-- Antigravity: seeds `/home/appuser/.gemini/antigravity-cli/settings.json` with `{"toolPermission": "always-proceed", "enableTelemetry": false}`
+- Antigravity: seeds `/home/appuser/.gemini/antigravity-cli/settings.json` with `{"toolPermission": "always-proceed", "artifactReviewPolicy": "always-proceed", "enableTelemetry": false}` (artifactReviewPolicy prevents agy from blocking on interactive artifact approval in headless mode)
 - Default CMD is `start` (polling daemon); override with `webhook` for webhook mode
 
 ## Commits & PRs

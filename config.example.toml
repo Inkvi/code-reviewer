@@ -27,8 +27,8 @@ codex_reasoning_effort = "low"
 # Optional Antigravity tuning (requires `agy` CLI installed/authenticated).
 # Note: antigravity requires full_review_prompt_path to be set.
 # To enable: add "antigravity" to enabled_reviewers, e.g. ["claude", "codex", "antigravity"]
-# antigravity_model = ""        # leave unset to use the agy default model
-# antigravity_fallback_model = ""  # used when primary model hits quota limits
+# antigravity_model = "Gemini 3.5 Flash (Low)"   # `agy models` lists identifiers; unset = agy default
+# antigravity_fallback_model = "Gemini 3.5 Flash (Low)"  # used when primary model hits quota limits
 antigravity_timeout_seconds = 900
 # Optional OpenCode tuning (requires `opencode` CLI installed/authenticated):
 # OpenCode enables access to models not covered by Claude/Codex/Antigravity (e.g., GLM-5, Kimi-2.5).
