@@ -97,6 +97,26 @@ def _parse_codex_jsonl(raw: str) -> list[dict]:
     return events
 
 
+def _extract_codex_jsonl_error(stdout: str) -> str:
+    """Return the last fatal error from Codex --json output.
+
+    In --json mode Codex reports fatal errors on stdout as `error` and `turn.failed`
+    events, while stderr only carries startup noise.
+    """
+    message = ""
+    for event in _parse_codex_jsonl(stdout):
+        if event.get("type") == "turn.failed":
+            error = event.get("error")
+            text = error.get("message") if isinstance(error, dict) else None
+        elif event.get("type") == "error":
+            text = event.get("message")
+        else:
+            continue
+        if isinstance(text, str) and text.strip():
+            message = text.strip()
+    return message
+
+
 def _build_codex_exec_command(
     prompt: str,
     *,
@@ -183,7 +203,7 @@ async def run_codex_prompt(
     if not markdown:
         markdown = _extract_codex_review_text(raw_stdout, stderr)
     if code != 0:
-        detail = stderr.strip()
+        detail = _extract_codex_jsonl_error(raw_stdout) or stderr.strip()
         if not detail:
             detail = raw_stdout.strip()[:500] or "(no output)"
         raise RuntimeError(f"codex exited with status {code}: {detail}")

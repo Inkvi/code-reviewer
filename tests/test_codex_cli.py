@@ -1,14 +1,18 @@
 import asyncio
 from pathlib import Path
 
+import pytest
+
 from code_reviewer.models import PRCandidate
 from code_reviewer.reviewers.codex_cli import (
     _build_codex_exec_command,
     _codex_review_json_unsupported,
+    _extract_codex_jsonl_error,
     _extract_codex_markdown_from_jsonl,
     _extract_codex_review_text,
     _parse_codex_jsonl,
     _sanitize_codex_markdown,
+    run_codex_prompt,
     run_codex_review,
 )
 
@@ -157,3 +161,35 @@ def test_parse_codex_jsonl_extracts_events() -> None:
 def test_parse_codex_jsonl_empty() -> None:
     assert _parse_codex_jsonl("") == []
     assert _parse_codex_jsonl("\n\n") == []
+
+
+def test_extract_codex_jsonl_error_uses_turn_failed_message() -> None:
+    raw = "\n".join(
+        [
+            '{"type":"item.completed","item":{"type":"error","message":"metadata not found"}}',
+            '{"type":"error","message":"model is not supported"}',
+            '{"type":"turn.failed","error":{"message":"model is not supported"}}',
+        ]
+    )
+
+    assert _extract_codex_jsonl_error(raw) == "model is not supported"
+
+
+def test_extract_codex_jsonl_error_empty_without_error_events() -> None:
+    raw = '{"type":"item.completed","item":{"type":"agent_message","text":"ok"}}'
+
+    assert _extract_codex_jsonl_error(raw) == ""
+    assert _extract_codex_jsonl_error("") == ""
+
+
+def test_run_codex_prompt_reports_jsonl_error_over_stderr(monkeypatch, tmp_path: Path) -> None:
+    stdout = '{"type":"turn.failed","error":{"message":"The model is not supported"}}\n'
+
+    async def fake_run(args, cwd, timeout):  # noqa: ANN001
+        return (1, stdout, "Reading additional input from stdin...")
+
+    monkeypatch.setattr("code_reviewer.reviewers.codex_cli.run_command_async", fake_run)
+    with pytest.raises(
+        RuntimeError, match="codex exited with status 1: The model is not supported"
+    ):
+        asyncio.run(run_codex_prompt("prompt", tmp_path, 60))
