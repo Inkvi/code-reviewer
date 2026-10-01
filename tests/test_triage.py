@@ -200,6 +200,18 @@ def test_triage_opencode_backend(monkeypatch, tmp_path: Path) -> None:
     assert result == TriageResult.SIMPLE
 
 
+def test_triage_pi_backend(monkeypatch, tmp_path: Path) -> None:
+    """Triage dispatches to pi when configured."""
+    pr = _sample_pr()
+
+    async def fake_pi(prompt, cwd, timeout, *, model=None):
+        return '{"classification": "simple"}', None
+
+    monkeypatch.setattr("code_reviewer.reviewers.triage.run_pi_prompt", fake_pi)
+    result, _ = asyncio.run(run_triage(pr, tmp_path, 30, backend=["pi"]))
+    assert result == TriageResult.SIMPLE
+
+
 def test_get_diff_snippet_returns_empty_on_non_git_dir(tmp_path: Path) -> None:
     pr = _sample_pr()
     result = _get_diff_snippet(tmp_path, pr)

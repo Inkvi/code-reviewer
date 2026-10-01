@@ -19,6 +19,7 @@ from code_reviewer.reviewers.claude_cli import run_claude_cli_prompt
 from code_reviewer.reviewers.claude_sdk import _run_claude_prompt
 from code_reviewer.reviewers.codex_cli import run_codex_prompt
 from code_reviewer.reviewers.opencode_cli import run_opencode_prompt
+from code_reviewer.reviewers.pi_cli import run_pi_prompt
 
 log = logging.getLogger(__name__)
 
@@ -175,6 +176,14 @@ async def run_triage(
                 raise
         if b == "opencode":
             text, _ = await run_opencode_prompt(
+                prompt,
+                workspace,
+                timeout_seconds,
+                model=use_model,
+            )
+            return text
+        if b == "pi":
+            text, _ = await run_pi_prompt(
                 prompt,
                 workspace,
                 timeout_seconds,

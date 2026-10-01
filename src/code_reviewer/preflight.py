@@ -42,6 +42,12 @@ def run_preflight(config: AppConfig) -> PreflightResult:
         or "opencode" in triage_backends
         or "opencode" in lightweight_backends
     )
+    uses_pi_cli = (
+        "pi" in enabled
+        or "pi" in reconciler_backends
+        or "pi" in triage_backends
+        or "pi" in lightweight_backends
+    )
 
     if "antigravity" in enabled and config.full_review_prompt_path is None:
         raise RuntimeError(
@@ -57,6 +63,8 @@ def run_preflight(config: AppConfig) -> PreflightResult:
         required.append("agy")
     if uses_opencode_cli:
         required.append("opencode")
+    if uses_pi_cli:
+        required.append("pi")
 
     missing = [cmd for cmd in required if shutil.which(cmd) is None]
     if missing:
@@ -135,6 +143,9 @@ def run_preflight(config: AppConfig) -> PreflightResult:
 
     if uses_opencode_cli:
         run_command(["opencode", "--version"])
+
+    if uses_pi_cli:
+        run_command(["pi", "--version"])
 
     if uses_antigravity_cli:
         run_command(["agy", "--version"])

@@ -89,6 +89,8 @@ async def run_command_async(
     proc = await asyncio.create_subprocess_exec(
         *args,
         cwd=str(cwd) if cwd else None,
+        # No command reads input, and some CLIs (pi) block on an open stdin pipe.
+        stdin=asyncio.subprocess.DEVNULL,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
         env=merged_env,

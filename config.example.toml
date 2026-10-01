@@ -36,6 +36,11 @@ antigravity_timeout_seconds = 900
 # Models use provider/model format: openrouter/zhipu/glm-5, openai/gpt-4.1, google/gemini-2.5-pro
 # opencode_model = "openrouter/zhipu/glm-5"
 opencode_timeout_seconds = 900
+# Optional pi tuning (requires `pi` CLI installed and a provider key in the env, e.g. OPENROUTER_API_KEY).
+# To enable: add "pi" to enabled_reviewers, e.g. ["claude", "codex", "pi"]
+# Models use provider/model format with an optional :<thinking> suffix (off|minimal|low|medium|high|xhigh)
+# pi_model = "openrouter/deepseek/deepseek-v4-flash:high"
+pi_timeout_seconds = 900
 skip_own_prs = true
 auto_post_review = false
 auto_submit_review_decision = false
