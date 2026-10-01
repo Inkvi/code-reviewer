@@ -652,3 +652,24 @@ def test_opencode_in_triage_backend() -> None:
 def test_opencode_in_reconciler_backend() -> None:
     config = AppConfig(reconciler_backend=["opencode"])
     assert config.reconciler_backend == ["opencode"]
+
+
+def test_pi_in_enabled_reviewers() -> None:
+    config = AppConfig(enabled_reviewers=["pi"])
+    assert config.enabled_reviewers == ["pi"]
+
+
+def test_pi_model_config() -> None:
+    config = AppConfig(pi_model=" openrouter/qwen/qwen3-coder:high ")
+    assert config.pi_model == "openrouter/qwen/qwen3-coder:high"
+
+
+def test_pi_model_rejects_empty() -> None:
+    with pytest.raises(ValueError, match="pi_model cannot be empty"):
+        AppConfig(pi_model="   ")
+
+
+def test_pi_in_triage_and_reconciler_backends() -> None:
+    config = AppConfig(triage_backend=["pi"], reconciler_backend=["pi", "claude"])
+    assert config.triage_backend == ["pi"]
+    assert config.reconciler_backend == ["pi", "claude"]

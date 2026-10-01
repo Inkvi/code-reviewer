@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field, ValidationError, field_validator, model_v
 
 from code_reviewer.prompts import PromptStep, validate_prompt_override_file
 
-_ALLOWED_BACKENDS = {"claude", "codex", "antigravity", "opencode"}
+_ALLOWED_BACKENDS = {"claude", "codex", "antigravity", "opencode", "pi"}
 
 
 def _normalize_backend_list(value: str | list[str], field_name: str) -> list[str]:
@@ -28,7 +28,7 @@ def _normalize_backend_list(value: str | list[str], field_name: str) -> list[str
             continue
         if cleaned not in _ALLOWED_BACKENDS:
             raise ValueError(
-                f"{field_name} entries must be one of: claude, codex, antigravity, opencode"
+                f"{field_name} entries must be one of: claude, codex, antigravity, opencode, pi"
             )
         seen.add(cleaned)
         normalized.append(cleaned)
@@ -64,6 +64,8 @@ class AppConfig(BaseModel):
     antigravity_timeout_seconds: int = Field(default=900, ge=30)
     opencode_model: str | None = None
     opencode_timeout_seconds: int = Field(default=900, ge=30)
+    pi_model: str | None = None
+    pi_timeout_seconds: int = Field(default=900, ge=30)
     skip_own_prs: bool = True
     auto_post_review: bool = False
     auto_submit_review_decision: bool = False
@@ -154,14 +156,15 @@ class AppConfig(BaseModel):
     def validate_enabled_reviewers(cls, value: list[str]) -> list[str]:
         normalized: list[str] = []
         seen: set[str] = set()
-        allowed = {"claude", "codex", "antigravity", "opencode"}
+        allowed = {"claude", "codex", "antigravity", "opencode", "pi"}
         for entry in value:
             reviewer = entry.strip().lower()
             if not reviewer or reviewer in seen:
                 continue
             if reviewer not in allowed:
                 raise ValueError(
-                    "enabled_reviewers entries must be one of: claude, codex, antigravity, opencode"
+                    "enabled_reviewers entries must be one of: "
+                    "claude, codex, antigravity, opencode, pi"
                 )
             seen.add(reviewer)
             normalized.append(reviewer)
@@ -315,6 +318,16 @@ class AppConfig(BaseModel):
         cleaned = value.strip()
         if not cleaned:
             raise ValueError("opencode_model cannot be empty")
+        return cleaned
+
+    @field_validator("pi_model")
+    @classmethod
+    def validate_pi_model(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("pi_model cannot be empty")
         return cleaned
 
     @field_validator("antigravity_fallback_model")

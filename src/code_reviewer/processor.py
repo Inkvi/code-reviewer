@@ -43,6 +43,7 @@ from code_reviewer.reviewers import (
     run_codex_review_via_agents_sdk,
     run_lightweight_review,
     run_opencode_review,
+    run_pi_review,
     run_triage,
 )
 from code_reviewer.reviewers._circuit_breaker import is_open as _circuit_is_open
@@ -310,6 +311,9 @@ def _resolve_reconciler_settings(
     elif primary == "antigravity":
         model = config.reconciler_model or config.antigravity_model
         reasoning_effort = None
+    elif primary == "pi":
+        model = config.reconciler_model or config.pi_model
+        reasoning_effort = None
     else:
         model = config.reconciler_model or config.opencode_model
         reasoning_effort = None
@@ -321,6 +325,8 @@ def _resolve_reconciler_settings(
             backend_timeouts[b] = config.codex_timeout_seconds
         elif b == "antigravity":
             backend_timeouts[b] = config.antigravity_timeout_seconds
+        elif b == "pi":
+            backend_timeouts[b] = config.pi_timeout_seconds
         else:
             backend_timeouts[b] = config.opencode_timeout_seconds
     return backends, backend_timeouts, model, reasoning_effort
@@ -740,6 +746,26 @@ async def _run_reviewers_with_monitoring(
     else:
         info(f"OpenCode reviewer disabled {pr.url}")
 
+    if "pi" in enabled_reviewer_set:
+        opened, reason = _circuit_is_open("pi", config.pi_model)
+        if opened:
+            warn(f"skipping pi review (circuit open: {reason}) {pr.url}")
+            progress.set_reviewer_skipped("pi", reason or "")
+        else:
+            info(f"starting pi review (model={config.pi_model or 'default'}) {pr.url}")
+            pending_tasks["pi"] = asyncio.create_task(
+                run_pi_review(
+                    pr,
+                    workdir,
+                    config.pi_timeout_seconds,
+                    model=config.pi_model,
+                    prompt_path=config.full_review_prompt_path,
+                )
+            )
+            progress.set_reviewer_started("pi")
+    else:
+        info(f"pi reviewer disabled {pr.url}")
+
     await progress.update()
 
     reviewer_outputs: dict[str, ReviewerOutput] = {}
@@ -794,6 +820,7 @@ async def _run_reviewers_with_monitoring(
                         "claude": config.claude_model,
                         "codex": config.codex_model,
                         "opencode": config.opencode_model,
+                        "pi": config.pi_model,
                     }.get(reviewer_name)
                     if output.status == "ok":
                         _circuit_record_success(reviewer_name, _reviewer_model)
@@ -992,6 +1019,22 @@ async def _run_local_reviewers(
                     )
                 )
 
+    if "pi" in enabled_reviewer_set:
+        opened, reason = _circuit_is_open("pi", config.pi_model)
+        if opened:
+            warn(f"skipping pi review (circuit open: {reason})")
+        else:
+            info(f"starting pi review (model={config.pi_model or 'default'})")
+            pending_tasks["pi"] = asyncio.create_task(
+                run_pi_review(
+                    pr,
+                    workdir,
+                    config.pi_timeout_seconds,
+                    model=config.pi_model,
+                    prompt_path=config.full_review_prompt_path,
+                )
+            )
+
     reviewer_outputs: dict[str, ReviewerOutput] = {}
     while pending_tasks:
         done, _ = await asyncio.wait(
@@ -1017,6 +1060,7 @@ async def _run_local_reviewers(
                     "claude": config.claude_model,
                     "codex": config.codex_model,
                     "opencode": config.opencode_model,
+                    "pi": config.pi_model,
                 }.get(reviewer_name)
                 if output.status == "ok":
                     _circuit_record_success(reviewer_name, _reviewer_model)

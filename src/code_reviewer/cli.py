@@ -108,7 +108,7 @@ ReconcilerBackendOption = Annotated[
     typer.Option(
         "--reconciler-backend",
         help="Override reconciler_backend from config."
-        " Allowed: claude, codex, antigravity, opencode.",
+        " Allowed: claude, codex, antigravity, opencode, pi.",
     ),
 ]
 CodexModelOption = Annotated[
@@ -146,6 +146,13 @@ OpenCodeModelOption = Annotated[
         help="Override opencode_model from config.",
     ),
 ]
+PiModelOption = Annotated[
+    str | None,
+    typer.Option(
+        "--pi-model",
+        help="Override pi_model from config.",
+    ),
+]
 AutoPostReviewOption = Annotated[
     bool | None,
     typer.Option(
@@ -164,7 +171,8 @@ TriageBackendOption = Annotated[
     str | None,
     typer.Option(
         "--triage-backend",
-        help="Override triage_backend from config. Allowed: claude, codex, antigravity, opencode.",
+        help="Override triage_backend from config."
+        " Allowed: claude, codex, antigravity, opencode, pi.",
     ),
 ]
 TriageModelOption = Annotated[
@@ -179,7 +187,7 @@ LightweightReviewBackendOption = Annotated[
     typer.Option(
         "--lightweight-review-backend",
         help="Override lightweight_review_backend from config."
-        " Allowed: claude, codex, antigravity, opencode.",
+        " Allowed: claude, codex, antigravity, opencode, pi.",
     ),
 ]
 LightweightReviewModelOption = Annotated[
@@ -354,6 +362,7 @@ def _load_config_with_overrides(
     antigravity_model: str | None,
     antigravity_fallback_model: str | None,
     opencode_model: str | None,
+    pi_model: str | None,
     slash_command_enabled: bool | None,
     triage_backend: str | None,
     triage_model: str | None,
@@ -413,6 +422,7 @@ def _load_config_with_overrides(
         "--antigravity-fallback-model",
     )
     config = _apply_field_override(config, "opencode_model", opencode_model, "--opencode-model")
+    config = _apply_field_override(config, "pi_model", pi_model, "--pi-model")
     config = _apply_bool_override(
         config,
         "slash_command_enabled",
@@ -455,6 +465,7 @@ def _load_runtime(
     antigravity_model: str | None,
     antigravity_fallback_model: str | None,
     opencode_model: str | None,
+    pi_model: str | None,
     slash_command_enabled: bool | None,
     triage_backend: str | None,
     triage_model: str | None,
@@ -478,6 +489,7 @@ def _load_runtime(
         antigravity_model,
         antigravity_fallback_model,
         opencode_model,
+        pi_model,
         slash_command_enabled,
         triage_backend,
         triage_model,
@@ -519,6 +531,7 @@ def check_command(
     antigravity_model: AntigravityModelOption = None,
     antigravity_fallback_model: AntigravityFallbackModelOption = None,
     opencode_model: OpenCodeModelOption = None,
+    pi_model: PiModelOption = None,
     slash_command_enabled: SlashCommandEnabledOption = None,
     triage_backend: TriageBackendOption = None,
     triage_model: TriageModelOption = None,
@@ -573,6 +586,7 @@ def check_command(
         "--antigravity-fallback-model",
     )
     cfg = _apply_field_override(cfg, "opencode_model", opencode_model, "--opencode-model")
+    cfg = _apply_field_override(cfg, "pi_model", pi_model, "--pi-model")
     cfg = _apply_bool_override(
         cfg,
         "slash_command_enabled",
@@ -672,6 +686,7 @@ def run_once_command(
     antigravity_model: AntigravityModelOption = None,
     antigravity_fallback_model: AntigravityFallbackModelOption = None,
     opencode_model: OpenCodeModelOption = None,
+    pi_model: PiModelOption = None,
     slash_command_enabled: SlashCommandEnabledOption = None,
     triage_backend: TriageBackendOption = None,
     triage_model: TriageModelOption = None,
@@ -710,6 +725,7 @@ def run_once_command(
         antigravity_model,
         antigravity_fallback_model,
         opencode_model,
+        pi_model,
         slash_command_enabled,
         triage_backend,
         triage_model,
@@ -784,6 +800,7 @@ def start_command(
     antigravity_model: AntigravityModelOption = None,
     antigravity_fallback_model: AntigravityFallbackModelOption = None,
     opencode_model: OpenCodeModelOption = None,
+    pi_model: PiModelOption = None,
     slash_command_enabled: SlashCommandEnabledOption = None,
     triage_backend: TriageBackendOption = None,
     triage_model: TriageModelOption = None,
@@ -814,6 +831,7 @@ def start_command(
         antigravity_model,
         antigravity_fallback_model,
         opencode_model,
+        pi_model,
         slash_command_enabled,
         triage_backend,
         triage_model,
@@ -840,6 +858,7 @@ def start_command(
             antigravity_model,
             antigravity_fallback_model,
             opencode_model,
+            pi_model,
             slash_command_enabled,
             triage_backend,
             triage_model,
@@ -931,6 +950,7 @@ def _load_config_with_reviewer_overrides(
     antigravity_model: str | None,
     antigravity_fallback_model: str | None,
     opencode_model: str | None,
+    pi_model: str | None,
     triage_backend: str | None,
     triage_model: str | None,
     lightweight_review_backend: str | None,
@@ -976,6 +996,7 @@ def _load_config_with_reviewer_overrides(
         "--antigravity-fallback-model",
     )
     cfg = _apply_field_override(cfg, "opencode_model", opencode_model, "--opencode-model")
+    cfg = _apply_field_override(cfg, "pi_model", pi_model, "--pi-model")
     cfg = _apply_field_override(cfg, "triage_backend", triage_backend, "--triage-backend")
     cfg = _apply_field_override(cfg, "triage_model", triage_model, "--triage-model")
     cfg = _apply_field_override(
@@ -1021,6 +1042,7 @@ def review_command(
     antigravity_model: AntigravityModelOption = None,
     antigravity_fallback_model: AntigravityFallbackModelOption = None,
     opencode_model: OpenCodeModelOption = None,
+    pi_model: PiModelOption = None,
     triage_backend: TriageBackendOption = None,
     triage_model: TriageModelOption = None,
     lightweight_review_backend: LightweightReviewBackendOption = None,
@@ -1084,6 +1106,7 @@ def review_command(
         antigravity_model,
         antigravity_fallback_model,
         opencode_model,
+        pi_model,
         triage_backend,
         triage_model,
         lightweight_review_backend,

@@ -35,6 +35,10 @@ RUN npm install -g @openai/codex@${CODEX_VERSION}
 ARG OPENCODE_VERSION=1.18.34
 RUN npm install -g opencode-ai@${OPENCODE_VERSION}
 
+# Install pi coding agent CLI
+ARG PI_VERSION=0.73.1
+RUN npm install -g @mariozechner/pi-coding-agent@${PI_VERSION}
+
 # Install uv for fast Python dependency management
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 

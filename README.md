@@ -1,6 +1,6 @@
 # code-reviewer
 
-AI code review tool powered by Claude, Codex, Antigravity, and OpenCode. Works as a GitHub PR daemon or as a local review tool for git repositories.
+AI code review tool powered by Claude, Codex, Antigravity, OpenCode, and pi. Works as a GitHub PR daemon or as a local review tool for git repositories.
 
 ## Requirements
 
@@ -11,6 +11,7 @@ AI code review tool powered by Claude, Codex, Antigravity, and OpenCode. Works a
 - `claude` authenticated (Agent SDK depends on Claude Code runtime)
 - if using `antigravity` reviewer: `agy` (Antigravity CLI) installed and authenticated
 - if using `opencode` reviewer: `opencode` installed and configured with a provider
+- if using `pi` reviewer: `pi` (`@mariozechner/pi-coding-agent`) installed, with a provider API key in the environment (e.g. `OPENROUTER_API_KEY`)
 - for `codex_backend = "agents_sdk"`: OpenAI Agents SDK package + `OPENAI_API_KEY`
 
 ## Setup
@@ -114,6 +115,7 @@ enabled_reviewers = ["claude", "codex"]
 # enabled_reviewers = ["claude"]
 # enabled_reviewers = ["antigravity"]
 # enabled_reviewers = ["opencode"]
+# enabled_reviewers = ["pi"]
 ```
 
 ### Codex backend
@@ -145,7 +147,10 @@ codex_reasoning_effort = "low"       # low|medium|high
 # OpenCode (access models via OpenRouter, OpenAI, Google, etc.)
 # opencode_model = "openrouter/zhiyu/glm-5"
 
-# Reconciler (claude|codex|antigravity|opencode)
+# pi (provider/model, optional :<thinking> suffix; key from env, e.g. OPENROUTER_API_KEY)
+# pi_model = "openrouter/deepseek/deepseek-v4-flash:high"
+
+# Reconciler (claude|codex|antigravity|opencode|pi)
 reconciler_backend = "claude"
 # reconciler_model = "claude-opus-4-1"
 # reconciler_reasoning_effort = "high"    # claude: low|medium|high|max, codex: low|medium|high
@@ -156,11 +161,11 @@ reconciler_backend = "claude"
 Every PR goes through triage first. Simple changes (config, version bumps, image tags) get a lightweight single-model checklist review. Complex changes go through the full multi-reviewer pipeline.
 
 ```toml
-triage_backend = "claude"              # claude|codex|antigravity|opencode
+triage_backend = "claude"              # claude|codex|antigravity|opencode|pi
 # triage_model = ""                    # leave unset to use backend default
 triage_timeout_seconds = 60
 
-lightweight_review_backend = "claude"  # claude|codex|antigravity|opencode
+lightweight_review_backend = "claude"  # claude|codex|antigravity|opencode|pi
 # lightweight_review_model = ""        # leave unset to use backend default
 # lightweight_review_reasoning_effort = "low"   # low|medium|high|max
 lightweight_review_timeout_seconds = 300
@@ -202,7 +207,7 @@ Supported placeholders:
 
 Notes:
 
-- `full_review_prompt_path` applies to Claude, Codex CLI, Codex Agents SDK, Antigravity, and OpenCode
+- `full_review_prompt_path` applies to Claude, Codex CLI, Codex Agents SDK, Antigravity, OpenCode, and pi
 - Antigravity only supports prompt execution and requires `full_review_prompt_path` to be set
 - for Codex Agents SDK, `system_prompt` is used as the agent instruction layer
 - `code-reviewer check` shows whether each step is using the default prompt or an override path
@@ -290,6 +295,7 @@ claude_timeout_seconds = 900
 codex_timeout_seconds = 900
 antigravity_timeout_seconds = 900
 opencode_timeout_seconds = 900
+pi_timeout_seconds = 900
 output_dir = "./reviews"
 state_file = "./.state/pr-reviewer-state.json"
 clone_root = "./.tmp/workspaces"
@@ -308,6 +314,7 @@ uv run code-reviewer run-once --claude-model claude-sonnet-4-5 --claude-reasonin
 uv run code-reviewer run-once --reconciler-backend codex --reconciler-model gpt-5.3-codex
 uv run code-reviewer run-once --reconciler-backend antigravity
 uv run code-reviewer run-once --enabled-reviewer opencode --opencode-model openrouter/zhipu/glm-5
+uv run code-reviewer run-once --enabled-reviewer pi --pi-model openrouter/deepseek/deepseek-v4-flash:high
 uv run code-reviewer start --slash-command-enabled
 uv run code-reviewer start --no-slash-command-enabled
 uv run code-reviewer run-once --triage-backend claude --triage-model claude-sonnet-4-5
@@ -321,7 +328,7 @@ flowchart TD
     Start([PR or local changes]) --> Triage
 
     subgraph Triage
-        T[Run triage classifier<br><i>claude / codex / antigravity / opencode</i>]
+        T[Run triage classifier<br><i>claude / codex / antigravity / opencode / pi</i>]
         T --> Simple{simple?}
     end
 
@@ -341,14 +348,16 @@ flowchart TD
         Launch --> Codex[Codex<br><i>CLI exec or Agents SDK</i>]
         Launch --> Antigravity[Antigravity<br><i>prompt only</i>]
         Launch --> OpenCode[OpenCode<br><i>any model via providers</i>]
+        Launch --> Pi[pi<br><i>any model via providers</i>]
 
         Claude --> Collect[Collect outputs]
         Codex --> Collect
         Antigravity --> Collect
         OpenCode --> Collect
+        Pi --> Collect
 
         Collect --> Multi{multiple<br>reviewers?}
-        Multi -->|yes| Reconcile[Reconciler<br><i>claude / codex / antigravity / opencode</i><br>merges + deduplicates findings]
+        Multi -->|yes| Reconcile[Reconciler<br><i>claude / codex / antigravity / opencode / pi</i><br>merges + deduplicates findings]
         Multi -->|no| Single[Use single reviewer output]
     end
 
