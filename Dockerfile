@@ -14,7 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Install GitHub CLI
-ARG GH_VERSION=2.74.1
+ARG GH_VERSION=2.102.0
 RUN curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_$(dpkg --print-architecture).tar.gz" \
     | tar -xz --strip-components=1 -C /usr/local
 
@@ -24,13 +24,16 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Claude CLI
-RUN npm install -g @anthropic-ai/claude-code
+ARG CLAUDE_CODE_VERSION=2.1.286
+RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
 
 # Install Codex CLI
-RUN npm install -g @openai/codex
+ARG CODEX_VERSION=0.159.3
+RUN npm install -g @openai/codex@${CODEX_VERSION}
 
 # Install OpenCode CLI
-RUN npm install -g opencode-ai
+ARG OPENCODE_VERSION=1.18.34
+RUN npm install -g opencode-ai@${OPENCODE_VERSION}
 
 # Install uv for fast Python dependency management
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
