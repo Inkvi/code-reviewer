@@ -209,6 +209,31 @@ def test_decide_backend_usage_warns_when_window_is_low() -> None:
     assert "8% < 10%" in decision.reason
 
 
+def test_decide_backend_usage_allows_low_window_that_already_reset() -> None:
+    now = datetime(2026, 3, 23, 6, 30, tzinfo=UTC)
+    snapshot = BackendUsageSnapshot(
+        backend="codex",
+        events_scanned=1,
+        latest_by_limit={
+            "five_hour": BackendUsageWindow(
+                backend="codex",
+                limit_key="five_hour",
+                raw_limit_key="primary",
+                seen_at=now - timedelta(days=1),
+                resets_at=now - timedelta(hours=20),
+                used_percent=93.0,
+                status=None,
+                source=Path("/tmp/rollout.jsonl"),
+            )
+        },
+    )
+
+    decision = decide_backend_usage(snapshot, now=now)
+
+    assert decision.should_use_backend is True
+    assert "already reset" in decision.reason
+
+
 def test_has_enough_backend_usage_uses_default_ten_percent_threshold() -> None:
     now = datetime(2026, 3, 23, 6, 30, tzinfo=UTC)
     snapshot = BackendUsageSnapshot(

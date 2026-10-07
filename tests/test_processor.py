@@ -1,5 +1,5 @@
 import asyncio
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from code_reviewer.backend_usage import BackendUsageSnapshot, BackendUsageWindow
@@ -334,7 +334,7 @@ def test_resolve_reconciler_settings_multi_backend_timeouts() -> None:
 
 
 def test_backend_has_available_usage_rejects_low_codex_usage(monkeypatch) -> None:
-    now = datetime(2026, 3, 23, 6, 30, tzinfo=UTC)
+    now = datetime.now(UTC)
     snapshot = BackendUsageSnapshot(
         backend="codex",
         events_scanned=1,
@@ -344,7 +344,7 @@ def test_backend_has_available_usage_rejects_low_codex_usage(monkeypatch) -> Non
                 limit_key="five_hour",
                 raw_limit_key="primary",
                 seen_at=now,
-                resets_at=now,
+                resets_at=now + timedelta(hours=1),
                 used_percent=96.0,
                 status=None,
                 source=Path("/tmp/codex.jsonl"),
@@ -364,7 +364,7 @@ def test_backend_has_available_usage_rejects_low_codex_usage(monkeypatch) -> Non
 
 
 def test_backend_has_available_usage_gates_on_low_remaining(monkeypatch) -> None:
-    now = datetime(2026, 3, 23, 6, 30, tzinfo=UTC)
+    now = datetime.now(UTC)
     snapshot = BackendUsageSnapshot(
         backend="antigravity",
         events_scanned=2,
@@ -374,7 +374,7 @@ def test_backend_has_available_usage_gates_on_low_remaining(monkeypatch) -> None
                 limit_key="agy-flash",
                 raw_limit_key="agy-flash",
                 seen_at=now,
-                resets_at=now,
+                resets_at=now + timedelta(hours=1),
                 used_percent=10.0,
                 status="allowed",
                 source=Path("/tmp/agy-settings.json"),
@@ -384,7 +384,7 @@ def test_backend_has_available_usage_gates_on_low_remaining(monkeypatch) -> None
                 limit_key="agy-pro",
                 raw_limit_key="agy-pro",
                 seen_at=now,
-                resets_at=now,
+                resets_at=now + timedelta(hours=1),
                 used_percent=96.0,
                 status="allowed",
                 source=Path("/tmp/agy-settings.json"),
