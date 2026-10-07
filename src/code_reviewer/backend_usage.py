@@ -358,6 +358,8 @@ def decide_backend_usage(
             )
 
     for window in windows:
+        if window.resets_at is not None and window.resets_at <= current_time:
+            continue
         remaining = window.remaining_percent
         if remaining is not None and remaining < minimum_remaining_percent:
             reason = (
