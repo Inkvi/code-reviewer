@@ -1641,6 +1641,7 @@ def _run_clean_review_with_auto_submit(
     risk: str | None,
     risk_reason: str | None = None,
     merge_status: dict | None = None,
+    max_risk: str = "low",
 ):
     """Run a review that finds nothing, with auto-submit on.
 
@@ -1703,6 +1704,7 @@ def _run_clean_review_with_auto_submit(
         github_orgs=["polymerdao"],
         enabled_reviewers=["codex"],
         auto_submit_review_decision=True,
+        auto_approve_max_risk=max_risk,
     )
     result = asyncio.run(process_candidate(cfg, client, store, workspace, _sample_pr()))
     assert result.processed is True
@@ -1755,6 +1757,16 @@ def test_approval_blocked_by_medium_risk_posts_comment(monkeypatch, tmp_path) ->
     assert store.state.last_risk == "medium"
     assert store.state.last_risk_reason == "changes API behavior"
     assert comments[0].startswith("**Not auto-approved:** medium risk (changes API behavior).")
+
+
+def test_medium_risk_is_approved_when_config_allows_it(monkeypatch, tmp_path) -> None:
+    _, submitted, comments, status_calls = _run_clean_review_with_auto_submit(
+        monkeypatch, tmp_path, risk="medium", max_risk="medium"
+    )
+
+    assert submitted == ["approve"]
+    assert comments == []
+    assert len(status_calls) == 1, "CI and merge checks still run"
 
 
 def test_approval_blocked_when_triage_did_not_rate_risk(monkeypatch, tmp_path) -> None:

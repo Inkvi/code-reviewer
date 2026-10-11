@@ -55,10 +55,19 @@ def approval_blocker(pr_status: dict) -> str | None:
     return None
 
 
-def risk_blocker(risk: str | None, reason: str | None) -> str | None:
-    """Return why the triage risk level rules out auto-approval, or None if it is low."""
-    if risk == "low":
+_RISK_ORDER = {"low": 0, "medium": 1, "high": 2}
+
+
+def risk_blocker(risk: str | None, reason: str | None, max_risk: str) -> str | None:
+    """Return why the triage risk level rules out auto-approval, or None if it is allowed.
+
+    *max_risk* is the highest level that may be auto-approved. "high" turns the check off,
+    so even an unrated PR is allowed.
+    """
+    if max_risk == "high":
         return None
     if risk is None:
         return "triage did not rate the risk"
+    if _RISK_ORDER[risk] <= _RISK_ORDER[max_risk]:
+        return None
     return f"{risk} risk ({reason})" if reason else f"{risk} risk"

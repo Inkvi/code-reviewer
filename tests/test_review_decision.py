@@ -80,8 +80,23 @@ def test_approval_blocker_blocks_pending_checks() -> None:
     assert approval_blocker(status) == "checks still running: build, deploy"
 
 
-def test_risk_blocker_allows_only_low_risk() -> None:
-    assert risk_blocker("low", "docs only") is None
-    assert risk_blocker("medium", "changes API behavior") == "medium risk (changes API behavior)"
-    assert risk_blocker("high", None) == "high risk"
-    assert risk_blocker(None, None) == "triage did not rate the risk"
+def test_risk_blocker_with_low_max_allows_only_low_risk() -> None:
+    assert risk_blocker("low", "docs only", "low") is None
+    assert (
+        risk_blocker("medium", "changes API behavior", "low")
+        == "medium risk (changes API behavior)"
+    )
+    assert risk_blocker("high", None, "low") == "high risk"
+    assert risk_blocker(None, None, "low") == "triage did not rate the risk"
+
+
+def test_risk_blocker_with_medium_max_allows_low_and_medium() -> None:
+    assert risk_blocker("low", None, "medium") is None
+    assert risk_blocker("medium", None, "medium") is None
+    assert risk_blocker("high", "edits auth", "medium") == "high risk (edits auth)"
+    assert risk_blocker(None, None, "medium") == "triage did not rate the risk"
+
+
+def test_risk_blocker_with_high_max_skips_the_check() -> None:
+    assert risk_blocker("high", "edits auth", "high") is None
+    assert risk_blocker(None, None, "high") is None
