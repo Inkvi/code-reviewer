@@ -69,6 +69,7 @@ class AppConfig(BaseModel):
     skip_own_prs: bool = True
     auto_post_review: bool = False
     auto_submit_review_decision: bool = False
+    auto_approve_max_risk: str = "low"
     include_reviewer_stderr: bool = True
     post_mode: str = "pr_comment"
     output_dir: str = "./reviews"
@@ -346,6 +347,14 @@ class AppConfig(BaseModel):
         normalized = value.strip().lower()
         if normalized not in {"rerequest_only", "rerequest_or_commit"}:
             raise ValueError("trigger_mode must be one of: rerequest_only, rerequest_or_commit")
+        return normalized
+
+    @field_validator("auto_approve_max_risk")
+    @classmethod
+    def validate_auto_approve_max_risk(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in {"low", "medium", "high"}:
+            raise ValueError("auto_approve_max_risk must be one of: low, medium, high")
         return normalized
 
     @model_validator(mode="after")

@@ -482,6 +482,34 @@ def test_load_config_rejects_invalid_trigger_mode(tmp_path: Path) -> None:
         load_config(path)
 
 
+def test_auto_approve_max_risk_defaults_to_low(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text('github_orgs=["polymerdao"]\n', encoding="utf-8")
+
+    assert load_config(path).auto_approve_max_risk == "low"
+
+
+def test_load_config_accepts_auto_approve_max_risk(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text(
+        'github_orgs=["polymerdao"]\nauto_approve_max_risk = " Medium "\n',
+        encoding="utf-8",
+    )
+
+    assert load_config(path).auto_approve_max_risk == "medium"
+
+
+def test_load_config_rejects_invalid_auto_approve_max_risk(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text(
+        'github_orgs=["polymerdao"]\nauto_approve_max_risk = "none"\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="auto_approve_max_risk"):
+        load_config(path)
+
+
 # --- Backend list syntax tests ---
 
 

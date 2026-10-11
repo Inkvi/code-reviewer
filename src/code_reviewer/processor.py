@@ -559,7 +559,7 @@ def _publish_and_persist(
     status = status_when_not_posted
     blocked_reason = None
     if config.auto_submit_review_decision and review_decision == "approve":
-        blocked_reason = risk_blocker(pr.risk, pr.risk_reason)
+        blocked_reason = risk_blocker(pr.risk, pr.risk_reason, config.auto_approve_max_risk)
         if blocked_reason is None:
             try:
                 blocked_reason = approval_blocker(client.get_pr_merge_status(pr))
