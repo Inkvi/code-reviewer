@@ -622,6 +622,9 @@ def check_command(
     table.add_row("Auto post", str(cfg.auto_post_review))
     table.add_row("Auto submit decision", str(cfg.auto_submit_review_decision))
     table.add_row("Auto-approve max risk", cfg.auto_approve_max_risk)
+    table.add_row("High-risk paths", ", ".join(cfg.high_risk_paths) or "none")
+    for repo, patterns in cfg.high_risk_paths_by_repo.items():
+        table.add_row(f"High-risk paths ({repo})", ", ".join(patterns) or "none")
     table.add_row("Include reviewer stderr", str(cfg.include_reviewer_stderr))
     table.add_row("Enabled reviewers", ", ".join(cfg.enabled_reviewers))
     table.add_row("Claude backend", cfg.claude_backend)

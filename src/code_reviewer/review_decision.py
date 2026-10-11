@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from fnmatch import fnmatchcase
 from typing import Literal
 
 SEVERE_FINDING_PATTERN = re.compile(r"\[(P0|P1)\]", re.IGNORECASE)
@@ -71,3 +72,14 @@ def risk_blocker(risk: str | None, reason: str | None, max_risk: str) -> str | N
     if _RISK_ORDER[risk] <= _RISK_ORDER[max_risk]:
         return None
     return f"{risk} risk ({reason})" if reason else f"{risk} risk"
+
+
+def first_high_risk_path(paths: list[str], patterns: list[str]) -> str | None:
+    """Return the first changed file that matches a high_risk_paths pattern, if any.
+
+    Patterns use fnmatch rules, where ``*`` also matches across folders.
+    """
+    for path in paths:
+        if any(fnmatchcase(path, pattern) for pattern in patterns):
+            return path
+    return None

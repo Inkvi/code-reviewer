@@ -1642,6 +1642,9 @@ def _run_clean_review_with_auto_submit(
     risk_reason: str | None = None,
     merge_status: dict | None = None,
     max_risk: str = "low",
+    high_risk_paths: list[str] | None = None,
+    high_risk_paths_by_repo: dict[str, list[str]] | None = None,
+    changed_file_paths: list[str] | None = None,
 ):
     """Run a review that finds nothing, with auto-submit on.
 
@@ -1705,8 +1708,11 @@ def _run_clean_review_with_auto_submit(
         enabled_reviewers=["codex"],
         auto_submit_review_decision=True,
         auto_approve_max_risk=max_risk,
+        high_risk_paths=high_risk_paths or [],
+        high_risk_paths_by_repo=high_risk_paths_by_repo or {},
     )
-    result = asyncio.run(process_candidate(cfg, client, store, workspace, _sample_pr()))
+    pr = _sample_pr(changed_file_paths=changed_file_paths)
+    result = asyncio.run(process_candidate(cfg, client, store, workspace, pr))
     assert result.processed is True
     return store, submitted, comments, status_calls
 
@@ -1767,6 +1773,66 @@ def test_medium_risk_is_approved_when_config_allows_it(monkeypatch, tmp_path) ->
     assert submitted == ["approve"]
     assert comments == []
     assert len(status_calls) == 1, "CI and merge checks still run"
+
+
+def test_high_risk_path_overrides_low_triage_risk(monkeypatch, tmp_path) -> None:
+    store, submitted, comments, status_calls = _run_clean_review_with_auto_submit(
+        monkeypatch,
+        tmp_path,
+        risk="low",
+        high_risk_paths=["*auth*"],
+        changed_file_paths=["README.md", "src/auth/session.py"],
+    )
+
+    assert submitted == []
+    assert status_calls == []
+    assert store.state.last_risk == "high"
+    assert comments[0].startswith(
+        "**Not auto-approved:** high risk "
+        "(changes src/auth/session.py, which matches high_risk_paths)."
+    )
+
+
+def test_repo_high_risk_path_overrides_low_triage_risk(monkeypatch, tmp_path) -> None:
+    store, submitted, comments, _ = _run_clean_review_with_auto_submit(
+        monkeypatch,
+        tmp_path,
+        risk="low",
+        high_risk_paths_by_repo={
+            "polymerdao/obul": ["contracts/*"],
+            "polymerdao/other": ["src/*"],
+        },
+        changed_file_paths=["contracts/Vault.sol"],
+    )
+
+    assert submitted == []
+    assert store.state.last_risk == "high"
+    assert "changes contracts/Vault.sol, which matches high_risk_paths" in comments[0]
+
+
+def test_other_repo_high_risk_paths_do_not_apply(monkeypatch, tmp_path) -> None:
+    _, submitted, _, _ = _run_clean_review_with_auto_submit(
+        monkeypatch,
+        tmp_path,
+        risk="low",
+        high_risk_paths_by_repo={"polymerdao/other": ["src/*"]},
+        changed_file_paths=["src/app.py"],
+    )
+
+    assert submitted == ["approve"]
+
+
+def test_high_risk_paths_without_match_keep_triage_risk(monkeypatch, tmp_path) -> None:
+    store, submitted, _, _ = _run_clean_review_with_auto_submit(
+        monkeypatch,
+        tmp_path,
+        risk="low",
+        high_risk_paths=["*auth*"],
+        changed_file_paths=["docs/guide.md"],
+    )
+
+    assert submitted == ["approve"]
+    assert store.state.last_risk == "low"
 
 
 def test_approval_blocked_when_triage_did_not_rate_risk(monkeypatch, tmp_path) -> None:

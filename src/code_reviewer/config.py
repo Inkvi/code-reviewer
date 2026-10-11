@@ -37,6 +37,16 @@ def _normalize_backend_list(value: str | list[str], field_name: str) -> list[str
     return normalized
 
 
+def _normalize_patterns(value: list[str]) -> list[str]:
+    """Strip patterns and drop empty or repeated ones, keeping order."""
+    normalized: list[str] = []
+    for entry in value:
+        cleaned = entry.strip()
+        if cleaned and cleaned not in normalized:
+            normalized.append(cleaned)
+    return normalized
+
+
 _PROMPT_PATH_FIELD_TO_STEP: dict[str, PromptStep] = {
     "triage_prompt_path": "triage",
     "lightweight_review_prompt_path": "lightweight_review",
@@ -70,6 +80,8 @@ class AppConfig(BaseModel):
     auto_post_review: bool = False
     auto_submit_review_decision: bool = False
     auto_approve_max_risk: str = "low"
+    high_risk_paths: list[str] = Field(default_factory=list)
+    high_risk_paths_by_repo: dict[str, list[str]] = Field(default_factory=dict)
     include_reviewer_stderr: bool = True
     post_mode: str = "pr_comment"
     output_dir: str = "./reviews"
@@ -115,6 +127,11 @@ class AppConfig(BaseModel):
     @property
     def github_owners(self) -> list[str]:
         return list(self.github_orgs)
+
+    def high_risk_paths_for(self, owner: str, repo: str) -> list[str]:
+        """Global high_risk_paths plus any patterns set for this repo."""
+        repo_patterns = self.high_risk_paths_by_repo.get(f"{owner}/{repo}".lower(), [])
+        return _normalize_patterns(self.high_risk_paths + repo_patterns)
 
     @field_validator("github_orgs")
     @classmethod
@@ -347,6 +364,25 @@ class AppConfig(BaseModel):
         normalized = value.strip().lower()
         if normalized not in {"rerequest_only", "rerequest_or_commit"}:
             raise ValueError("trigger_mode must be one of: rerequest_only, rerequest_or_commit")
+        return normalized
+
+    @field_validator("high_risk_paths")
+    @classmethod
+    def normalize_high_risk_paths(cls, value: list[str]) -> list[str]:
+        return _normalize_patterns(value)
+
+    @field_validator("high_risk_paths_by_repo")
+    @classmethod
+    def normalize_high_risk_paths_by_repo(cls, value: dict[str, list[str]]) -> dict[str, list[str]]:
+        normalized: dict[str, list[str]] = {}
+        for key, patterns in value.items():
+            repo = key.strip().lower()
+            owner, sep, name = repo.partition("/")
+            if not sep or not owner or not name or "/" in name:
+                raise ValueError(
+                    f"high_risk_paths_by_repo keys must look like owner/repo, got {key!r}"
+                )
+            normalized[repo] = _normalize_patterns(normalized.get(repo, []) + patterns)
         return normalized
 
     @field_validator("auto_approve_max_risk")

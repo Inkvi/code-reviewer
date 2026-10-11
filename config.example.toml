@@ -46,6 +46,11 @@ auto_post_review = false
 auto_submit_review_decision = false
 # Highest triage risk that can be auto-approved: low|medium|high (high = don't check risk)
 auto_approve_max_risk = "low"
+# Changed files matching these patterns make a PR high risk, whatever triage says.
+# fnmatch rules: * also matches across folders, so "*auth*" matches src/auth/login.py.
+# high_risk_paths = ["*auth*", "*billing*", "migrations/*", ".github/workflows/*"]
+# Extra patterns for specific repos, added to high_risk_paths for that repo.
+# high_risk_paths_by_repo = { "polymerdao/obul" = ["contracts/*", "deploy/*"] }
 include_reviewer_stderr = true
 post_mode = "pr_comment"
 output_dir = "./reviews"

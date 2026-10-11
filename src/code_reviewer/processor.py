@@ -35,6 +35,7 @@ from code_reviewer.repos import fetch_remote_skills
 from code_reviewer.review_decision import (
     ReviewDecision,
     approval_blocker,
+    first_high_risk_path,
     infer_review_decision,
     risk_blocker,
 )
@@ -1513,6 +1514,13 @@ async def process_candidate(
             claude_backend=config.claude_backend,
             antigravity_fallback_model=config.antigravity_fallback_model,
         )
+        risky_file = first_high_risk_path(
+            pr.changed_file_paths, config.high_risk_paths_for(pr.owner, pr.repo)
+        )
+        if risky_file is not None:
+            pr.risk = "high"
+            pr.risk_reason = f"changes {risky_file}, which matches high_risk_paths"
+            info(f"risk set to high by high_risk_paths ({risky_file}) {pr.url}")
 
         if triage_result == TriageResult.SIMPLE:
             progress.set_triage_done("lightweight")

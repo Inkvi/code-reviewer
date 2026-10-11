@@ -510,6 +510,55 @@ def test_load_config_rejects_invalid_auto_approve_max_risk(tmp_path: Path) -> No
         load_config(path)
 
 
+def test_high_risk_paths_strips_and_dedupes(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text(
+        'github_orgs=["polymerdao"]\n'
+        'high_risk_paths = [" *auth* ", "", "*auth*", "migrations/*"]\n',
+        encoding="utf-8",
+    )
+
+    assert load_config(path).high_risk_paths == ["*auth*", "migrations/*"]
+
+
+def test_high_risk_paths_for_combines_global_and_repo_patterns(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text(
+        'github_orgs=["polymerdao"]\n'
+        'high_risk_paths = ["*auth*"]\n'
+        'high_risk_paths_by_repo = { "PolymerDAO/Obul" = [" contracts/* ", "*auth*"] }\n',
+        encoding="utf-8",
+    )
+
+    cfg = load_config(path)
+    assert cfg.high_risk_paths_by_repo == {"polymerdao/obul": ["contracts/*", "*auth*"]}
+    assert cfg.high_risk_paths_for("polymerdao", "obul") == ["*auth*", "contracts/*"]
+    assert cfg.high_risk_paths_for("Polymerdao", "OBUL") == ["*auth*", "contracts/*"]
+    assert cfg.high_risk_paths_for("polymerdao", "other") == ["*auth*"]
+
+
+def test_high_risk_paths_by_repo_accepts_table_syntax(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text(
+        'github_orgs=["polymerdao"]\n\n'
+        '[high_risk_paths_by_repo]\n"polymerdao/obul" = ["deploy/*"]\n',
+        encoding="utf-8",
+    )
+
+    assert load_config(path).high_risk_paths_for("polymerdao", "obul") == ["deploy/*"]
+
+
+def test_high_risk_paths_by_repo_rejects_bad_keys(tmp_path: Path) -> None:
+    for bad_key in ("obul", "polymerdao/obul/extra", "/obul"):
+        path = tmp_path / "config.toml"
+        path.write_text(
+            f'github_orgs=["polymerdao"]\nhigh_risk_paths_by_repo = {{ "{bad_key}" = ["x"] }}\n',
+            encoding="utf-8",
+        )
+        with pytest.raises(ValueError, match="owner/repo"):
+            load_config(path)
+
+
 # --- Backend list syntax tests ---
 
 

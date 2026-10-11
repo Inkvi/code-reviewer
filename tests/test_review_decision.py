@@ -1,4 +1,9 @@
-from code_reviewer.review_decision import approval_blocker, infer_review_decision, risk_blocker
+from code_reviewer.review_decision import (
+    approval_blocker,
+    first_high_risk_path,
+    infer_review_decision,
+    risk_blocker,
+)
 
 
 def test_infer_review_decision_requests_changes_for_p0_or_p1() -> None:
@@ -100,3 +105,17 @@ def test_risk_blocker_with_medium_max_allows_low_and_medium() -> None:
 def test_risk_blocker_with_high_max_skips_the_check() -> None:
     assert risk_blocker("high", "edits auth", "high") is None
     assert risk_blocker(None, None, "high") is None
+
+
+def test_first_high_risk_path_matches_across_folders() -> None:
+    paths = ["README.md", "src/auth/login.py", "src/billing/charge.py"]
+    assert first_high_risk_path(paths, ["*auth*", "*billing*"]) == "src/auth/login.py"
+    assert first_high_risk_path(["migrations/0042_drop.sql"], ["migrations/*"]) == (
+        "migrations/0042_drop.sql"
+    )
+
+
+def test_first_high_risk_path_returns_none_without_match_or_patterns() -> None:
+    assert first_high_risk_path(["docs/guide.md"], ["*auth*"]) is None
+    assert first_high_risk_path(["src/auth/login.py"], []) is None
+    assert first_high_risk_path(["src/Auth/login.py"], ["*auth*"]) is None, "case-sensitive"
