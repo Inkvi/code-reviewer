@@ -1623,6 +1623,91 @@ def test_process_candidate_prompt_override_error_does_not_fallback(monkeypatch, 
     assert "invalid prompt override" in (result.error or "")
 
 
+_CLEAN_MERGE_STATUS = {
+    "mergeable": "MERGEABLE",
+    "statusCheckRollup": [
+        {"__typename": "CheckRun", "name": "ci", "status": "COMPLETED", "conclusion": "SUCCESS"}
+    ],
+}
+
+
+def test_approval_blocked_by_failing_ci_posts_comment(monkeypatch, tmp_path) -> None:
+    """A clean review on a PR with failing CI is posted as a comment, not an approval."""
+    store = DummyStore()
+    workspace = DummyWorkspace(tmp_path)
+    client = GitHubClient(viewer_login="Inkvi")
+    monkeypatch.setattr(GitHubClient, "add_eyes_reaction", lambda _self, _pr: None)
+    _mock_triage_full_review(monkeypatch)
+
+    now = datetime.now(UTC)
+    ok_output = ReviewerOutput(
+        reviewer="codex",
+        status="ok",
+        markdown="### Findings\n- No material findings.\n\n### Test Gaps\n- None noted.",
+        stdout="",
+        stderr="",
+        error=None,
+        started_at=now,
+        ended_at=now,
+    )
+
+    async def fake_codex(
+        _pr, _workdir, _timeout, *, model=None, reasoning_effort=None, prompt_path=None
+    ):
+        return ok_output
+
+    monkeypatch.setattr("code_reviewer.processor.run_codex_review", fake_codex)
+    out_file = tmp_path / "out.md"
+    out_file.write_text("### Findings\n- No material findings.\n")
+    monkeypatch.setattr(
+        "code_reviewer.processor.write_review_markdown", lambda *_args, **_kwargs: out_file
+    )
+    monkeypatch.setattr(
+        "code_reviewer.processor.write_stage_markdown",
+        lambda *_args, **_kwargs: tmp_path / "out.stage.md",
+    )
+    monkeypatch.setattr(
+        GitHubClient,
+        "get_pr_merge_status",
+        lambda _self, _pr: {
+            "mergeable": "MERGEABLE",
+            "statusCheckRollup": [
+                {
+                    "__typename": "CheckRun",
+                    "name": "tests",
+                    "status": "COMPLETED",
+                    "conclusion": "FAILURE",
+                }
+            ],
+        },
+    )
+
+    submitted: list[str] = []
+    monkeypatch.setattr(
+        GitHubClient,
+        "submit_pr_review",
+        lambda _self, _pr, body_file, decision: submitted.append(decision),
+    )
+    comments: list[str] = []
+    monkeypatch.setattr(
+        GitHubClient, "post_pr_comment_inline", lambda _self, _pr, body: comments.append(body)
+    )
+
+    cfg = AppConfig(
+        github_orgs=["polymerdao"],
+        enabled_reviewers=["codex"],
+        auto_submit_review_decision=True,
+    )
+    result = asyncio.run(process_candidate(cfg, client, store, workspace, _sample_pr()))
+
+    assert result.processed is True
+    assert submitted == []
+    assert store.state.last_status == "posted"
+    assert len(comments) == 1
+    assert comments[0].startswith("**Not auto-approved:** checks failed: tests.")
+    assert "No material findings." in comments[0]
+
+
 def test_submit_own_pr_falls_back_to_comment(monkeypatch, tmp_path) -> None:
     """When submit_pr_review fails with 'own PR' error, falls back to post_pr_comment."""
     store = DummyStore()
@@ -1667,6 +1752,7 @@ def test_submit_own_pr_falls_back_to_comment(monkeypatch, tmp_path) -> None:
         )
 
     monkeypatch.setattr(GitHubClient, "submit_pr_review", raise_own_pr)
+    monkeypatch.setattr(GitHubClient, "get_pr_merge_status", lambda _self, _pr: _CLEAN_MERGE_STATUS)
 
     posted_files: list[str] = []
     monkeypatch.setattr(
@@ -1717,6 +1803,7 @@ def test_auto_reuse_saved_review_on_submission_failed(monkeypatch, tmp_path) -> 
         "submit_pr_review",
         lambda _self, _pr, body_file, decision: submitted_reviews.append(decision),
     )
+    monkeypatch.setattr(GitHubClient, "get_pr_merge_status", lambda _self, _pr: _CLEAN_MERGE_STATUS)
 
     cfg = AppConfig(
         github_orgs=["polymerdao"],

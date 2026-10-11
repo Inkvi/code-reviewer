@@ -363,6 +363,11 @@ class GitHubClient:
         )
         return details.get("headRefOid", "")
 
+    @staticmethod
+    def get_pr_merge_status(pr: PRCandidate) -> dict:
+        """Fetch merge-conflict state and CI check results for a PR."""
+        return run_json(["gh", "pr", "view", pr.url, "--json", "mergeable,statusCheckRollup"])
+
     def has_issue_comment_by_viewer(self, pr: PRCandidate) -> bool:
         endpoint = f"repos/{pr.owner}/{pr.repo}/issues/{pr.number}/comments"
         proc = run_command(

@@ -32,7 +32,11 @@ from code_reviewer.output import (
 from code_reviewer.progress import ProgressComment
 from code_reviewer.prompts import PromptBundle, PromptOverrideError, format_prompt_bundle
 from code_reviewer.repos import fetch_remote_skills
-from code_reviewer.review_decision import ReviewDecision, infer_review_decision
+from code_reviewer.review_decision import (
+    ReviewDecision,
+    approval_blocker,
+    infer_review_decision,
+)
 from code_reviewer.reviewers import (
     TriageResult,
     reconcile_reviews,
@@ -548,7 +552,26 @@ def _publish_and_persist(
 ) -> None:
     posted_at = None
     status = status_when_not_posted
-    if config.auto_submit_review_decision and review_decision is not None:
+    blocked_reason = None
+    if config.auto_submit_review_decision and review_decision == "approve":
+        try:
+            blocked_reason = approval_blocker(client.get_pr_merge_status(pr))
+        except Exception as exc:  # noqa: BLE001
+            warn(f"failed to read merge status: {exc} {pr.url}")
+            blocked_reason = "could not read CI and merge status"
+
+    if blocked_reason is not None:
+        warn(f"not approving ({blocked_reason}), posting as comment {pr.url}")
+        body = f"**Not auto-approved:** {blocked_reason}.\n\n{output_path.read_text()}"
+        try:
+            client.post_pr_comment_inline(pr, body)
+            posted_at = ProcessedState.now_iso()
+            status = "posted"
+            info(f"posted review comment {pr.url}")
+        except Exception as exc:  # noqa: BLE001
+            warn(f"failed to post review comment: {exc} {pr.url}")
+            status = "submission_failed"
+    elif config.auto_submit_review_decision and review_decision is not None:
         info(f"submitting PR review decision={review_decision} {pr.url}")
         try:
             client.submit_pr_review(pr, str(output_path), review_decision)
