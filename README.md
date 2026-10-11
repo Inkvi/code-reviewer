@@ -160,6 +160,8 @@ reconciler_backend = "claude"
 
 Every PR goes through triage first. Simple changes (config, version bumps, image tags) get a lightweight single-model checklist review. Complex changes go through the full multi-reviewer pipeline.
 
+Triage also rates how risky the PR would be to merge without a careful human review: `low`, `medium`, or `high`, with a one-sentence reason. Only low-risk PRs can be auto-approved (see [Auto submission](#auto-submission)). A custom `triage_prompt_path` must ask for `"risk"` and `"risk_reason"` in its JSON reply, or PRs will never be auto-approved.
+
 ```toml
 triage_backend = "claude"              # claude|codex|antigravity|opencode|pi
 # triage_model = ""                    # leave unset to use backend default
@@ -258,7 +260,8 @@ system_prompt = "You are a review reconciler."
 auto_post_review = false
 
 # Submit formal review decision automatically:
-# - approve when no P0/P1 findings, CI checks have all passed, and there are no merge conflicts
+# - approve when no P0/P1 findings, triage rated the PR low risk, CI checks have all passed,
+#   and there are no merge conflicts
 # - otherwise, a clean review is posted as a comment explaining why it was not approved
 # - request changes when any P0/P1 finding exists
 auto_submit_review_decision = false
@@ -442,7 +445,7 @@ docker run code-reviewer start
 - Excludes repos listed in `excluded_repos`
 - Runs only reviewers listed in `enabled_reviewers`
 - Skips draft PRs and (by default) PRs authored by you
-- Triages every PR as "simple" or "full_review"
+- Triages every PR as "simple" or "full_review" and rates its risk as low, medium, or high
 - Simple PRs get a lightweight single-model checklist review
 - Complex PRs go through the full multi-reviewer + reconciler pipeline
 - If triage or lightweight review fails, falls back to full review

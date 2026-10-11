@@ -28,8 +28,14 @@ IMPORTANT: Base your classification on the actual diff content, not on the PR ti
 
 If ANY of those conditions is NOT met, classify as "full_review".
 
+Also rate how risky it would be to merge this PR without a careful human review:
+- "low": docs, comments, tests only, config values, version bumps, or small isolated changes that are easy to undo
+- "medium": changes to application logic, APIs, or behavior with limited reach
+- "high": authentication, authorization, billing or payments, secrets, cryptography, data migrations or deletion, infrastructure or CI/CD logic, or anything hard to undo
+Diff size alone does not set risk. If the diff is truncated, use the file list too and pick the higher level when unsure.
+
 Respond with ONLY a JSON object, no other text:
-{{"classification": "simple"}} or {{"classification": "full_review"}}
+{{"classification": "simple" or "full_review", "risk": "low" or "medium" or "high", "risk_reason": "<one short sentence>"}}
 """
 
 system_prompt = """

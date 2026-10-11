@@ -1,4 +1,4 @@
-from code_reviewer.review_decision import approval_blocker, infer_review_decision
+from code_reviewer.review_decision import approval_blocker, infer_review_decision, risk_blocker
 
 
 def test_infer_review_decision_requests_changes_for_p0_or_p1() -> None:
@@ -78,3 +78,10 @@ def test_approval_blocker_blocks_pending_checks() -> None:
         ],
     }
     assert approval_blocker(status) == "checks still running: build, deploy"
+
+
+def test_risk_blocker_allows_only_low_risk() -> None:
+    assert risk_blocker("low", "docs only") is None
+    assert risk_blocker("medium", "changes API behavior") == "medium risk (changes API behavior)"
+    assert risk_blocker("high", None) == "high risk"
+    assert risk_blocker(None, None) == "triage did not rate the risk"

@@ -61,7 +61,11 @@ def _build_triage_prompt(pr: PRCandidate, diff_snippet: str = "") -> str:
     return build_triage_bundle(pr, Path.cwd(), diff_section, None).prompt
 
 
-def _parse_triage_response(text: str) -> TriageResult:
+_RISK_LEVELS = {"low", "medium", "high"}
+_RISK_REASON_MAX_CHARS = 200
+
+
+def _extract_triage_json(text: str) -> dict | None:
     # Try to extract JSON from markdown code blocks first
     code_block_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
     if code_block_match:
@@ -72,13 +76,33 @@ def _parse_triage_response(text: str) -> TriageResult:
     except json.JSONDecodeError:
         # Try to find a JSON object in the response
         json_match = re.search(r"\{[^}]+\}", text)
-        if json_match:
-            try:
-                data = json.loads(json_match.group())
-            except json.JSONDecodeError:
-                return TriageResult.FULL_REVIEW
-        else:
-            return TriageResult.FULL_REVIEW
+        if not json_match:
+            return None
+        try:
+            data = json.loads(json_match.group())
+        except json.JSONDecodeError:
+            return None
+    return data if isinstance(data, dict) else None
+
+
+def _parse_triage_risk(text: str) -> tuple[str | None, str | None]:
+    """Return (risk, reason) from a triage response, or (None, None) if not rated."""
+    data = _extract_triage_json(text) or {}
+    risk = data.get("risk")
+    if not isinstance(risk, str) or risk.strip().lower() not in _RISK_LEVELS:
+        return None, None
+    reason = data.get("risk_reason")
+    if isinstance(reason, str) and reason.strip():
+        reason = " ".join(reason.split())[:_RISK_REASON_MAX_CHARS]
+    else:
+        reason = None
+    return risk.strip().lower(), reason
+
+
+def _parse_triage_response(text: str) -> TriageResult:
+    data = _extract_triage_json(text)
+    if data is None:
+        return TriageResult.FULL_REVIEW
 
     raw = data.get("classification")
     if not isinstance(raw, str):
@@ -100,6 +124,7 @@ async def run_triage(
     antigravity_fallback_model: str | None = None,
 ) -> tuple[TriageResult, PromptBundle]:
     backends = [backend] if isinstance(backend, str) else list(backend)
+    pr.risk, pr.risk_reason = None, None
     diff_snippet = _get_diff_snippet(workspace, pr)
     diff_section = _escape_delimiters(diff_snippet) if diff_snippet else ""
     bundle = build_triage_bundle(pr, workspace, diff_section, prompt_path)
@@ -206,5 +231,6 @@ async def run_triage(
         return TriageResult.FULL_REVIEW, bundle
 
     result = _parse_triage_response(text)
-    info(f"triage result: {result.value} {pr.url}")
+    pr.risk, pr.risk_reason = _parse_triage_risk(text)
+    info(f"triage result: {result.value} risk={pr.risk or 'unrated'} {pr.url}")
     return result, bundle

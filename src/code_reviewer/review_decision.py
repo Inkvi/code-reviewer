@@ -53,3 +53,12 @@ def approval_blocker(pr_status: dict) -> str | None:
     if pending:
         return f"checks still running: {', '.join(pending)}"
     return None
+
+
+def risk_blocker(risk: str | None, reason: str | None) -> str | None:
+    """Return why the triage risk level rules out auto-approval, or None if it is low."""
+    if risk == "low":
+        return None
+    if risk is None:
+        return "triage did not rate the risk"
+    return f"{risk} risk ({reason})" if reason else f"{risk} risk"

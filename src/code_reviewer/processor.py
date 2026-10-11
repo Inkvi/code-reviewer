@@ -36,6 +36,7 @@ from code_reviewer.review_decision import (
     ReviewDecision,
     approval_blocker,
     infer_review_decision,
+    risk_blocker,
 )
 from code_reviewer.reviewers import (
     TriageResult,
@@ -403,6 +404,10 @@ def _build_review_meta(
         meta["changed_files"] = pr.changed_file_paths
     if triage_result:
         meta["triage_result"] = triage_result
+    if pr.risk:
+        meta["risk"] = pr.risk
+        if pr.risk_reason:
+            meta["risk_reason"] = pr.risk_reason
 
     # Trigger info
     if pr.slash_command_trigger:
@@ -554,11 +559,13 @@ def _publish_and_persist(
     status = status_when_not_posted
     blocked_reason = None
     if config.auto_submit_review_decision and review_decision == "approve":
-        try:
-            blocked_reason = approval_blocker(client.get_pr_merge_status(pr))
-        except Exception as exc:  # noqa: BLE001
-            warn(f"failed to read merge status: {exc} {pr.url}")
-            blocked_reason = "could not read CI and merge status"
+        blocked_reason = risk_blocker(pr.risk, pr.risk_reason)
+        if blocked_reason is None:
+            try:
+                blocked_reason = approval_blocker(client.get_pr_merge_status(pr))
+            except Exception as exc:  # noqa: BLE001
+                warn(f"failed to read merge status: {exc} {pr.url}")
+                blocked_reason = "could not read CI and merge status"
 
     if blocked_reason is not None:
         warn(f"not approving ({blocked_reason}), posting as comment {pr.url}")
@@ -636,6 +643,8 @@ def _publish_and_persist(
             last_status=status,
             last_posted_at=posted_at,
             last_slash_command_id=last_slash_command_id,
+            last_risk=pr.risk,
+            last_risk_reason=pr.risk_reason,
         ),
     )
     store.save()
@@ -1342,6 +1351,7 @@ async def process_candidate(
         detail(f"using saved review file ({saved_review_path}) {pr.url}")
         saved_review_text = await asyncio.to_thread(saved_review_path.read_text, encoding="utf-8")
         saved_decision = infer_review_decision(saved_review_text)
+        pr.risk, pr.risk_reason = previous.last_risk, previous.last_risk_reason
         await asyncio.to_thread(
             _publish_and_persist,
             config,
@@ -1375,6 +1385,7 @@ async def process_candidate(
             info(f"reusing previously generated review (submission retry) {pr.url}")
             review_text = await asyncio.to_thread(saved_path.read_text, encoding="utf-8")
             retry_decision = infer_review_decision(review_text)
+            pr.risk, pr.risk_reason = previous.last_risk, previous.last_risk_reason
             await asyncio.to_thread(
                 _publish_and_persist,
                 config,
