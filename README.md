@@ -258,8 +258,9 @@ system_prompt = "You are a review reconciler."
 auto_post_review = false
 
 # Submit formal review decision automatically:
-# - approve when no P1/P2 findings
-# - request changes when any P1/P2 finding exists
+# - approve when no P0/P1 findings, CI checks have all passed, and there are no merge conflicts
+# - otherwise, a clean review is posted as a comment explaining why it was not approved
+# - request changes when any P0/P1 finding exists
 auto_submit_review_decision = false
 
 ```
