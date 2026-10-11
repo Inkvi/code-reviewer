@@ -564,10 +564,13 @@ def test_compute_processing_decision_missing_rerequest_data() -> None:
     assert decision.reason == "missing_rerequest_data"
 
 
-def _mock_triage_full_review(monkeypatch) -> None:
-    """Add run_triage mock that returns FULL_REVIEW to a test."""
+def _mock_triage_full_review(
+    monkeypatch, risk: str | None = None, risk_reason: str | None = None
+) -> None:
+    """Add run_triage mock that returns FULL_REVIEW (and optionally a risk level) to a test."""
 
-    async def fake_triage(*args, **kwargs):
+    async def fake_triage(pr, *args, **kwargs):
+        pr.risk, pr.risk_reason = risk, risk_reason
         return TriageResult.FULL_REVIEW, PromptBundle(prompt="mock triage")
 
     monkeypatch.setattr("code_reviewer.processor.run_triage", fake_triage)
@@ -1631,13 +1634,23 @@ _CLEAN_MERGE_STATUS = {
 }
 
 
-def test_approval_blocked_by_failing_ci_posts_comment(monkeypatch, tmp_path) -> None:
-    """A clean review on a PR with failing CI is posted as a comment, not an approval."""
+def _run_clean_review_with_auto_submit(
+    monkeypatch,
+    tmp_path,
+    *,
+    risk: str | None,
+    risk_reason: str | None = None,
+    merge_status: dict | None = None,
+):
+    """Run a review that finds nothing, with auto-submit on.
+
+    Returns (store, submitted decisions, posted comments, merge status calls).
+    """
     store = DummyStore()
     workspace = DummyWorkspace(tmp_path)
     client = GitHubClient(viewer_login="Inkvi")
     monkeypatch.setattr(GitHubClient, "add_eyes_reaction", lambda _self, _pr: None)
-    _mock_triage_full_review(monkeypatch)
+    _mock_triage_full_review(monkeypatch, risk=risk, risk_reason=risk_reason)
 
     now = datetime.now(UTC)
     ok_output = ReviewerOutput(
@@ -1666,21 +1679,14 @@ def test_approval_blocked_by_failing_ci_posts_comment(monkeypatch, tmp_path) -> 
         "code_reviewer.processor.write_stage_markdown",
         lambda *_args, **_kwargs: tmp_path / "out.stage.md",
     )
-    monkeypatch.setattr(
-        GitHubClient,
-        "get_pr_merge_status",
-        lambda _self, _pr: {
-            "mergeable": "MERGEABLE",
-            "statusCheckRollup": [
-                {
-                    "__typename": "CheckRun",
-                    "name": "tests",
-                    "status": "COMPLETED",
-                    "conclusion": "FAILURE",
-                }
-            ],
-        },
-    )
+
+    status_calls: list[str] = []
+
+    def fake_merge_status(_self, pr):
+        status_calls.append(pr.url)
+        return merge_status or _CLEAN_MERGE_STATUS
+
+    monkeypatch.setattr(GitHubClient, "get_pr_merge_status", fake_merge_status)
 
     submitted: list[str] = []
     monkeypatch.setattr(
@@ -1699,13 +1705,63 @@ def test_approval_blocked_by_failing_ci_posts_comment(monkeypatch, tmp_path) -> 
         auto_submit_review_decision=True,
     )
     result = asyncio.run(process_candidate(cfg, client, store, workspace, _sample_pr()))
-
     assert result.processed is True
+    return store, submitted, comments, status_calls
+
+
+def test_low_risk_clean_review_with_green_ci_is_approved(monkeypatch, tmp_path) -> None:
+    store, submitted, comments, _ = _run_clean_review_with_auto_submit(
+        monkeypatch, tmp_path, risk="low"
+    )
+
+    assert submitted == ["approve"]
+    assert comments == []
+    assert store.state.last_status == "approved"
+    assert store.state.last_risk == "low"
+
+
+def test_approval_blocked_by_failing_ci_posts_comment(monkeypatch, tmp_path) -> None:
+    """A clean, low-risk review on a PR with failing CI is posted as a comment."""
+    failing = {
+        "mergeable": "MERGEABLE",
+        "statusCheckRollup": [
+            {
+                "__typename": "CheckRun",
+                "name": "tests",
+                "status": "COMPLETED",
+                "conclusion": "FAILURE",
+            }
+        ],
+    }
+    store, submitted, comments, _ = _run_clean_review_with_auto_submit(
+        monkeypatch, tmp_path, risk="low", merge_status=failing
+    )
+
     assert submitted == []
     assert store.state.last_status == "posted"
     assert len(comments) == 1
     assert comments[0].startswith("**Not auto-approved:** checks failed: tests.")
     assert "No material findings." in comments[0]
+
+
+def test_approval_blocked_by_medium_risk_posts_comment(monkeypatch, tmp_path) -> None:
+    store, submitted, comments, status_calls = _run_clean_review_with_auto_submit(
+        monkeypatch, tmp_path, risk="medium", risk_reason="changes API behavior"
+    )
+
+    assert submitted == []
+    assert status_calls == [], "risk check should block before asking GitHub for CI status"
+    assert store.state.last_status == "posted"
+    assert store.state.last_risk == "medium"
+    assert store.state.last_risk_reason == "changes API behavior"
+    assert comments[0].startswith("**Not auto-approved:** medium risk (changes API behavior).")
+
+
+def test_approval_blocked_when_triage_did_not_rate_risk(monkeypatch, tmp_path) -> None:
+    _, submitted, comments, _ = _run_clean_review_with_auto_submit(monkeypatch, tmp_path, risk=None)
+
+    assert submitted == []
+    assert comments[0].startswith("**Not auto-approved:** triage did not rate the risk.")
 
 
 def test_submit_own_pr_falls_back_to_comment(monkeypatch, tmp_path) -> None:
@@ -1714,7 +1770,7 @@ def test_submit_own_pr_falls_back_to_comment(monkeypatch, tmp_path) -> None:
     workspace = DummyWorkspace(tmp_path)
     client = GitHubClient(viewer_login="Inkvi")
     monkeypatch.setattr(GitHubClient, "add_eyes_reaction", lambda _self, _pr: None)
-    _mock_triage_full_review(monkeypatch)
+    _mock_triage_full_review(monkeypatch, risk="low")
 
     now = datetime.now(UTC)
     ok_output = ReviewerOutput(
@@ -1785,6 +1841,7 @@ def test_auto_reuse_saved_review_on_submission_failed(monkeypatch, tmp_path) -> 
             last_output_file=str(saved_review),
             last_status="submission_failed",
             last_seen_rerequest_at="2026-03-02T00:00:00+00:00",
+            last_risk="low",
         )
     )
     workspace = DummyWorkspace(tmp_path)

@@ -34,6 +34,9 @@ class PRCandidate:
     slash_command_trigger: SlashCommandTrigger | None = None
     is_local: bool = False
     review_mode: str | None = None
+    # Set by triage: "low" | "medium" | "high", or None when triage did not rate it.
+    risk: str | None = None
+    risk_reason: str | None = None
 
     @property
     def key(self) -> str:
@@ -158,6 +161,8 @@ class ProcessedState:
     last_status: str | None = None
     last_posted_at: str | None = None
     last_slash_command_id: int | None = None
+    last_risk: str | None = None
+    last_risk_reason: str | None = None
 
     @staticmethod
     def now_iso() -> str:

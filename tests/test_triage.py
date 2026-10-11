@@ -8,6 +8,7 @@ from code_reviewer.reviewers.triage import (
     _build_triage_prompt,
     _get_diff_snippet,
     _parse_triage_response,
+    _parse_triage_risk,
     run_triage,
 )
 
@@ -289,3 +290,56 @@ def test_triage_all_backends_fail_returns_full_review(tmp_path: Path) -> None:
             )
         )
     assert result == TriageResult.FULL_REVIEW
+
+
+def test_parse_triage_risk_reads_level_and_reason() -> None:
+    text = '{"risk": "High", "risk_reason": "edits   auth  middleware"}'
+    assert _parse_triage_risk(text) == ("high", "edits auth middleware")
+
+
+def test_parse_triage_risk_from_code_block_without_reason() -> None:
+    text = '```json\n{"classification": "simple", "risk": "low"}\n```'
+    assert _parse_triage_risk(text) == ("low", None)
+
+
+def test_parse_triage_risk_unrated_when_missing_or_invalid() -> None:
+    assert _parse_triage_risk('{"classification": "simple"}') == (None, None)
+    assert _parse_triage_risk('{"classification": "simple", "risk": "tiny"}') == (None, None)
+    assert _parse_triage_risk("not json") == (None, None)
+
+
+def test_parse_triage_risk_truncates_long_reason() -> None:
+    text = '{"risk": "medium", "risk_reason": "' + "x" * 500 + '"}'
+    _risk, reason = _parse_triage_risk(text)
+    assert reason is not None and len(reason) == 200
+
+
+def test_run_triage_sets_risk_on_pr(tmp_path: Path) -> None:
+    async def fake_claude_prompt(prompt, cwd, timeout, **kwargs):
+        return (
+            '{"classification": "simple", "risk": "low", "risk_reason": "image tag bump"}',
+            None,
+            None,
+        )
+
+    pr = _sample_pr()
+    with patch("code_reviewer.reviewers.triage._run_claude_prompt", side_effect=fake_claude_prompt):
+        asyncio.run(run_triage(pr, tmp_path, timeout_seconds=60, backend=["claude"]))
+    assert (pr.risk, pr.risk_reason) == ("low", "image tag bump")
+
+
+def test_run_triage_clears_risk_when_triage_fails(tmp_path: Path) -> None:
+    async def failing_prompt(prompt, cwd, timeout, **kwargs):
+        raise RuntimeError("backend down")
+
+    pr = _sample_pr()
+    pr.risk, pr.risk_reason = "low", "stale"
+    with patch("code_reviewer.reviewers.triage._run_claude_prompt", side_effect=failing_prompt):
+        asyncio.run(run_triage(pr, tmp_path, timeout_seconds=60, backend=["claude"]))
+    assert (pr.risk, pr.risk_reason) == (None, None)
+
+
+def test_triage_prompt_asks_for_risk() -> None:
+    prompt = _build_triage_prompt(_sample_pr())
+    assert '"risk"' in prompt
+    assert "Diff size alone does not set risk" in prompt

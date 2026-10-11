@@ -114,6 +114,8 @@ class StateStore:
             last_status=item.get("last_status"),
             last_posted_at=item.get("last_posted_at"),
             last_slash_command_id=int(_raw_cmd_id) if _raw_cmd_id is not None else None,
+            last_risk=item.get("last_risk"),
+            last_risk_reason=item.get("last_risk_reason"),
         )
 
     def set(self, key: str, state: ProcessedState) -> None:
@@ -127,4 +129,6 @@ class StateStore:
                 "last_status": state.last_status,
                 "last_posted_at": state.last_posted_at,
                 "last_slash_command_id": state.last_slash_command_id,
+                "last_risk": state.last_risk,
+                "last_risk_reason": state.last_risk_reason,
             }

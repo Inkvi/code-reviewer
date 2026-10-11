@@ -87,6 +87,25 @@ def test_state_store_persists_last_slash_command_id(tmp_path: Path) -> None:
     assert state.last_slash_command_id == 123456
 
 
+def test_state_store_persists_risk(tmp_path: Path) -> None:
+    state_path = tmp_path / "state.json"
+    store = StateStore(state_path)
+    store._owns_lock = True
+    store.load()
+
+    store.set(
+        "polymerdao/obul#64",
+        ProcessedState(last_risk="medium", last_risk_reason="changes API behavior"),
+    )
+    store.save()
+
+    store2 = StateStore(state_path)
+    store2._owns_lock = True
+    store2.load()
+    state = store2.get("polymerdao/obul#64")
+    assert (state.last_risk, state.last_risk_reason) == ("medium", "changes API behavior")
+
+
 def test_acquire_lock_removes_stale_lock(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     state_path = tmp_path / "state.json"
     store = StateStore(state_path)
