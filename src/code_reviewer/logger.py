@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from rich.console import Console
+from rich.markup import escape
 
 console = Console()
 
@@ -18,12 +19,12 @@ def _stamp() -> str:
 
 
 def info(message: str) -> None:
-    console.print(f"[{_stamp()}] [cyan]INFO[/cyan] {message}")
+    console.print(f"[{_stamp()}] [cyan]INFO[/cyan] {escape(message)}")
 
 
 def warn(message: str) -> None:
-    console.print(f"[{_stamp()}] [yellow]WARN[/yellow] {message}")
+    console.print(f"[{_stamp()}] [yellow]WARN[/yellow] {escape(message)}")
 
 
 def error(message: str) -> None:
-    console.print(f"[{_stamp()}] [red]ERROR[/red] {message}")
+    console.print(f"[{_stamp()}] [red]ERROR[/red] {escape(message)}")

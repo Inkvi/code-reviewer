@@ -13,6 +13,7 @@ from code_reviewer.processor import (
     _compute_processing_decision,
     _extract_injection_section,
     _finalize_risk,
+    _inert_markdown,
     _NewCommitDetected,
     _resolve_antigravity_review_model,
     _resolve_reconciler_settings,
@@ -1759,7 +1760,7 @@ def test_approval_blocked_by_failing_ci_posts_comment(monkeypatch, tmp_path) -> 
     assert submitted == []
     assert store.state.last_status == "posted"
     assert len(comments) == 1
-    assert comments[0].startswith("**Not auto-approved:** checks failed: tests.")
+    assert comments[0].startswith("**Not auto-approved:** `checks failed: tests`")
     assert "No material findings." in comments[0]
 
 
@@ -1773,7 +1774,7 @@ def test_approval_blocked_by_medium_risk_posts_comment(monkeypatch, tmp_path) ->
     assert store.state.last_status == "posted"
     assert store.state.last_risk == "medium"
     assert store.state.last_risk_reason == "changes API behavior"
-    assert comments[0].startswith("**Not auto-approved:** medium risk (changes API behavior).")
+    assert comments[0].startswith("**Not auto-approved:** `medium risk (changes API behavior)`")
 
 
 def test_medium_risk_is_approved_when_config_allows_it(monkeypatch, tmp_path) -> None:
@@ -1799,8 +1800,8 @@ def test_high_risk_path_overrides_low_triage_risk(monkeypatch, tmp_path) -> None
     assert status_calls == []
     assert store.state.last_risk == "high"
     assert comments[0].startswith(
-        "**Not auto-approved:** high risk "
-        "(changes src/auth/session.py, which matches high_risk_paths)."
+        "**Not auto-approved:** `high risk "
+        "(changes src/auth/session.py, which matches high_risk_paths)`"
     )
 
 
@@ -1854,7 +1855,7 @@ def test_approval_blocked_when_pr_moved_past_reviewed_commit(monkeypatch, tmp_pa
 
     assert submitted == []
     assert comments[0].startswith(
-        "**Not auto-approved:** new commits were pushed after the review."
+        "**Not auto-approved:** `new commits were pushed after the review`"
     )
 
 
@@ -1862,7 +1863,7 @@ def test_approval_blocked_when_triage_did_not_rate_risk(monkeypatch, tmp_path) -
     _, submitted, comments, _ = _run_clean_review_with_auto_submit(monkeypatch, tmp_path, risk=None)
 
     assert submitted == []
-    assert comments[0].startswith("**Not auto-approved:** triage did not rate the risk.")
+    assert comments[0].startswith("**Not auto-approved:** `triage did not rate the risk`")
 
 
 def test_submit_own_pr_falls_back_to_comment(monkeypatch, tmp_path) -> None:
@@ -2396,3 +2397,51 @@ def test_workspace_changed_paths_keeps_unusual_filenames_unquoted(tmp_path) -> N
     _git(repo, "commit", "-q", "-m", "migration")
 
     assert _workspace_changed_paths(repo, _sample_pr()) == ["migrations/é.sql"]
+
+
+def test_inert_markdown_neutralizes_links_mentions_and_code_breakouts() -> None:
+    text = "see [fix](https://evil.example) @admin ![x](y)\n`rm -rf`"
+    assert _inert_markdown(text) == "`see [fix](https://evil.example) @admin ![x](y) 'rm -rf'`"
+
+
+def test_stale_saved_review_is_never_submitted_as_a_decision(monkeypatch, tmp_path) -> None:
+    """A saved review for an older commit is posted as a comment, even when risk is not checked."""
+    saved_review = tmp_path / "pr-64.md"
+    saved_review.write_text("### Findings\n- No material findings.\n")
+    store = DummyStore(
+        ProcessedState(
+            last_processed_at="2026-03-03T00:00:00+00:00",
+            last_reviewed_head_sha="oldsha",
+            last_output_file=str(saved_review),
+            last_status="posted",
+            last_risk="low",
+        )
+    )
+    client = GitHubClient(viewer_login="Inkvi")
+    submitted: list[str] = []
+    monkeypatch.setattr(
+        GitHubClient,
+        "submit_pr_review",
+        lambda _self, _pr, body_file, decision: submitted.append(decision),
+    )
+    monkeypatch.setattr(GitHubClient, "get_pr_merge_status", lambda _self, _pr: _CLEAN_MERGE_STATUS)
+    comments: list[str] = []
+    monkeypatch.setattr(
+        GitHubClient, "post_pr_comment", lambda _self, _pr, body_file: comments.append(body_file)
+    )
+
+    cfg = AppConfig(
+        github_orgs=["polymerdao"],
+        enabled_reviewers=["codex"],
+        auto_submit_review_decision=True,
+        auto_approve_max_risk="high",
+    )
+    result = asyncio.run(
+        process_candidate(
+            cfg, client, store, DummyWorkspace(tmp_path), _sample_pr(), use_saved_review=True
+        )
+    )
+
+    assert result.status == "reused_saved_review"
+    assert submitted == []
+    assert comments == [str(saved_review)]

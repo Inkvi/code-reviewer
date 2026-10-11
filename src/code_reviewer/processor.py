@@ -618,6 +618,14 @@ def _restore_saved_risk(
     _apply_high_risk_paths(config, pr, paths)
 
 
+def _inert_markdown(text: str) -> str:
+    """Render text as a one-line code span, so links, images, and @mentions stay inert.
+
+    Blocked reasons can carry PR-controlled text (filenames, model-written risk reasons).
+    """
+    return "`" + " ".join(text.replace("`", "'").split()) + "`"
+
+
 def _publish_and_persist(
     config: AppConfig,
     client: GitHubClient,
@@ -642,7 +650,9 @@ def _publish_and_persist(
 
     if blocked_reason is not None:
         warn(f"not approving ({blocked_reason}), posting as comment {pr.url}")
-        body = f"**Not auto-approved:** {blocked_reason}.\n\n{output_path.read_text()}"
+        body = (
+            f"**Not auto-approved:** {_inert_markdown(blocked_reason)}\n\n{output_path.read_text()}"
+        )
         try:
             client.post_pr_comment_inline(pr, body)
             posted_at = ProcessedState.now_iso()
@@ -1423,7 +1433,10 @@ async def process_candidate(
             )
         detail(f"using saved review file ({saved_review_path}) {pr.url}")
         saved_review_text = await asyncio.to_thread(saved_review_path.read_text, encoding="utf-8")
-        saved_decision = infer_review_decision(saved_review_text)
+        saved_decision: ReviewDecision | None = infer_review_decision(saved_review_text)
+        if previous.last_reviewed_head_sha != pr.head_sha:
+            warn(f"saved review is for an older commit, posting as comment only {pr.url}")
+            saved_decision = None
         await asyncio.to_thread(_restore_saved_risk, config, client, pr, previous)
         await asyncio.to_thread(
             _publish_and_persist,

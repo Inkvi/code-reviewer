@@ -19,3 +19,10 @@ def _isolate_backend_usage_dirs(monkeypatch, tmp_path):
     monkeypatch.setattr(
         backend_usage, "_default_claude_support_dir", lambda: tmp_path / "claude-support"
     )
+    # Without an explicit loader, the account lookup would run the real `claude auth status`.
+    load_account_type = backend_usage._load_claude_account_type
+    monkeypatch.setattr(
+        backend_usage,
+        "_load_claude_account_type",
+        lambda loader=None: load_account_type(loader) if loader else None,
+    )
