@@ -2404,8 +2404,8 @@ def test_inert_markdown_neutralizes_links_mentions_and_code_breakouts() -> None:
     assert _inert_markdown(text) == "`see [fix](https://evil.example) @admin ![x](y) 'rm -rf'`"
 
 
-def test_stale_saved_review_is_never_submitted_as_a_decision(monkeypatch, tmp_path) -> None:
-    """A saved review for an older commit is posted as a comment, even when risk is not checked."""
+def _reuse_stale_saved_review(monkeypatch, tmp_path, *, comment_fails: bool = False):
+    """Publish a review saved at "oldsha" while the PR head is "deadbeef"."""
     saved_review = tmp_path / "pr-64.md"
     saved_review.write_text("### Findings\n- No material findings.\n")
     store = DummyStore(
@@ -2417,7 +2417,6 @@ def test_stale_saved_review_is_never_submitted_as_a_decision(monkeypatch, tmp_pa
             last_risk="low",
         )
     )
-    client = GitHubClient(viewer_login="Inkvi")
     submitted: list[str] = []
     monkeypatch.setattr(
         GitHubClient,
@@ -2426,22 +2425,58 @@ def test_stale_saved_review_is_never_submitted_as_a_decision(monkeypatch, tmp_pa
     )
     monkeypatch.setattr(GitHubClient, "get_pr_merge_status", lambda _self, _pr: _CLEAN_MERGE_STATUS)
     comments: list[str] = []
-    monkeypatch.setattr(
-        GitHubClient, "post_pr_comment", lambda _self, _pr, body_file: comments.append(body_file)
-    )
 
+    def fake_comment(_self, _pr, body_file):
+        if comment_fails:
+            raise RuntimeError("gh down")
+        comments.append(body_file)
+
+    monkeypatch.setattr(GitHubClient, "post_pr_comment", fake_comment)
     cfg = AppConfig(
         github_orgs=["polymerdao"],
         enabled_reviewers=["codex"],
         auto_submit_review_decision=True,
         auto_approve_max_risk="high",
     )
-    result = asyncio.run(
-        process_candidate(
-            cfg, client, store, DummyWorkspace(tmp_path), _sample_pr(), use_saved_review=True
+
+    def run_once():
+        return asyncio.run(
+            process_candidate(
+                cfg,
+                GitHubClient(viewer_login="Inkvi"),
+                store,
+                DummyWorkspace(tmp_path),
+                _sample_pr(),
+                use_saved_review=True,
+            )
         )
+
+    return run_once, store, submitted, comments, saved_review
+
+
+def test_stale_saved_review_is_never_submitted_as_a_decision(monkeypatch, tmp_path) -> None:
+    """A saved review for an older commit is posted as a comment, even when risk is not checked."""
+    run_once, store, submitted, comments, saved_review = _reuse_stale_saved_review(
+        monkeypatch, tmp_path
     )
 
-    assert result.status == "reused_saved_review"
+    first = run_once()
+    second = run_once()
+
+    assert first.status == second.status == "reused_saved_review"
+    assert submitted == [], "reusing twice must not make the old review look current"
+    assert comments == [str(saved_review), str(saved_review)]
+    assert store.state.last_reviewed_head_sha == "oldsha"
+
+
+def test_stale_saved_review_keeps_old_head_when_comment_fails(monkeypatch, tmp_path) -> None:
+    # The automatic submission retry only runs when the saved head matches the PR head.
+    run_once, store, submitted, _, _ = _reuse_stale_saved_review(
+        monkeypatch, tmp_path, comment_fails=True
+    )
+
+    run_once()
+
     assert submitted == []
-    assert comments == [str(saved_review)]
+    assert store.state.last_status == "submission_failed"
+    assert store.state.last_reviewed_head_sha == "oldsha"

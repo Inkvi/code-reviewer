@@ -635,7 +635,14 @@ def _publish_and_persist(
     review_decision: ReviewDecision | None,
     status_when_not_posted: str,
     previous: ProcessedState,
+    *,
+    keep_reviewed_head: bool = False,
 ) -> None:
+    """Post or submit the review, then save state.
+
+    *keep_reviewed_head* is for re-publishing a saved review: state keeps the commit the
+    review was written for, so a review of an older commit never looks current later.
+    """
     posted_at = None
     status = status_when_not_posted
     blocked_reason = None
@@ -718,7 +725,9 @@ def _publish_and_persist(
     store.set(
         pr.key,
         ProcessedState(
-            last_reviewed_head_sha=pr.head_sha,
+            last_reviewed_head_sha=(
+                previous.last_reviewed_head_sha if keep_reviewed_head else pr.head_sha
+            ),
             last_processed_at=ProcessedState.now_iso(),
             last_seen_rerequest_at=last_seen_rerequest_at,
             trigger_mode=config.trigger_mode,
@@ -1448,6 +1457,7 @@ async def process_candidate(
             saved_decision,
             status_when_not_posted="reused_saved_review",
             previous=previous,
+            keep_reviewed_head=True,
         )
         info(f"processing complete (reused saved review) {pr.url}")
         return ProcessingResult(
@@ -1482,6 +1492,7 @@ async def process_candidate(
                 retry_decision,
                 status_when_not_posted="reused_saved_review",
                 previous=previous,
+                keep_reviewed_head=True,
             )
             info(f"processing complete (submission retry) {pr.url}")
             return ProcessingResult(
