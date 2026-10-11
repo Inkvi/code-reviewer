@@ -270,6 +270,17 @@ auto_submit_review_decision = false
 # "high" turns the risk check off, so PRs triage could not rate are approved too
 auto_approve_max_risk = "low"
 
+# Changed files matching these patterns make a PR high risk, whatever triage says.
+# fnmatch rules: * also matches across folders, so "*auth*" matches src/auth/login.py.
+# Checked against the reviewed commit; a renamed file counts under both names, and if
+# the changed files cannot be listed the PR is treated as high risk.
+# Has no effect when auto_approve_max_risk = "high". Default: no patterns.
+# high_risk_paths = ["*auth*", "*billing*", "migrations/*", ".github/workflows/*"]
+
+# Extra patterns for specific repos. A PR is checked against high_risk_paths plus the
+# list for its repo. Keys are "owner/repo" (case-insensitive). Default: none.
+# high_risk_paths_by_repo = { "polymerdao/obul" = ["contracts/*", "deploy/*"] }
+
 ```
 
 ### Trigger mode

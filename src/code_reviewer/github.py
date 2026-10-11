@@ -365,8 +365,40 @@ class GitHubClient:
 
     @staticmethod
     def get_pr_merge_status(pr: PRCandidate) -> dict:
-        """Fetch merge-conflict state and CI check results for a PR."""
-        return run_json(["gh", "pr", "view", pr.url, "--json", "mergeable,statusCheckRollup"])
+        """Fetch the live head commit, merge-conflict state, and CI check results for a PR."""
+        return run_json(
+            ["gh", "pr", "view", pr.url, "--json", "headRefOid,mergeable,statusCheckRollup"]
+        )
+
+    @staticmethod
+    def get_pr_changed_paths(pr: PRCandidate) -> list[str]:
+        """Every file a PR changes, plus the old name of renamed files.
+
+        Uses the paginated REST endpoint, which is not capped at 100 files like
+        ``gh pr view --json files``. GitHub stops that endpoint at 3,000 files, so
+        raise if the list is shorter than the PR's changed-file count.
+        """
+        base = f"repos/{pr.owner}/{pr.repo}/pulls/{pr.number}"
+        proc = run_command(
+            [
+                "gh",
+                "api",
+                "--paginate",
+                f"{base}/files?per_page=100",
+                "--jq",
+                ".[] | {filename, previous_filename}",
+            ]
+        )
+        entries = [json.loads(line) for line in proc.stdout.splitlines() if line.strip()]
+        total = run_json(["gh", "api", base]).get("changed_files")
+        if total != len(entries):
+            raise RuntimeError(f"GitHub listed {len(entries)} of {total} changed files")
+        paths: list[str] = []
+        for entry in entries:
+            paths.append(entry["filename"])
+            if entry.get("previous_filename"):
+                paths.append(entry["previous_filename"])
+        return paths
 
     def has_issue_comment_by_viewer(self, pr: PRCandidate) -> bool:
         endpoint = f"repos/{pr.owner}/{pr.repo}/issues/{pr.number}/comments"
@@ -606,5 +638,21 @@ class GitHubClient:
         body_file: str,
         decision: Literal["approve", "request_changes"],
     ) -> None:
-        decision_flag = "--approve" if decision == "approve" else "--request-changes"
-        run_command(["gh", "pr", "review", pr.url, decision_flag, "--body-file", body_file])
+        """Submit a review pinned to the reviewed commit (pr.head_sha).
+
+        Pinning means an approval cannot land on commits pushed after the review.
+        """
+        event = "APPROVE" if decision == "approve" else "REQUEST_CHANGES"
+        run_command(
+            [
+                "gh",
+                "api",
+                f"repos/{pr.owner}/{pr.repo}/pulls/{pr.number}/reviews",
+                "-f",
+                f"commit_id={pr.head_sha}",
+                "-f",
+                f"event={event}",
+                "-F",
+                f"body=@{body_file}",
+            ]
+        )

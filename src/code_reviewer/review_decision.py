@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from fnmatch import fnmatchcase
 from typing import Literal
 
 SEVERE_FINDING_PATTERN = re.compile(r"\[(P0|P1)\]", re.IGNORECASE)
@@ -22,12 +23,15 @@ def infer_review_decision(final_review: str) -> ReviewDecision:
 _PASSING_CHECK_CONCLUSIONS = {"SUCCESS", "NEUTRAL", "SKIPPED"}
 
 
-def approval_blocker(pr_status: dict) -> str | None:
+def approval_blocker(pr_status: dict, reviewed_head_sha: str) -> str | None:
     """Return why a PR must not be auto-approved, or None if it can be.
 
-    *pr_status* is ``gh pr view --json mergeable,statusCheckRollup`` output.
-    Blocks on merge conflicts and on any check that failed or has not finished.
+    *pr_status* is ``gh pr view --json headRefOid,mergeable,statusCheckRollup`` output.
+    Blocks when the PR moved past the reviewed commit, on merge conflicts, and on any
+    check that failed or has not finished.
     """
+    if pr_status.get("headRefOid") != reviewed_head_sha:
+        return "new commits were pushed after the review"
     if pr_status.get("mergeable") == "CONFLICTING":
         return "the PR has merge conflicts"
 
@@ -67,7 +71,18 @@ def risk_blocker(risk: str | None, reason: str | None, max_risk: str) -> str | N
     if max_risk == "high":
         return None
     if risk is None:
-        return "triage did not rate the risk"
+        return reason or "triage did not rate the risk"
     if _RISK_ORDER[risk] <= _RISK_ORDER[max_risk]:
         return None
     return f"{risk} risk ({reason})" if reason else f"{risk} risk"
+
+
+def first_high_risk_path(paths: list[str], patterns: list[str]) -> str | None:
+    """Return the first changed file that matches a high_risk_paths pattern, if any.
+
+    Patterns use fnmatch rules, where ``*`` also matches across folders.
+    """
+    for path in paths:
+        if any(fnmatchcase(path, pattern) for pattern in patterns):
+            return path
+    return None

@@ -1,4 +1,5 @@
 import asyncio
+import subprocess
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -11,9 +12,11 @@ from code_reviewer.processor import (
     _check_pr_head_changed,
     _compute_processing_decision,
     _extract_injection_section,
+    _finalize_risk,
     _NewCommitDetected,
     _resolve_antigravity_review_model,
     _resolve_reconciler_settings,
+    _restore_saved_risk,
     _run_local_reviewers,
     _run_reviewers_with_monitoring,
     _scale_max_findings,
@@ -22,6 +25,7 @@ from code_reviewer.processor import (
     _start_claude_review_task,
     _start_codex_review_task,
     _validate_review_format,
+    _workspace_changed_paths,
     process_candidate,
 )
 from code_reviewer.prompts import PromptBundle, PromptOverrideError
@@ -1627,6 +1631,7 @@ def test_process_candidate_prompt_override_error_does_not_fallback(monkeypatch, 
 
 
 _CLEAN_MERGE_STATUS = {
+    "headRefOid": "deadbeef",
     "mergeable": "MERGEABLE",
     "statusCheckRollup": [
         {"__typename": "CheckRun", "name": "ci", "status": "COMPLETED", "conclusion": "SUCCESS"}
@@ -1642,6 +1647,9 @@ def _run_clean_review_with_auto_submit(
     risk_reason: str | None = None,
     merge_status: dict | None = None,
     max_risk: str = "low",
+    high_risk_paths: list[str] | None = None,
+    high_risk_paths_by_repo: dict[str, list[str]] | None = None,
+    changed_file_paths: list[str] | None = None,
 ):
     """Run a review that finds nothing, with auto-submit on.
 
@@ -1681,6 +1689,11 @@ def _run_clean_review_with_auto_submit(
         lambda *_args, **_kwargs: tmp_path / "out.stage.md",
     )
 
+    monkeypatch.setattr(
+        "code_reviewer.processor._workspace_changed_paths",
+        lambda _workdir, pr: list(pr.changed_file_paths),
+    )
+
     status_calls: list[str] = []
 
     def fake_merge_status(_self, pr):
@@ -1705,8 +1718,11 @@ def _run_clean_review_with_auto_submit(
         enabled_reviewers=["codex"],
         auto_submit_review_decision=True,
         auto_approve_max_risk=max_risk,
+        high_risk_paths=high_risk_paths or [],
+        high_risk_paths_by_repo=high_risk_paths_by_repo or {},
     )
-    result = asyncio.run(process_candidate(cfg, client, store, workspace, _sample_pr()))
+    pr = _sample_pr(changed_file_paths=changed_file_paths)
+    result = asyncio.run(process_candidate(cfg, client, store, workspace, pr))
     assert result.processed is True
     return store, submitted, comments, status_calls
 
@@ -1725,6 +1741,7 @@ def test_low_risk_clean_review_with_green_ci_is_approved(monkeypatch, tmp_path) 
 def test_approval_blocked_by_failing_ci_posts_comment(monkeypatch, tmp_path) -> None:
     """A clean, low-risk review on a PR with failing CI is posted as a comment."""
     failing = {
+        "headRefOid": "deadbeef",
         "mergeable": "MERGEABLE",
         "statusCheckRollup": [
             {
@@ -1767,6 +1784,78 @@ def test_medium_risk_is_approved_when_config_allows_it(monkeypatch, tmp_path) ->
     assert submitted == ["approve"]
     assert comments == []
     assert len(status_calls) == 1, "CI and merge checks still run"
+
+
+def test_high_risk_path_overrides_low_triage_risk(monkeypatch, tmp_path) -> None:
+    store, submitted, comments, status_calls = _run_clean_review_with_auto_submit(
+        monkeypatch,
+        tmp_path,
+        risk="low",
+        high_risk_paths=["*auth*"],
+        changed_file_paths=["README.md", "src/auth/session.py"],
+    )
+
+    assert submitted == []
+    assert status_calls == []
+    assert store.state.last_risk == "high"
+    assert comments[0].startswith(
+        "**Not auto-approved:** high risk "
+        "(changes src/auth/session.py, which matches high_risk_paths)."
+    )
+
+
+def test_repo_high_risk_path_overrides_low_triage_risk(monkeypatch, tmp_path) -> None:
+    store, submitted, comments, _ = _run_clean_review_with_auto_submit(
+        monkeypatch,
+        tmp_path,
+        risk="low",
+        high_risk_paths_by_repo={
+            "polymerdao/obul": ["contracts/*"],
+            "polymerdao/other": ["src/*"],
+        },
+        changed_file_paths=["contracts/Vault.sol"],
+    )
+
+    assert submitted == []
+    assert store.state.last_risk == "high"
+    assert "changes contracts/Vault.sol, which matches high_risk_paths" in comments[0]
+
+
+def test_other_repo_high_risk_paths_do_not_apply(monkeypatch, tmp_path) -> None:
+    _, submitted, _, _ = _run_clean_review_with_auto_submit(
+        monkeypatch,
+        tmp_path,
+        risk="low",
+        high_risk_paths_by_repo={"polymerdao/other": ["src/*"]},
+        changed_file_paths=["src/app.py"],
+    )
+
+    assert submitted == ["approve"]
+
+
+def test_high_risk_paths_without_match_keep_triage_risk(monkeypatch, tmp_path) -> None:
+    store, submitted, _, _ = _run_clean_review_with_auto_submit(
+        monkeypatch,
+        tmp_path,
+        risk="low",
+        high_risk_paths=["*auth*"],
+        changed_file_paths=["docs/guide.md"],
+    )
+
+    assert submitted == ["approve"]
+    assert store.state.last_risk == "low"
+
+
+def test_approval_blocked_when_pr_moved_past_reviewed_commit(monkeypatch, tmp_path) -> None:
+    moved = dict(_CLEAN_MERGE_STATUS, headRefOid="newer")
+    _, submitted, comments, _ = _run_clean_review_with_auto_submit(
+        monkeypatch, tmp_path, risk="low", merge_status=moved
+    )
+
+    assert submitted == []
+    assert comments[0].startswith(
+        "**Not auto-approved:** new commits were pushed after the review."
+    )
 
 
 def test_approval_blocked_when_triage_did_not_rate_risk(monkeypatch, tmp_path) -> None:
@@ -2136,3 +2225,174 @@ def test_scale_max_test_gaps_large_diff_scales_up() -> None:
 
 def test_scale_max_test_gaps_capped_at_10() -> None:
     assert _scale_max_test_gaps(3, additions=5000, deletions=5000) == 10
+
+
+def _git(repo: Path, *args: str) -> None:
+    subprocess.run(
+        ["git", "-C", str(repo), "-c", "user.email=t@t", "-c", "user.name=t", *args],
+        check=True,
+        capture_output=True,
+    )
+
+
+def test_workspace_changed_paths_lists_both_names_of_a_rename(tmp_path) -> None:
+    repo = tmp_path / "repo"
+    (repo / "src").mkdir(parents=True)
+    _git(repo, "init", "-q", "-b", "main")
+    (repo / "src" / "auth.py").write_text("token = 1\n")
+    (repo / "README.md").write_text("hi\n")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-q", "-m", "base")
+    _git(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+    _git(repo, "mv", "src/auth.py", "src/session.py")
+    _git(repo, "commit", "-q", "-m", "rename")
+
+    paths = _workspace_changed_paths(repo, _sample_pr())
+
+    assert sorted(paths or []) == ["src/auth.py", "src/session.py"]
+
+
+def test_workspace_changed_paths_returns_none_outside_git(tmp_path) -> None:
+    assert _workspace_changed_paths(tmp_path, _sample_pr()) is None
+
+
+def test_finalize_risk_drops_triage_risk_after_new_commits(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(
+        "code_reviewer.processor._workspace_changed_paths", lambda _w, _pr: ["README.md"]
+    )
+    cfg = AppConfig(github_orgs=["polymerdao"], high_risk_paths=["*auth*"])
+    pr = _sample_pr()
+    pr.risk, pr.risk_reason = "low", "docs only"
+    pr.head_sha = "newsha"
+
+    _finalize_risk(cfg, pr, tmp_path, triage_head_sha="deadbeef")
+
+    assert pr.risk is None
+    assert pr.risk_reason == "new commits arrived after triage rated the risk"
+
+
+def test_finalize_risk_checks_files_of_the_reviewed_commit(monkeypatch, tmp_path) -> None:
+    # gh listed only README.md, but the checked-out commit also changes an auth file.
+    monkeypatch.setattr(
+        "code_reviewer.processor._workspace_changed_paths",
+        lambda _w, _pr: ["README.md", "src/auth/login.py"],
+    )
+    cfg = AppConfig(github_orgs=["polymerdao"], high_risk_paths=["*auth*"])
+    pr = _sample_pr(changed_file_paths=["README.md"])
+    pr.risk = "low"
+
+    _finalize_risk(cfg, pr, tmp_path, triage_head_sha=pr.head_sha)
+
+    assert (pr.risk, pr.risk_reason) == (
+        "high",
+        "changes src/auth/login.py, which matches high_risk_paths",
+    )
+
+
+def test_finalize_risk_is_high_when_files_cannot_be_listed(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr("code_reviewer.processor._workspace_changed_paths", lambda _w, _pr: None)
+    cfg = AppConfig(github_orgs=["polymerdao"], high_risk_paths=["*auth*"])
+    pr = _sample_pr()
+    pr.risk = "low"
+
+    _finalize_risk(cfg, pr, tmp_path, triage_head_sha=pr.head_sha)
+
+    assert pr.risk == "high"
+
+
+def test_finalize_risk_skips_git_without_patterns(monkeypatch, tmp_path) -> None:
+    def fail(*_args):
+        raise AssertionError("git should not run when no patterns are configured")
+
+    monkeypatch.setattr("code_reviewer.processor._workspace_changed_paths", fail)
+    pr = _sample_pr()
+    pr.risk = "low"
+
+    _finalize_risk(AppConfig(github_orgs=["polymerdao"]), pr, tmp_path, pr.head_sha)
+
+    assert pr.risk == "low"
+
+
+class _PathsClient:
+    def __init__(self, paths: list[str] | None = None, error: Exception | None = None) -> None:
+        self.paths = paths or []
+        self.error = error
+        self.calls = 0
+
+    def get_pr_changed_paths(self, _pr: PRCandidate) -> list[str]:
+        self.calls += 1
+        if self.error is not None:
+            raise self.error
+        return self.paths
+
+
+def test_restore_saved_risk_drops_risk_for_an_older_commit() -> None:
+    cfg = AppConfig(github_orgs=["polymerdao"], high_risk_paths=["*auth*"])
+    pr = _sample_pr()
+    previous = ProcessedState(last_reviewed_head_sha="oldsha", last_risk="low")
+
+    _restore_saved_risk(cfg, _PathsClient(), pr, previous)
+
+    assert (pr.risk, pr.risk_reason) == (None, "the saved review is for an older commit")
+
+
+def test_restore_saved_risk_matches_old_name_of_a_renamed_file() -> None:
+    # REST lists the old name of a rename, which gh pr view --json files does not.
+    cfg = AppConfig(github_orgs=["polymerdao"], high_risk_paths=["src/auth.py"])
+    pr = _sample_pr(changed_file_paths=["src/session.py"])
+    previous = ProcessedState(last_reviewed_head_sha=pr.head_sha, last_risk="low")
+
+    _restore_saved_risk(cfg, _PathsClient(["src/session.py", "src/auth.py"]), pr, previous)
+
+    assert (pr.risk, pr.risk_reason) == (
+        "high",
+        "changes src/auth.py, which matches high_risk_paths",
+    )
+
+
+def test_restore_saved_risk_is_high_when_files_cannot_be_listed() -> None:
+    cfg = AppConfig(github_orgs=["polymerdao"], high_risk_paths=["*auth*"])
+    pr = _sample_pr()
+    previous = ProcessedState(last_reviewed_head_sha=pr.head_sha, last_risk="low")
+
+    _restore_saved_risk(cfg, _PathsClient(error=RuntimeError("gh down")), pr, previous)
+
+    assert pr.risk == "high"
+
+
+def test_restore_saved_risk_keeps_saved_low_risk_when_nothing_matches() -> None:
+    cfg = AppConfig(github_orgs=["polymerdao"], high_risk_paths=["*auth*"])
+    pr = _sample_pr()
+    previous = ProcessedState(
+        last_reviewed_head_sha=pr.head_sha, last_risk="low", last_risk_reason="docs only"
+    )
+
+    _restore_saved_risk(cfg, _PathsClient(["docs/guide.md"]), pr, previous)
+
+    assert (pr.risk, pr.risk_reason) == ("low", "docs only")
+
+
+def test_restore_saved_risk_skips_gh_without_patterns() -> None:
+    client = _PathsClient()
+    pr = _sample_pr()
+    previous = ProcessedState(last_reviewed_head_sha=pr.head_sha, last_risk="low")
+
+    _restore_saved_risk(AppConfig(github_orgs=["polymerdao"]), client, pr, previous)
+
+    assert pr.risk == "low"
+    assert client.calls == 0
+
+
+def test_workspace_changed_paths_keeps_unusual_filenames_unquoted(tmp_path) -> None:
+    repo = tmp_path / "repo"
+    (repo / "migrations").mkdir(parents=True)
+    _git(repo, "init", "-q", "-b", "main")
+    (repo / "README.md").write_text("hi\n")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-q", "-m", "base")
+    _git(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+    (repo / "migrations" / "é.sql").write_text("drop table x;\n")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-q", "-m", "migration")
+
+    assert _workspace_changed_paths(repo, _sample_pr()) == ["migrations/é.sql"]

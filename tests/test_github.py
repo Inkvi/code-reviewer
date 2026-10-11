@@ -739,3 +739,81 @@ def test_discover_slash_command_candidates_rejects_unauthorized_user(monkeypatch
     candidates = client.discover_slash_command_candidates(config, store)
 
     assert len(candidates) == 0
+
+
+def _review_pr() -> PRCandidate:
+    return PRCandidate(
+        owner="polymerdao",
+        repo="obul",
+        number=64,
+        url="https://github.com/polymerdao/obul/pull/64",
+        title="t",
+        author_login="alice",
+        base_ref="main",
+        head_sha="abc123",
+        updated_at="2026-03-01T00:00:00Z",
+    )
+
+
+def test_submit_pr_review_pins_the_reviewed_commit(monkeypatch) -> None:
+    calls: list[list[str]] = []
+
+    def fake_run_command(args, **_kwargs):  # noqa: ANN001
+        calls.append(args)
+        return subprocess.CompletedProcess(args, 0, "{}", "")
+
+    monkeypatch.setattr("code_reviewer.github.run_command", fake_run_command)
+    client = GitHubClient(viewer_login="Inkvi")
+
+    client.submit_pr_review(_review_pr(), "/tmp/review.md", "approve")
+    client.submit_pr_review(_review_pr(), "/tmp/review.md", "request_changes")
+
+    assert calls[0] == [
+        "gh",
+        "api",
+        "repos/polymerdao/obul/pulls/64/reviews",
+        "-f",
+        "commit_id=abc123",
+        "-f",
+        "event=APPROVE",
+        "-F",
+        "body=@/tmp/review.md",
+    ]
+    assert "event=REQUEST_CHANGES" in calls[1]
+
+
+def _fake_files_api(monkeypatch, files_stdout: str, changed_files: int) -> None:
+    def fake_run_command(args, **_kwargs):  # noqa: ANN001
+        assert args[:3] == ["gh", "api", "--paginate"]
+        return subprocess.CompletedProcess(args, 0, files_stdout, "")
+
+    monkeypatch.setattr("code_reviewer.github.run_command", fake_run_command)
+    monkeypatch.setattr(
+        "code_reviewer.github.run_json", lambda _args: {"changed_files": changed_files}
+    )
+
+
+def test_get_pr_changed_paths_includes_old_names_of_renames(monkeypatch) -> None:
+    _fake_files_api(
+        monkeypatch,
+        '{"filename":"src/session.py","previous_filename":"src/auth.py"}\n'
+        '{"filename":"migrations/é.sql","previous_filename":null}\n',
+        changed_files=2,
+    )
+
+    paths = GitHubClient.get_pr_changed_paths(_review_pr())
+
+    assert paths == ["src/session.py", "src/auth.py", "migrations/é.sql"]
+
+
+def test_get_pr_changed_paths_raises_when_list_is_cut_short(monkeypatch) -> None:
+    _fake_files_api(
+        monkeypatch, '{"filename":"a.py","previous_filename":null}\n', changed_files=3001
+    )
+
+    try:
+        GitHubClient.get_pr_changed_paths(_review_pr())
+    except RuntimeError as exc:
+        assert "1 of 3001" in str(exc)
+    else:
+        raise AssertionError("expected RuntimeError for a cut-short file list")

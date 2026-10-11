@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+import subprocess
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -35,6 +36,7 @@ from code_reviewer.repos import fetch_remote_skills
 from code_reviewer.review_decision import (
     ReviewDecision,
     approval_blocker,
+    first_high_risk_path,
     infer_review_decision,
     risk_blocker,
 )
@@ -545,6 +547,77 @@ def _compute_processing_decision(
     )
 
 
+def _workspace_changed_paths(workdir: Path, pr: PRCandidate) -> list[str] | None:
+    """Every path the checked-out commit changes against the base, or None if git fails.
+
+    --no-renames lists a renamed file under both its old and new name, and -z keeps
+    unusual filenames unquoted.
+    """
+    try:
+        result = subprocess.run(  # noqa: S603
+            [
+                "git",
+                "-C",
+                str(workdir),
+                "diff",
+                "--name-only",
+                "--no-renames",
+                "-z",
+                f"origin/{pr.base_ref}...HEAD",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=True,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return [path for path in result.stdout.split("\0") if path]
+
+
+def _apply_high_risk_paths(config: AppConfig, pr: PRCandidate, paths: list[str] | None) -> None:
+    """Force high risk when a changed file matches high_risk_paths, or the list is unknown."""
+    patterns = config.high_risk_paths_for(pr.owner, pr.repo)
+    if not patterns:
+        return
+    if paths is None:
+        pr.risk = "high"
+        pr.risk_reason = "could not get the full list of changed files to check high_risk_paths"
+    else:
+        risky_file = first_high_risk_path(paths, patterns)
+        if risky_file is None:
+            return
+        pr.risk = "high"
+        pr.risk_reason = f"changes {risky_file}, which matches high_risk_paths"
+    info(f"risk set to high: {pr.risk_reason} {pr.url}")
+
+
+def _finalize_risk(config: AppConfig, pr: PRCandidate, workdir: Path, triage_head_sha: str) -> None:
+    """Settle the risk right before publishing, against the commit that was reviewed."""
+    if pr.head_sha != triage_head_sha:
+        pr.risk, pr.risk_reason = None, "new commits arrived after triage rated the risk"
+    if config.high_risk_paths_for(pr.owner, pr.repo):
+        _apply_high_risk_paths(config, pr, _workspace_changed_paths(workdir, pr))
+
+
+def _restore_saved_risk(
+    config: AppConfig, client: GitHubClient, pr: PRCandidate, previous: ProcessedState
+) -> None:
+    """Restore the risk saved with a review that is being published again."""
+    if previous.last_reviewed_head_sha != pr.head_sha:
+        pr.risk, pr.risk_reason = None, "the saved review is for an older commit"
+        return
+    pr.risk, pr.risk_reason = previous.last_risk, previous.last_risk_reason
+    if not config.high_risk_paths_for(pr.owner, pr.repo):
+        return
+    try:
+        paths: list[str] | None = client.get_pr_changed_paths(pr)
+    except Exception as exc:  # noqa: BLE001
+        warn(f"failed to list changed files: {exc} {pr.url}")
+        paths = None
+    _apply_high_risk_paths(config, pr, paths)
+
+
 def _publish_and_persist(
     config: AppConfig,
     client: GitHubClient,
@@ -562,7 +635,7 @@ def _publish_and_persist(
         blocked_reason = risk_blocker(pr.risk, pr.risk_reason, config.auto_approve_max_risk)
         if blocked_reason is None:
             try:
-                blocked_reason = approval_blocker(client.get_pr_merge_status(pr))
+                blocked_reason = approval_blocker(client.get_pr_merge_status(pr), pr.head_sha)
             except Exception as exc:  # noqa: BLE001
                 warn(f"failed to read merge status: {exc} {pr.url}")
                 blocked_reason = "could not read CI and merge status"
@@ -1351,7 +1424,7 @@ async def process_candidate(
         detail(f"using saved review file ({saved_review_path}) {pr.url}")
         saved_review_text = await asyncio.to_thread(saved_review_path.read_text, encoding="utf-8")
         saved_decision = infer_review_decision(saved_review_text)
-        pr.risk, pr.risk_reason = previous.last_risk, previous.last_risk_reason
+        await asyncio.to_thread(_restore_saved_risk, config, client, pr, previous)
         await asyncio.to_thread(
             _publish_and_persist,
             config,
@@ -1385,7 +1458,7 @@ async def process_candidate(
             info(f"reusing previously generated review (submission retry) {pr.url}")
             review_text = await asyncio.to_thread(saved_path.read_text, encoding="utf-8")
             retry_decision = infer_review_decision(review_text)
-            pr.risk, pr.risk_reason = previous.last_risk, previous.last_risk_reason
+            await asyncio.to_thread(_restore_saved_risk, config, client, pr, previous)
             await asyncio.to_thread(
                 _publish_and_persist,
                 config,
@@ -1513,6 +1586,7 @@ async def process_candidate(
             claude_backend=config.claude_backend,
             antigravity_fallback_model=config.antigravity_fallback_model,
         )
+        triage_head_sha = pr.head_sha
 
         if triage_result == TriageResult.SIMPLE:
             progress.set_triage_done("lightweight")
@@ -1581,6 +1655,7 @@ async def process_candidate(
                     f"{cost_str} {pr.url}"
                 )
 
+            await asyncio.to_thread(_finalize_risk, config, pr, workdir, triage_head_sha)
             info(f"writing lightweight review output {pr.url}")
             version_label = _output_version_label(pr)
             output_path = await asyncio.to_thread(
@@ -1767,6 +1842,7 @@ async def process_candidate(
             raise RuntimeError("No enabled reviewers configured")
 
         _log_token_usage(active_outputs, reconciler_usage, pr.url)
+        await asyncio.to_thread(_finalize_risk, config, pr, workdir, triage_head_sha)
         info(f"writing final markdown output {pr.url}")
         version_label = _output_version_label(pr)
         output_path = await asyncio.to_thread(
