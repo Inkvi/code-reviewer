@@ -43,6 +43,7 @@ def _check_run(name: str, status: str = "COMPLETED", conclusion: str | None = "S
 
 def test_approval_blocker_allows_green_mergeable_pr() -> None:
     status = {
+        "headRefOid": "abc",
         "mergeable": "MERGEABLE",
         "statusCheckRollup": [
             _check_run("tests"),
@@ -50,20 +51,30 @@ def test_approval_blocker_allows_green_mergeable_pr() -> None:
             {"__typename": "StatusContext", "context": "deploy", "state": "SUCCESS"},
         ],
     }
-    assert approval_blocker(status) is None
+    assert approval_blocker(status, "abc") is None
 
 
 def test_approval_blocker_allows_pr_without_checks() -> None:
-    assert approval_blocker({"mergeable": "UNKNOWN", "statusCheckRollup": []}) is None
+    assert (
+        approval_blocker(
+            {"headRefOid": "abc", "mergeable": "UNKNOWN", "statusCheckRollup": []}, "abc"
+        )
+        is None
+    )
 
 
 def test_approval_blocker_blocks_merge_conflicts() -> None:
-    status = {"mergeable": "CONFLICTING", "statusCheckRollup": [_check_run("tests")]}
-    assert approval_blocker(status) == "the PR has merge conflicts"
+    status = {
+        "headRefOid": "abc",
+        "mergeable": "CONFLICTING",
+        "statusCheckRollup": [_check_run("tests")],
+    }
+    assert approval_blocker(status, "abc") == "the PR has merge conflicts"
 
 
 def test_approval_blocker_blocks_failed_checks() -> None:
     status = {
+        "headRefOid": "abc",
         "mergeable": "MERGEABLE",
         "statusCheckRollup": [
             _check_run("tests", conclusion="FAILURE"),
@@ -71,18 +82,19 @@ def test_approval_blocker_blocks_failed_checks() -> None:
             {"__typename": "StatusContext", "context": "deploy", "state": "ERROR"},
         ],
     }
-    assert approval_blocker(status) == "checks failed: tests, deploy"
+    assert approval_blocker(status, "abc") == "checks failed: tests, deploy"
 
 
 def test_approval_blocker_blocks_pending_checks() -> None:
     status = {
+        "headRefOid": "abc",
         "mergeable": "MERGEABLE",
         "statusCheckRollup": [
             _check_run("build", status="QUEUED", conclusion=None),
             {"__typename": "StatusContext", "context": "deploy", "state": "PENDING"},
         ],
     }
-    assert approval_blocker(status) == "checks still running: build, deploy"
+    assert approval_blocker(status, "abc") == "checks still running: build, deploy"
 
 
 def test_risk_blocker_with_low_max_allows_only_low_risk() -> None:
@@ -120,3 +132,9 @@ def test_first_high_risk_path_returns_none_without_match_or_patterns() -> None:
     assert first_high_risk_path(["docs/guide.md"], ["*auth*"]) is None
     assert first_high_risk_path(["src/auth/login.py"], []) is None
     assert first_high_risk_path(["src/Auth/login.py"], ["*auth*"]) is None, "case-sensitive"
+
+
+def test_approval_blocker_blocks_when_pr_moved_past_reviewed_commit() -> None:
+    status = {"headRefOid": "newer", "mergeable": "MERGEABLE", "statusCheckRollup": []}
+    assert approval_blocker(status, "abc") == "new commits were pushed after the review"
+    assert approval_blocker({"mergeable": "MERGEABLE"}, "abc") is not None, "missing head blocks"

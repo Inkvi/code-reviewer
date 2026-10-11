@@ -23,12 +23,15 @@ def infer_review_decision(final_review: str) -> ReviewDecision:
 _PASSING_CHECK_CONCLUSIONS = {"SUCCESS", "NEUTRAL", "SKIPPED"}
 
 
-def approval_blocker(pr_status: dict) -> str | None:
+def approval_blocker(pr_status: dict, reviewed_head_sha: str) -> str | None:
     """Return why a PR must not be auto-approved, or None if it can be.
 
-    *pr_status* is ``gh pr view --json mergeable,statusCheckRollup`` output.
-    Blocks on merge conflicts and on any check that failed or has not finished.
+    *pr_status* is ``gh pr view --json headRefOid,mergeable,statusCheckRollup`` output.
+    Blocks when the PR moved past the reviewed commit, on merge conflicts, and on any
+    check that failed or has not finished.
     """
+    if pr_status.get("headRefOid") != reviewed_head_sha:
+        return "new commits were pushed after the review"
     if pr_status.get("mergeable") == "CONFLICTING":
         return "the PR has merge conflicts"
 

@@ -547,14 +547,11 @@ def _compute_processing_decision(
     )
 
 
-# gh pr view --json files returns at most this many files.
-_GH_FILE_LIST_LIMIT = 100
-
-
 def _workspace_changed_paths(workdir: Path, pr: PRCandidate) -> list[str] | None:
     """Every path the checked-out commit changes against the base, or None if git fails.
 
-    --no-renames lists a renamed file under both its old and new name.
+    --no-renames lists a renamed file under both its old and new name, and -z keeps
+    unusual filenames unquoted.
     """
     try:
         result = subprocess.run(  # noqa: S603
@@ -565,6 +562,7 @@ def _workspace_changed_paths(workdir: Path, pr: PRCandidate) -> list[str] | None
                 "diff",
                 "--name-only",
                 "--no-renames",
+                "-z",
                 f"origin/{pr.base_ref}...HEAD",
             ],
             capture_output=True,
@@ -574,7 +572,7 @@ def _workspace_changed_paths(workdir: Path, pr: PRCandidate) -> list[str] | None
         )
     except (OSError, subprocess.SubprocessError):
         return None
-    return [line for line in result.stdout.splitlines() if line.strip()]
+    return [path for path in result.stdout.split("\0") if path]
 
 
 def _apply_high_risk_paths(config: AppConfig, pr: PRCandidate, paths: list[str] | None) -> None:
@@ -602,14 +600,22 @@ def _finalize_risk(config: AppConfig, pr: PRCandidate, workdir: Path, triage_hea
         _apply_high_risk_paths(config, pr, _workspace_changed_paths(workdir, pr))
 
 
-def _restore_saved_risk(config: AppConfig, pr: PRCandidate, previous: ProcessedState) -> None:
+def _restore_saved_risk(
+    config: AppConfig, client: GitHubClient, pr: PRCandidate, previous: ProcessedState
+) -> None:
     """Restore the risk saved with a review that is being published again."""
     if previous.last_reviewed_head_sha != pr.head_sha:
         pr.risk, pr.risk_reason = None, "the saved review is for an older commit"
         return
     pr.risk, pr.risk_reason = previous.last_risk, previous.last_risk_reason
-    paths = pr.changed_file_paths
-    _apply_high_risk_paths(config, pr, None if len(paths) >= _GH_FILE_LIST_LIMIT else paths)
+    if not config.high_risk_paths_for(pr.owner, pr.repo):
+        return
+    try:
+        paths: list[str] | None = client.get_pr_changed_paths(pr)
+    except Exception as exc:  # noqa: BLE001
+        warn(f"failed to list changed files: {exc} {pr.url}")
+        paths = None
+    _apply_high_risk_paths(config, pr, paths)
 
 
 def _publish_and_persist(
@@ -629,7 +635,7 @@ def _publish_and_persist(
         blocked_reason = risk_blocker(pr.risk, pr.risk_reason, config.auto_approve_max_risk)
         if blocked_reason is None:
             try:
-                blocked_reason = approval_blocker(client.get_pr_merge_status(pr))
+                blocked_reason = approval_blocker(client.get_pr_merge_status(pr), pr.head_sha)
             except Exception as exc:  # noqa: BLE001
                 warn(f"failed to read merge status: {exc} {pr.url}")
                 blocked_reason = "could not read CI and merge status"
@@ -1418,7 +1424,7 @@ async def process_candidate(
         detail(f"using saved review file ({saved_review_path}) {pr.url}")
         saved_review_text = await asyncio.to_thread(saved_review_path.read_text, encoding="utf-8")
         saved_decision = infer_review_decision(saved_review_text)
-        _restore_saved_risk(config, pr, previous)
+        await asyncio.to_thread(_restore_saved_risk, config, client, pr, previous)
         await asyncio.to_thread(
             _publish_and_persist,
             config,
@@ -1452,7 +1458,7 @@ async def process_candidate(
             info(f"reusing previously generated review (submission retry) {pr.url}")
             review_text = await asyncio.to_thread(saved_path.read_text, encoding="utf-8")
             retry_decision = infer_review_decision(review_text)
-            _restore_saved_risk(config, pr, previous)
+            await asyncio.to_thread(_restore_saved_risk, config, client, pr, previous)
             await asyncio.to_thread(
                 _publish_and_persist,
                 config,

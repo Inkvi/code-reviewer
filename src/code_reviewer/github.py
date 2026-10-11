@@ -365,8 +365,29 @@ class GitHubClient:
 
     @staticmethod
     def get_pr_merge_status(pr: PRCandidate) -> dict:
-        """Fetch merge-conflict state and CI check results for a PR."""
-        return run_json(["gh", "pr", "view", pr.url, "--json", "mergeable,statusCheckRollup"])
+        """Fetch the live head commit, merge-conflict state, and CI check results for a PR."""
+        return run_json(
+            ["gh", "pr", "view", pr.url, "--json", "headRefOid,mergeable,statusCheckRollup"]
+        )
+
+    @staticmethod
+    def get_pr_changed_paths(pr: PRCandidate) -> list[str]:
+        """Every file a PR changes, plus the old name of renamed files.
+
+        Uses the paginated REST endpoint, which is not capped at 100 files like
+        ``gh pr view --json files``.
+        """
+        proc = run_command(
+            [
+                "gh",
+                "api",
+                "--paginate",
+                f"repos/{pr.owner}/{pr.repo}/pulls/{pr.number}/files?per_page=100",
+                "--jq",
+                ".[] | .filename, (.previous_filename // empty)",
+            ]
+        )
+        return [line for line in proc.stdout.splitlines() if line]
 
     def has_issue_comment_by_viewer(self, pr: PRCandidate) -> bool:
         endpoint = f"repos/{pr.owner}/{pr.repo}/issues/{pr.number}/comments"

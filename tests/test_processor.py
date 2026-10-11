@@ -1631,6 +1631,7 @@ def test_process_candidate_prompt_override_error_does_not_fallback(monkeypatch, 
 
 
 _CLEAN_MERGE_STATUS = {
+    "headRefOid": "deadbeef",
     "mergeable": "MERGEABLE",
     "statusCheckRollup": [
         {"__typename": "CheckRun", "name": "ci", "status": "COMPLETED", "conclusion": "SUCCESS"}
@@ -1740,6 +1741,7 @@ def test_low_risk_clean_review_with_green_ci_is_approved(monkeypatch, tmp_path) 
 def test_approval_blocked_by_failing_ci_posts_comment(monkeypatch, tmp_path) -> None:
     """A clean, low-risk review on a PR with failing CI is posted as a comment."""
     failing = {
+        "headRefOid": "deadbeef",
         "mergeable": "MERGEABLE",
         "statusCheckRollup": [
             {
@@ -1842,6 +1844,18 @@ def test_high_risk_paths_without_match_keep_triage_risk(monkeypatch, tmp_path) -
 
     assert submitted == ["approve"]
     assert store.state.last_risk == "low"
+
+
+def test_approval_blocked_when_pr_moved_past_reviewed_commit(monkeypatch, tmp_path) -> None:
+    moved = dict(_CLEAN_MERGE_STATUS, headRefOid="newer")
+    _, submitted, comments, _ = _run_clean_review_with_auto_submit(
+        monkeypatch, tmp_path, risk="low", merge_status=moved
+    )
+
+    assert submitted == []
+    assert comments[0].startswith(
+        "**Not auto-approved:** new commits were pushed after the review."
+    )
 
 
 def test_approval_blocked_when_triage_did_not_rate_risk(monkeypatch, tmp_path) -> None:
@@ -2299,44 +2313,86 @@ def test_finalize_risk_skips_git_without_patterns(monkeypatch, tmp_path) -> None
     assert pr.risk == "low"
 
 
+class _PathsClient:
+    def __init__(self, paths: list[str] | None = None, error: Exception | None = None) -> None:
+        self.paths = paths or []
+        self.error = error
+        self.calls = 0
+
+    def get_pr_changed_paths(self, _pr: PRCandidate) -> list[str]:
+        self.calls += 1
+        if self.error is not None:
+            raise self.error
+        return self.paths
+
+
 def test_restore_saved_risk_drops_risk_for_an_older_commit() -> None:
-    cfg = AppConfig(github_orgs=["polymerdao"])
+    cfg = AppConfig(github_orgs=["polymerdao"], high_risk_paths=["*auth*"])
     pr = _sample_pr()
     previous = ProcessedState(last_reviewed_head_sha="oldsha", last_risk="low")
 
-    _restore_saved_risk(cfg, pr, previous)
+    _restore_saved_risk(cfg, _PathsClient(), pr, previous)
 
     assert (pr.risk, pr.risk_reason) == (None, "the saved review is for an older commit")
 
 
-def test_restore_saved_risk_applies_current_high_risk_paths() -> None:
-    cfg = AppConfig(github_orgs=["polymerdao"], high_risk_paths=["*auth*"])
-    pr = _sample_pr(changed_file_paths=["src/auth/login.py"])
+def test_restore_saved_risk_matches_old_name_of_a_renamed_file() -> None:
+    # REST lists the old name of a rename, which gh pr view --json files does not.
+    cfg = AppConfig(github_orgs=["polymerdao"], high_risk_paths=["src/auth.py"])
+    pr = _sample_pr(changed_file_paths=["src/session.py"])
     previous = ProcessedState(last_reviewed_head_sha=pr.head_sha, last_risk="low")
 
-    _restore_saved_risk(cfg, pr, previous)
+    _restore_saved_risk(cfg, _PathsClient(["src/session.py", "src/auth.py"]), pr, previous)
 
-    assert pr.risk == "high"
+    assert (pr.risk, pr.risk_reason) == (
+        "high",
+        "changes src/auth.py, which matches high_risk_paths",
+    )
 
 
-def test_restore_saved_risk_is_high_when_gh_file_list_may_be_cut_short() -> None:
+def test_restore_saved_risk_is_high_when_files_cannot_be_listed() -> None:
     cfg = AppConfig(github_orgs=["polymerdao"], high_risk_paths=["*auth*"])
-    pr = _sample_pr(changed_file_paths=[f"docs/page{i}.md" for i in range(100)])
+    pr = _sample_pr()
     previous = ProcessedState(last_reviewed_head_sha=pr.head_sha, last_risk="low")
 
-    _restore_saved_risk(cfg, pr, previous)
+    _restore_saved_risk(cfg, _PathsClient(error=RuntimeError("gh down")), pr, previous)
 
     assert pr.risk == "high"
-    assert "full list of changed files" in (pr.risk_reason or "")
 
 
 def test_restore_saved_risk_keeps_saved_low_risk_when_nothing_matches() -> None:
     cfg = AppConfig(github_orgs=["polymerdao"], high_risk_paths=["*auth*"])
-    pr = _sample_pr(changed_file_paths=["docs/guide.md"])
+    pr = _sample_pr()
     previous = ProcessedState(
         last_reviewed_head_sha=pr.head_sha, last_risk="low", last_risk_reason="docs only"
     )
 
-    _restore_saved_risk(cfg, pr, previous)
+    _restore_saved_risk(cfg, _PathsClient(["docs/guide.md"]), pr, previous)
 
     assert (pr.risk, pr.risk_reason) == ("low", "docs only")
+
+
+def test_restore_saved_risk_skips_gh_without_patterns() -> None:
+    client = _PathsClient()
+    pr = _sample_pr()
+    previous = ProcessedState(last_reviewed_head_sha=pr.head_sha, last_risk="low")
+
+    _restore_saved_risk(AppConfig(github_orgs=["polymerdao"]), client, pr, previous)
+
+    assert pr.risk == "low"
+    assert client.calls == 0
+
+
+def test_workspace_changed_paths_keeps_unusual_filenames_unquoted(tmp_path) -> None:
+    repo = tmp_path / "repo"
+    (repo / "migrations").mkdir(parents=True)
+    _git(repo, "init", "-q", "-b", "main")
+    (repo / "README.md").write_text("hi\n")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-q", "-m", "base")
+    _git(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+    (repo / "migrations" / "é.sql").write_text("drop table x;\n")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-q", "-m", "migration")
+
+    assert _workspace_changed_paths(repo, _sample_pr()) == ["migrations/é.sql"]
