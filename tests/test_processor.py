@@ -1,4 +1,5 @@
 import asyncio
+import subprocess
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -11,9 +12,11 @@ from code_reviewer.processor import (
     _check_pr_head_changed,
     _compute_processing_decision,
     _extract_injection_section,
+    _finalize_risk,
     _NewCommitDetected,
     _resolve_antigravity_review_model,
     _resolve_reconciler_settings,
+    _restore_saved_risk,
     _run_local_reviewers,
     _run_reviewers_with_monitoring,
     _scale_max_findings,
@@ -22,6 +25,7 @@ from code_reviewer.processor import (
     _start_claude_review_task,
     _start_codex_review_task,
     _validate_review_format,
+    _workspace_changed_paths,
     process_candidate,
 )
 from code_reviewer.prompts import PromptBundle, PromptOverrideError
@@ -1684,6 +1688,11 @@ def _run_clean_review_with_auto_submit(
         lambda *_args, **_kwargs: tmp_path / "out.stage.md",
     )
 
+    monkeypatch.setattr(
+        "code_reviewer.processor._workspace_changed_paths",
+        lambda _workdir, pr: list(pr.changed_file_paths),
+    )
+
     status_calls: list[str] = []
 
     def fake_merge_status(_self, pr):
@@ -2202,3 +2211,132 @@ def test_scale_max_test_gaps_large_diff_scales_up() -> None:
 
 def test_scale_max_test_gaps_capped_at_10() -> None:
     assert _scale_max_test_gaps(3, additions=5000, deletions=5000) == 10
+
+
+def _git(repo: Path, *args: str) -> None:
+    subprocess.run(
+        ["git", "-C", str(repo), "-c", "user.email=t@t", "-c", "user.name=t", *args],
+        check=True,
+        capture_output=True,
+    )
+
+
+def test_workspace_changed_paths_lists_both_names_of_a_rename(tmp_path) -> None:
+    repo = tmp_path / "repo"
+    (repo / "src").mkdir(parents=True)
+    _git(repo, "init", "-q", "-b", "main")
+    (repo / "src" / "auth.py").write_text("token = 1\n")
+    (repo / "README.md").write_text("hi\n")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-q", "-m", "base")
+    _git(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+    _git(repo, "mv", "src/auth.py", "src/session.py")
+    _git(repo, "commit", "-q", "-m", "rename")
+
+    paths = _workspace_changed_paths(repo, _sample_pr())
+
+    assert sorted(paths or []) == ["src/auth.py", "src/session.py"]
+
+
+def test_workspace_changed_paths_returns_none_outside_git(tmp_path) -> None:
+    assert _workspace_changed_paths(tmp_path, _sample_pr()) is None
+
+
+def test_finalize_risk_drops_triage_risk_after_new_commits(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(
+        "code_reviewer.processor._workspace_changed_paths", lambda _w, _pr: ["README.md"]
+    )
+    cfg = AppConfig(github_orgs=["polymerdao"], high_risk_paths=["*auth*"])
+    pr = _sample_pr()
+    pr.risk, pr.risk_reason = "low", "docs only"
+    pr.head_sha = "newsha"
+
+    _finalize_risk(cfg, pr, tmp_path, triage_head_sha="deadbeef")
+
+    assert pr.risk is None
+    assert pr.risk_reason == "new commits arrived after triage rated the risk"
+
+
+def test_finalize_risk_checks_files_of_the_reviewed_commit(monkeypatch, tmp_path) -> None:
+    # gh listed only README.md, but the checked-out commit also changes an auth file.
+    monkeypatch.setattr(
+        "code_reviewer.processor._workspace_changed_paths",
+        lambda _w, _pr: ["README.md", "src/auth/login.py"],
+    )
+    cfg = AppConfig(github_orgs=["polymerdao"], high_risk_paths=["*auth*"])
+    pr = _sample_pr(changed_file_paths=["README.md"])
+    pr.risk = "low"
+
+    _finalize_risk(cfg, pr, tmp_path, triage_head_sha=pr.head_sha)
+
+    assert (pr.risk, pr.risk_reason) == (
+        "high",
+        "changes src/auth/login.py, which matches high_risk_paths",
+    )
+
+
+def test_finalize_risk_is_high_when_files_cannot_be_listed(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr("code_reviewer.processor._workspace_changed_paths", lambda _w, _pr: None)
+    cfg = AppConfig(github_orgs=["polymerdao"], high_risk_paths=["*auth*"])
+    pr = _sample_pr()
+    pr.risk = "low"
+
+    _finalize_risk(cfg, pr, tmp_path, triage_head_sha=pr.head_sha)
+
+    assert pr.risk == "high"
+
+
+def test_finalize_risk_skips_git_without_patterns(monkeypatch, tmp_path) -> None:
+    def fail(*_args):
+        raise AssertionError("git should not run when no patterns are configured")
+
+    monkeypatch.setattr("code_reviewer.processor._workspace_changed_paths", fail)
+    pr = _sample_pr()
+    pr.risk = "low"
+
+    _finalize_risk(AppConfig(github_orgs=["polymerdao"]), pr, tmp_path, pr.head_sha)
+
+    assert pr.risk == "low"
+
+
+def test_restore_saved_risk_drops_risk_for_an_older_commit() -> None:
+    cfg = AppConfig(github_orgs=["polymerdao"])
+    pr = _sample_pr()
+    previous = ProcessedState(last_reviewed_head_sha="oldsha", last_risk="low")
+
+    _restore_saved_risk(cfg, pr, previous)
+
+    assert (pr.risk, pr.risk_reason) == (None, "the saved review is for an older commit")
+
+
+def test_restore_saved_risk_applies_current_high_risk_paths() -> None:
+    cfg = AppConfig(github_orgs=["polymerdao"], high_risk_paths=["*auth*"])
+    pr = _sample_pr(changed_file_paths=["src/auth/login.py"])
+    previous = ProcessedState(last_reviewed_head_sha=pr.head_sha, last_risk="low")
+
+    _restore_saved_risk(cfg, pr, previous)
+
+    assert pr.risk == "high"
+
+
+def test_restore_saved_risk_is_high_when_gh_file_list_may_be_cut_short() -> None:
+    cfg = AppConfig(github_orgs=["polymerdao"], high_risk_paths=["*auth*"])
+    pr = _sample_pr(changed_file_paths=[f"docs/page{i}.md" for i in range(100)])
+    previous = ProcessedState(last_reviewed_head_sha=pr.head_sha, last_risk="low")
+
+    _restore_saved_risk(cfg, pr, previous)
+
+    assert pr.risk == "high"
+    assert "full list of changed files" in (pr.risk_reason or "")
+
+
+def test_restore_saved_risk_keeps_saved_low_risk_when_nothing_matches() -> None:
+    cfg = AppConfig(github_orgs=["polymerdao"], high_risk_paths=["*auth*"])
+    pr = _sample_pr(changed_file_paths=["docs/guide.md"])
+    previous = ProcessedState(
+        last_reviewed_head_sha=pr.head_sha, last_risk="low", last_risk_reason="docs only"
+    )
+
+    _restore_saved_risk(cfg, pr, previous)
+
+    assert (pr.risk, pr.risk_reason) == ("low", "docs only")

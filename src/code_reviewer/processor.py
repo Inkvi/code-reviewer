@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+import subprocess
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -544,6 +545,71 @@ def _compute_processing_decision(
         reason="no_new_trigger",
         next_expected_rerequest_at=previous.last_seen_rerequest_at,
     )
+
+
+# gh pr view --json files returns at most this many files.
+_GH_FILE_LIST_LIMIT = 100
+
+
+def _workspace_changed_paths(workdir: Path, pr: PRCandidate) -> list[str] | None:
+    """Every path the checked-out commit changes against the base, or None if git fails.
+
+    --no-renames lists a renamed file under both its old and new name.
+    """
+    try:
+        result = subprocess.run(  # noqa: S603
+            [
+                "git",
+                "-C",
+                str(workdir),
+                "diff",
+                "--name-only",
+                "--no-renames",
+                f"origin/{pr.base_ref}...HEAD",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=True,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return [line for line in result.stdout.splitlines() if line.strip()]
+
+
+def _apply_high_risk_paths(config: AppConfig, pr: PRCandidate, paths: list[str] | None) -> None:
+    """Force high risk when a changed file matches high_risk_paths, or the list is unknown."""
+    patterns = config.high_risk_paths_for(pr.owner, pr.repo)
+    if not patterns:
+        return
+    if paths is None:
+        pr.risk = "high"
+        pr.risk_reason = "could not get the full list of changed files to check high_risk_paths"
+    else:
+        risky_file = first_high_risk_path(paths, patterns)
+        if risky_file is None:
+            return
+        pr.risk = "high"
+        pr.risk_reason = f"changes {risky_file}, which matches high_risk_paths"
+    info(f"risk set to high: {pr.risk_reason} {pr.url}")
+
+
+def _finalize_risk(config: AppConfig, pr: PRCandidate, workdir: Path, triage_head_sha: str) -> None:
+    """Settle the risk right before publishing, against the commit that was reviewed."""
+    if pr.head_sha != triage_head_sha:
+        pr.risk, pr.risk_reason = None, "new commits arrived after triage rated the risk"
+    if config.high_risk_paths_for(pr.owner, pr.repo):
+        _apply_high_risk_paths(config, pr, _workspace_changed_paths(workdir, pr))
+
+
+def _restore_saved_risk(config: AppConfig, pr: PRCandidate, previous: ProcessedState) -> None:
+    """Restore the risk saved with a review that is being published again."""
+    if previous.last_reviewed_head_sha != pr.head_sha:
+        pr.risk, pr.risk_reason = None, "the saved review is for an older commit"
+        return
+    pr.risk, pr.risk_reason = previous.last_risk, previous.last_risk_reason
+    paths = pr.changed_file_paths
+    _apply_high_risk_paths(config, pr, None if len(paths) >= _GH_FILE_LIST_LIMIT else paths)
 
 
 def _publish_and_persist(
@@ -1352,7 +1418,7 @@ async def process_candidate(
         detail(f"using saved review file ({saved_review_path}) {pr.url}")
         saved_review_text = await asyncio.to_thread(saved_review_path.read_text, encoding="utf-8")
         saved_decision = infer_review_decision(saved_review_text)
-        pr.risk, pr.risk_reason = previous.last_risk, previous.last_risk_reason
+        _restore_saved_risk(config, pr, previous)
         await asyncio.to_thread(
             _publish_and_persist,
             config,
@@ -1386,7 +1452,7 @@ async def process_candidate(
             info(f"reusing previously generated review (submission retry) {pr.url}")
             review_text = await asyncio.to_thread(saved_path.read_text, encoding="utf-8")
             retry_decision = infer_review_decision(review_text)
-            pr.risk, pr.risk_reason = previous.last_risk, previous.last_risk_reason
+            _restore_saved_risk(config, pr, previous)
             await asyncio.to_thread(
                 _publish_and_persist,
                 config,
@@ -1514,13 +1580,7 @@ async def process_candidate(
             claude_backend=config.claude_backend,
             antigravity_fallback_model=config.antigravity_fallback_model,
         )
-        risky_file = first_high_risk_path(
-            pr.changed_file_paths, config.high_risk_paths_for(pr.owner, pr.repo)
-        )
-        if risky_file is not None:
-            pr.risk = "high"
-            pr.risk_reason = f"changes {risky_file}, which matches high_risk_paths"
-            info(f"risk set to high by high_risk_paths ({risky_file}) {pr.url}")
+        triage_head_sha = pr.head_sha
 
         if triage_result == TriageResult.SIMPLE:
             progress.set_triage_done("lightweight")
@@ -1589,6 +1649,7 @@ async def process_candidate(
                     f"{cost_str} {pr.url}"
                 )
 
+            await asyncio.to_thread(_finalize_risk, config, pr, workdir, triage_head_sha)
             info(f"writing lightweight review output {pr.url}")
             version_label = _output_version_label(pr)
             output_path = await asyncio.to_thread(
@@ -1775,6 +1836,7 @@ async def process_candidate(
             raise RuntimeError("No enabled reviewers configured")
 
         _log_token_usage(active_outputs, reconciler_usage, pr.url)
+        await asyncio.to_thread(_finalize_risk, config, pr, workdir, triage_head_sha)
         info(f"writing final markdown output {pr.url}")
         version_label = _output_version_label(pr)
         output_path = await asyncio.to_thread(

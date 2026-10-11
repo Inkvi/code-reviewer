@@ -100,6 +100,7 @@ def test_risk_blocker_with_medium_max_allows_low_and_medium() -> None:
     assert risk_blocker("medium", None, "medium") is None
     assert risk_blocker("high", "edits auth", "medium") == "high risk (edits auth)"
     assert risk_blocker(None, None, "medium") == "triage did not rate the risk"
+    assert risk_blocker(None, "new commits arrived", "medium") == "new commits arrived"
 
 
 def test_risk_blocker_with_high_max_skips_the_check() -> None:

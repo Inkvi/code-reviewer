@@ -68,7 +68,7 @@ def risk_blocker(risk: str | None, reason: str | None, max_risk: str) -> str | N
     if max_risk == "high":
         return None
     if risk is None:
-        return "triage did not rate the risk"
+        return reason or "triage did not rate the risk"
     if _RISK_ORDER[risk] <= _RISK_ORDER[max_risk]:
         return None
     return f"{risk} risk ({reason})" if reason else f"{risk} risk"
