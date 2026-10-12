@@ -59,28 +59,28 @@ def _pr_payload(
 
 
 def test_parse_pr_opened():
-    assert parse_event("pull_request", _pr_payload("opened")) == "https://github.com/o/r/pull/1"
+    assert parse_event("pull_request", _pr_payload("opened")) == ["https://github.com/o/r/pull/1"]
 
 
 def test_parse_pr_synchronize():
-    assert parse_event("pull_request", _pr_payload("synchronize")) is not None
+    assert parse_event("pull_request", _pr_payload("synchronize")) != []
 
 
 def test_parse_pr_review_requested():
-    assert parse_event("pull_request", _pr_payload("review_requested")) is not None
+    assert parse_event("pull_request", _pr_payload("review_requested")) != []
 
 
 def test_parse_pr_closed_ignored():
-    assert parse_event("pull_request", _pr_payload("closed")) is None
+    assert parse_event("pull_request", _pr_payload("closed")) == []
 
 
 def test_parse_pr_draft_ignored():
-    assert parse_event("pull_request", _pr_payload("opened", draft=True)) is None
+    assert parse_event("pull_request", _pr_payload("opened", draft=True)) == []
 
 
 def test_parse_pr_missing_url():
     payload = {"action": "opened", "pull_request": {"draft": False}}
-    assert parse_event("pull_request", payload) is None
+    assert parse_event("pull_request", payload) == []
 
 
 # ---------------------------------------------------------------------------
@@ -105,26 +105,26 @@ def _comment_payload(body: str = "/review", is_pr: bool = True):
 
 def test_parse_comment_review():
     result = parse_event("issue_comment", _comment_payload("/review"))
-    assert result == "https://github.com/o/r/pull/1"
+    assert result == ["https://github.com/o/r/pull/1"]
 
 
 def test_parse_comment_review_force():
     result = parse_event("issue_comment", _comment_payload("/review force"))
-    assert result is not None
+    assert result != []
 
 
 def test_parse_comment_not_review():
-    assert parse_event("issue_comment", _comment_payload("nice work!")) is None
+    assert parse_event("issue_comment", _comment_payload("nice work!")) == []
 
 
 def test_parse_comment_not_pr():
-    assert parse_event("issue_comment", _comment_payload("/review", is_pr=False)) is None
+    assert parse_event("issue_comment", _comment_payload("/review", is_pr=False)) == []
 
 
 def test_parse_comment_edited_ignored():
     payload = _comment_payload("/review")
     payload["action"] = "edited"
-    assert parse_event("issue_comment", payload) is None
+    assert parse_event("issue_comment", payload) == []
 
 
 def test_parse_comment_fallback_to_issue_url():
@@ -138,7 +138,7 @@ def test_parse_comment_fallback_to_issue_url():
         },
     }
     result = parse_event("issue_comment", payload)
-    assert result == "https://github.com/o/r/pull/5"
+    assert result == ["https://github.com/o/r/pull/5"]
 
 
 # ---------------------------------------------------------------------------
@@ -157,15 +157,23 @@ def _check_suite_payload(action: str = "completed", pull_requests: list | None =
 
 
 def test_parse_check_suite_completed():
-    assert parse_event("check_suite", _check_suite_payload()) == "https://github.com/o/r/pull/7"
+    assert parse_event("check_suite", _check_suite_payload()) == ["https://github.com/o/r/pull/7"]
 
 
 def test_parse_check_suite_not_completed_ignored():
-    assert parse_event("check_suite", _check_suite_payload(action="requested")) is None
+    assert parse_event("check_suite", _check_suite_payload(action="requested")) == []
+
+
+def test_parse_check_suite_runs_every_pr_on_the_commit():
+    payload = _check_suite_payload(pull_requests=[{"number": 7}, {"number": 9}])
+    assert parse_event("check_suite", payload) == [
+        "https://github.com/o/r/pull/7",
+        "https://github.com/o/r/pull/9",
+    ]
 
 
 def test_parse_check_suite_without_pr_ignored():
-    assert parse_event("check_suite", _check_suite_payload(pull_requests=[])) is None
+    assert parse_event("check_suite", _check_suite_payload(pull_requests=[])) == []
 
 
 # ---------------------------------------------------------------------------
@@ -174,7 +182,7 @@ def test_parse_check_suite_without_pr_ignored():
 
 
 def test_parse_unknown_event():
-    assert parse_event("push", {"ref": "refs/heads/main"}) is None
+    assert parse_event("push", {"ref": "refs/heads/main"}) == []
 
 
 # ---------------------------------------------------------------------------
@@ -199,7 +207,7 @@ def test_spawn_review(monkeypatch):
     monkeypatch.setattr("code_reviewer.webhook.subprocess.Popen", fake_popen)
 
     config = WebhookConfig(review_command=["code-reviewer", "run-once"])
-    spawn_review("https://github.com/o/r/pull/1", config)
+    spawn_review("https://github.com/o/r/pull/1", config).join()
     assert calls == [["code-reviewer", "run-once", "--pr-url", "https://github.com/o/r/pull/1"]]
 
 
@@ -223,7 +231,7 @@ def test_spawn_review_with_extra_args(monkeypatch):
         review_command=["code-reviewer", "run-once"],
         review_args=["--auto-post-review"],
     )
-    spawn_review("https://github.com/o/r/pull/1", config)
+    spawn_review("https://github.com/o/r/pull/1", config).join()
     assert calls[0] == [
         "code-reviewer",
         "run-once",

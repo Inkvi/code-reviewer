@@ -138,3 +138,8 @@ def test_approval_blocker_blocks_when_pr_moved_past_reviewed_commit() -> None:
     status = {"headRefOid": "newer", "mergeable": "MERGEABLE", "statusCheckRollup": []}
     assert approval_blocker(status, "abc") == "new commits were pushed after the review"
     assert approval_blocker({"mergeable": "MERGEABLE"}, "abc") is not None, "missing head blocks"
+
+
+def test_approval_blocker_blocks_closed_prs() -> None:
+    status = {"state": "MERGED", "headRefOid": "abc", "mergeable": "UNKNOWN"}
+    assert approval_blocker(status, "abc") == "the PR is no longer open"

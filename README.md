@@ -451,8 +451,10 @@ WEBHOOK_SECRET=your-secret code-reviewer webhook --host 127.0.0.1 --port 9090
 |-------|--------|----------|
 | `pull_request` | `opened`, `synchronize`, `review_requested` | Spawns review (skips drafts) |
 | `issue_comment` | `created` with `/review` or `/review force` | Spawns review |
-| `check_suite` | `completed` | Spawns a run, so a PR waiting on its checks can be approved |
+| `check_suite` | `completed` | Spawns a run for each PR on the commit, so a PR waiting on its checks can be approved |
 | `ping` | — | Returns pong |
+
+Runs started by the webhook go one at a time, since each takes the state lock. GitHub does not say which PR a `check_suite` belongs to for PRs from forks, so those are not rechecked when CI finishes; a polling `run-once` or `start` picks up every PR waiting on its checks.
 
 ## Docker
 

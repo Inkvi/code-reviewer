@@ -54,18 +54,19 @@ def validate_signature(payload: bytes, signature: str, secret: str) -> bool:
     return hmac.compare_digest(f"sha256={expected}", signature)
 
 
-def parse_event(event_type: str, payload: dict[str, Any]) -> str | None:
-    """Extract a PR URL from a webhook payload if the event is actionable.
+def parse_event(event_type: str, payload: dict[str, Any]) -> list[str]:
+    """Extract the PR URLs to run for a webhook payload.
 
-    Returns the PR URL string, or None if the event should be ignored.
+    Returns an empty list if the event should be ignored.
     """
-    if event_type == "pull_request":
-        return _handle_pull_request(payload)
-    if event_type == "issue_comment":
-        return _handle_issue_comment(payload)
     if event_type == "check_suite":
         return _handle_check_suite(payload)
-    return None
+    url = None
+    if event_type == "pull_request":
+        url = _handle_pull_request(payload)
+    elif event_type == "issue_comment":
+        url = _handle_issue_comment(payload)
+    return [url] if url else []
 
 
 def _handle_pull_request(payload: dict[str, Any]) -> str | None:
@@ -108,39 +109,47 @@ def _handle_issue_comment(payload: dict[str, Any]) -> str | None:
     return pr_url
 
 
-def _handle_check_suite(payload: dict[str, Any]) -> str | None:
-    """When CI finishes, run again so a PR waiting on its checks can be approved."""
+def _handle_check_suite(payload: dict[str, Any]) -> list[str]:
+    """When CI finishes, run again so PRs waiting on their checks can be approved.
+
+    GitHub leaves pull_requests empty for PRs from forks, so those are not rechecked.
+    """
     if payload.get("action") != "completed":
-        return None
-    pull_requests = payload.get("check_suite", {}).get("pull_requests") or []
+        return []
     repo_url = payload.get("repository", {}).get("html_url")
-    if not pull_requests or not isinstance(repo_url, str) or not repo_url:
-        return None
-    number = pull_requests[0].get("number")
-    if not isinstance(number, int):
-        return None
-    return f"{repo_url}/pull/{number}"
+    if not isinstance(repo_url, str) or not repo_url:
+        return []
+    pull_requests = payload.get("check_suite", {}).get("pull_requests") or []
+    numbers = [pr.get("number") for pr in pull_requests]
+    return [f"{repo_url}/pull/{number}" for number in numbers if isinstance(number, int)]
 
 
-def _reap_process(proc: subprocess.Popen[bytes], pr_url: str) -> None:
-    """Wait for a review subprocess to finish and log the result."""
-    returncode = proc.wait()
+# Each run takes the global state lock, so runs started at the same time would fail.
+_RUN_ONE_AT_A_TIME = threading.Lock()
+
+
+def _run_review(cmd: list[str], pr_url: str) -> None:
+    """Run one review subprocess after any earlier one finishes, and log the result."""
+    with _RUN_ONE_AT_A_TIME:
+        logger.info("Spawning review: %s", " ".join(cmd))
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        returncode = proc.wait()
     if returncode == 0:
         logger.info("Review completed successfully: %s", pr_url)
     else:
         logger.warning("Review exited with code %d: %s", returncode, pr_url)
 
 
-def spawn_review(pr_url: str, config: WebhookConfig) -> None:
-    """Spawn ``code-reviewer run-once --pr-url <url>`` as a background process."""
+def spawn_review(pr_url: str, config: WebhookConfig) -> threading.Thread:
+    """Run ``code-reviewer run-once --pr-url <url>`` in the background, one run at a time."""
     cmd = [*config.review_command, *config.review_args, "--pr-url", pr_url]
-    logger.info("Spawning review: %s", " ".join(cmd))
-    proc = subprocess.Popen(
-        cmd,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    threading.Thread(target=_reap_process, args=(proc, pr_url), daemon=True).start()
+    thread = threading.Thread(target=_run_review, args=(cmd, pr_url), daemon=True)
+    thread.start()
+    return thread
 
 
 def _make_handler(config: WebhookConfig) -> type[BaseHTTPRequestHandler]:
@@ -179,13 +188,14 @@ def _make_handler(config: WebhookConfig) -> type[BaseHTTPRequestHandler]:
                 self.send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
                 return
 
-            pr_url = parse_event(event_type, payload)
-            if pr_url is None:
+            pr_urls = parse_event(event_type, payload)
+            if not pr_urls:
                 self._respond(HTTPStatus.OK, {"status": "ignored"})
                 return
 
-            spawn_review(pr_url, config)
-            self._respond(HTTPStatus.ACCEPTED, {"status": "accepted", "pr_url": pr_url})
+            for pr_url in pr_urls:
+                spawn_review(pr_url, config)
+            self._respond(HTTPStatus.ACCEPTED, {"status": "accepted", "pr_urls": pr_urls})
 
         def do_GET(self) -> None:  # noqa: N802
             if self.path == "/healthz":
