@@ -283,6 +283,11 @@ auto_approve_max_risk = "low"
 # list for its repo. Keys are "owner/repo" (case-insensitive). Default: none.
 # high_risk_paths_by_repo = { "polymerdao/obul" = ["contracts/*", "deploy/*"] }
 
+# Slack incoming webhook URL. When set, each review that reaches GitHub sends one message:
+# approved, changes requested, needs a human (with the reason), or review posted.
+# A PR waiting on its checks is reported once they finish. Default: off.
+# slack_webhook_url = "https://hooks.slack.com/services/..."
+
 ```
 
 ### Trigger mode

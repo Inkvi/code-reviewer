@@ -15,6 +15,7 @@ from code_reviewer.processor import (
     _finalize_risk,
     _inert_markdown,
     _NewCommitDetected,
+    _notify_slack,
     _resolve_antigravity_review_model,
     _resolve_reconciler_settings,
     _restore_saved_risk,
@@ -1651,8 +1652,11 @@ def _run_clean_review_with_auto_submit(
     high_risk_paths: list[str] | None = None,
     high_risk_paths_by_repo: dict[str, list[str]] | None = None,
     changed_file_paths: list[str] | None = None,
+    slack: list[str] | None = None,
 ):
     """Run a review that finds nothing, with auto-submit on.
+
+    Pass *slack* to turn on Slack notifications and collect the messages in it.
 
     Returns (store, submitted decisions, posted comments, merge status calls).
     """
@@ -1721,7 +1725,12 @@ def _run_clean_review_with_auto_submit(
         auto_approve_max_risk=max_risk,
         high_risk_paths=high_risk_paths or [],
         high_risk_paths_by_repo=high_risk_paths_by_repo or {},
+        slack_webhook_url="https://hooks.slack.com/x" if slack is not None else None,
     )
+    if slack is not None:
+        monkeypatch.setattr(
+            "code_reviewer.processor.post_to_slack", lambda _url, text: slack.append(text)
+        )
     pr = _sample_pr(changed_file_paths=changed_file_paths)
     result = asyncio.run(process_candidate(cfg, client, store, workspace, pr))
     assert result.processed is True
@@ -2004,6 +2013,7 @@ def _recheck_waiting_pr(
     merge_status: dict,
     head_sha: str = "deadbeef",
     saved_risk: str = "low",
+    slack: list[str] | None = None,
 ):
     """Process a PR whose review is waiting on checks. Returns (result, store, approvals)."""
     saved_review = tmp_path / "pr-64.md"
@@ -2034,7 +2044,12 @@ def _recheck_waiting_pr(
         github_orgs=["polymerdao"],
         enabled_reviewers=["codex"],
         auto_submit_review_decision=True,
+        slack_webhook_url="https://hooks.slack.com/x" if slack is not None else None,
     )
+    if slack is not None:
+        monkeypatch.setattr(
+            "code_reviewer.processor.post_to_slack", lambda _url, text: slack.append(text)
+        )
     pr = _sample_pr()
     pr.head_sha = head_sha
     result = asyncio.run(process_candidate(cfg, client, store, DummyWorkspace(tmp_path), pr))
@@ -2094,6 +2109,45 @@ def test_waiting_pr_with_new_commits_is_not_approved(monkeypatch, tmp_path) -> N
     assert approvals == []
     assert result.status == "skipped_no_new_trigger"
     assert store.state.last_status == "skipped_no_new_trigger"
+
+
+def test_slack_is_told_about_an_approval(monkeypatch, tmp_path) -> None:
+    slack: list[str] = []
+    _run_clean_review_with_auto_submit(monkeypatch, tmp_path, risk="low", slack=slack)
+
+    assert len(slack) == 1
+    assert ":white_check_mark: Approved. Risk: low." in slack[0]
+
+
+def test_slack_is_told_why_a_pr_needs_a_human(monkeypatch, tmp_path) -> None:
+    slack: list[str] = []
+    _run_clean_review_with_auto_submit(
+        monkeypatch, tmp_path, risk="medium", risk_reason="changes API", slack=slack
+    )
+
+    assert ":eyes: Needs a human: medium risk (changes API)." in slack[0]
+
+
+def test_slack_waits_for_checks_before_notifying(monkeypatch, tmp_path) -> None:
+    slack: list[str] = []
+    _run_clean_review_with_auto_submit(
+        monkeypatch, tmp_path, risk="low", merge_status=_PENDING_MERGE_STATUS, slack=slack
+    )
+    assert slack == []
+
+    _recheck_waiting_pr(monkeypatch, tmp_path, merge_status=_CLEAN_MERGE_STATUS, slack=slack)
+    assert len(slack) == 1
+    assert ":white_check_mark: Approved." in slack[0]
+
+
+def test_slack_failure_does_not_raise(monkeypatch) -> None:
+    def broken_slack(_url, _text):
+        raise OSError("slack is down")
+
+    monkeypatch.setattr("code_reviewer.processor.post_to_slack", broken_slack)
+    cfg = AppConfig(github_orgs=["polymerdao"], slack_webhook_url="https://hooks.slack.com/x")
+
+    _notify_slack(cfg, _sample_pr(), "approved", None)
 
 
 def test_all_backends_failed_does_not_approve(monkeypatch, tmp_path) -> None:

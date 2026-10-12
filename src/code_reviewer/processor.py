@@ -24,6 +24,7 @@ from code_reviewer.models import (
     ReviewerOutputSummary,
     TokenUsage,
 )
+from code_reviewer.notify import post_to_slack, review_outcome_text
 from code_reviewer.output import (
     write_conversation_jsonl,
     write_review_markdown,
@@ -627,6 +628,21 @@ def _inert_markdown(text: str) -> str:
     return "`" + " ".join(text.replace("`", "'").split()) + "`"
 
 
+def _notify_slack(
+    config: AppConfig, pr: PRCandidate, status: str, blocked_reason: str | None
+) -> None:
+    """Tell Slack how a review ended. Never fails the review."""
+    if not config.slack_webhook_url:
+        return
+    text = review_outcome_text(pr, status, blocked_reason)
+    if text is None:
+        return
+    try:
+        post_to_slack(config.slack_webhook_url, text)
+    except Exception as exc:  # noqa: BLE001
+        warn(f"failed to send Slack notification: {exc} {pr.url}")
+
+
 def _publish_and_persist(
     config: AppConfig,
     client: GitHubClient,
@@ -744,6 +760,7 @@ def _publish_and_persist(
         ),
     )
     store.save()
+    _notify_slack(config, pr, status, blocked_reason)
 
 
 def _recheck_waiting_approval(
@@ -789,6 +806,7 @@ def _recheck_waiting_approval(
     previous.last_processed_at = ProcessedState.now_iso()
     store.set(pr.key, previous)
     store.save()
+    _notify_slack(config, pr, status, blocked_reason)
     return status
 
 

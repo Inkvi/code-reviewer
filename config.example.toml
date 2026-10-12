@@ -51,6 +51,8 @@ auto_approve_max_risk = "low"
 # high_risk_paths = ["*auth*", "*billing*", "migrations/*", ".github/workflows/*"]
 # Extra patterns for specific repos, added to high_risk_paths for that repo.
 # high_risk_paths_by_repo = { "polymerdao/obul" = ["contracts/*", "deploy/*"] }
+# Slack incoming webhook URL for a message after each review (approved, needs a human, ...)
+# slack_webhook_url = "https://hooks.slack.com/services/..."
 include_reviewer_stderr = true
 post_mode = "pr_comment"
 output_dir = "./reviews"

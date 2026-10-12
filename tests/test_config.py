@@ -559,6 +559,25 @@ def test_high_risk_paths_by_repo_rejects_bad_keys(tmp_path: Path) -> None:
             load_config(path)
 
 
+def test_slack_webhook_url_is_optional_and_must_be_https(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text('github_orgs=["polymerdao"]\nslack_webhook_url = ""\n', encoding="utf-8")
+    assert load_config(path).slack_webhook_url is None
+
+    path.write_text(
+        'github_orgs=["polymerdao"]\nslack_webhook_url = " https://hooks.slack.com/x "\n',
+        encoding="utf-8",
+    )
+    assert load_config(path).slack_webhook_url == "https://hooks.slack.com/x"
+
+    path.write_text(
+        'github_orgs=["polymerdao"]\nslack_webhook_url = "http://hooks.slack.com/x"\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="slack_webhook_url"):
+        load_config(path)
+
+
 # --- Backend list syntax tests ---
 
 
