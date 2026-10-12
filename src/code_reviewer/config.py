@@ -82,6 +82,7 @@ class AppConfig(BaseModel):
     auto_approve_max_risk: str = "low"
     high_risk_paths: list[str] = Field(default_factory=list)
     high_risk_paths_by_repo: dict[str, list[str]] = Field(default_factory=dict)
+    slack_webhook_url: str | None = None
     include_reviewer_stderr: bool = True
     post_mode: str = "pr_comment"
     output_dir: str = "./reviews"
@@ -391,6 +392,16 @@ class AppConfig(BaseModel):
         normalized = value.strip().lower()
         if normalized not in {"low", "medium", "high"}:
             raise ValueError("auto_approve_max_risk must be one of: low, medium, high")
+        return normalized
+
+    @field_validator("slack_webhook_url")
+    @classmethod
+    def validate_slack_webhook_url(cls, value: str | None) -> str | None:
+        if value is None or not value.strip():
+            return None
+        normalized = value.strip()
+        if not normalized.startswith("https://"):
+            raise ValueError("slack_webhook_url must start with https://")
         return normalized
 
     @model_validator(mode="after")
