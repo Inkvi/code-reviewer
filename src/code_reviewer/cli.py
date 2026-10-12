@@ -626,6 +626,7 @@ def check_command(
     for repo, patterns in cfg.high_risk_paths_by_repo.items():
         table.add_row(f"High-risk paths ({repo})", ", ".join(patterns) or "none")
     table.add_row("Slack notifications", "on" if cfg.slack_webhook_url else "off")
+    table.add_row("Risk labels", str(cfg.risk_labels))
     table.add_row("Include reviewer stderr", str(cfg.include_reviewer_stderr))
     table.add_row("Enabled reviewers", ", ".join(cfg.enabled_reviewers))
     table.add_row("Claude backend", cfg.claude_backend)

@@ -5,7 +5,7 @@ import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Literal
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 from code_reviewer.config import AppConfig
 from code_reviewer.logger import warn
@@ -16,6 +16,9 @@ if TYPE_CHECKING:
     from code_reviewer.state import StateStore
 
 _REVIEW_CMD_RE = re.compile(r"^\s*/review(?:\s+(force))?\s*$", re.MULTILINE)
+
+RISK_LABEL_PREFIX = "ai-risk:"
+APPROVED_LABEL = "ai-approved"
 
 
 @dataclass(slots=True)
@@ -672,3 +675,29 @@ class GitHubClient:
                 f"body={body}",
             ]
         )
+
+    @staticmethod
+    def sync_review_labels(pr: PRCandidate, risk: str | None, approved: bool) -> None:
+        """Make the PR's ai-risk:<level> and ai-approved labels match the latest review.
+
+        Other labels are left alone. Adding a label the repo does not have yet creates it.
+        """
+        base = f"repos/{pr.owner}/{pr.repo}/issues/{pr.number}/labels"
+        wanted = {f"{RISK_LABEL_PREFIX}{risk}"} if risk else set()
+        if approved:
+            wanted.add(APPROVED_LABEL)
+        proc = run_command(["gh", "api", "--paginate", base, "--jq", ".[].name"])
+        current = set(proc.stdout.splitlines())
+        stale = {
+            name
+            for name in current - wanted
+            if name.startswith(RISK_LABEL_PREFIX) or name == APPROVED_LABEL
+        }
+        for name in sorted(stale):
+            run_command(["gh", "api", "-X", "DELETE", f"{base}/{quote(name, safe='')}"])
+        missing = sorted(wanted - current)
+        if missing:
+            args = ["gh", "api", base]
+            for name in missing:
+                args += ["-f", f"labels[]={name}"]
+            run_command(args)

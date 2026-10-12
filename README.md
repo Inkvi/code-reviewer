@@ -288,6 +288,12 @@ auto_approve_max_risk = "low"
 # A PR waiting on its checks is reported once they finish. Default: off.
 # slack_webhook_url = "https://hooks.slack.com/services/..."
 
+# Label each reviewed PR with ai-risk:low|medium|high, plus ai-approved when the bot
+# approved it, so a GitHub search such as `label:ai-approved` lists every auto-approval.
+# Labels are kept in sync on re-reviews and created in the repo the first time they are
+# used. Needs a token that can edit labels. Default: false.
+risk_labels = false
+
 ```
 
 ### Trigger mode
