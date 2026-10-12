@@ -410,3 +410,27 @@ def test_discover_candidates_adds_prs_waiting_on_checks(monkeypatch, tmp_path) -
 
     assert loaded == ["https://github.com/polymerdao/bridge-master/pull/2"]
     assert [pr.number for pr in candidates] == [1, 2]
+
+
+def test_discover_candidates_skips_waiting_prs_outside_current_config(
+    monkeypatch, tmp_path
+) -> None:
+    config = AppConfig(
+        github_orgs=["polymerdao"], excluded_repos=["excluded"], slash_command_enabled=False
+    )
+    store = StateStore(tmp_path / "state.json")
+    for key in ("otherorg/app#1", "polymerdao/excluded#2", "PolymerDAO/bridge-master#3"):
+        store.set(key, ProcessedState(last_status="waiting_for_checks"))
+
+    monkeypatch.setattr(GitHubClient, "discover_pr_candidates", lambda _self, _config: [])
+    loaded: list[str] = []
+
+    def fake_get_pr_candidate(_self, url):  # noqa: ANN001
+        loaded.append(url)
+        return _sample_pr(3)
+
+    monkeypatch.setattr(GitHubClient, "get_pr_candidate", fake_get_pr_candidate)
+
+    asyncio.run(_discover_candidates(config, GitHubClient(viewer_login="inkvi"), store))
+
+    assert loaded == ["https://github.com/PolymerDAO/bridge-master/pull/3"]

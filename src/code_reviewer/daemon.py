@@ -51,10 +51,16 @@ async def _discover_candidates(
     # PRs waiting on their checks drop out of the searches above when nobody requested a
     # review (for example after /review), so pick them up from saved state.
     existing_keys = {pr.key.lower() for pr in candidates}
+    owners = {owner.lower() for owner in config.github_owners}
     for key in store.keys_with_status("waiting_for_checks"):
-        if key.lower() in existing_keys:
-            continue
         repo_full, _, number = key.partition("#")
+        owner, _, repo = repo_full.partition("/")
+        if (
+            key.lower() in existing_keys
+            or owner.lower() not in owners
+            or GitHubClient._is_repo_excluded(config, owner, repo)
+        ):
+            continue
         try:
             candidates.append(
                 await asyncio.to_thread(
