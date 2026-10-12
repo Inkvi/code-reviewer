@@ -1512,6 +1512,12 @@ async def process_candidate(
 
     if config.skip_own_prs and pr.author_login == client.viewer_login:
         detail(f"skipping own PR (author={pr.author_login}) {pr.url}")
+        previous = store.get(pr.key)
+        if previous.last_status == "waiting_for_checks":
+            # Reviewed earlier with --review-own; stop rechecking it.
+            previous.last_status = "skipped_own_pr"
+            store.set(pr.key, previous)
+            await asyncio.to_thread(store.save)
         return ProcessingResult(
             processed=False,
             pr_url=pr.url,

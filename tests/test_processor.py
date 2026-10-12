@@ -2189,6 +2189,22 @@ def test_waiting_pr_stops_quietly_once_closed(monkeypatch, tmp_path) -> None:
     assert slack == []
 
 
+def test_skipped_own_pr_stops_waiting(monkeypatch, tmp_path) -> None:
+    store = DummyStore(ProcessedState(last_status="waiting_for_checks"))
+    pr = _sample_pr()
+    pr.author_login = "Inkvi"
+    cfg = AppConfig(github_orgs=["polymerdao"], skip_own_prs=True)
+
+    result = asyncio.run(
+        process_candidate(
+            cfg, GitHubClient(viewer_login="Inkvi"), store, DummyWorkspace(tmp_path), pr
+        )
+    )
+
+    assert result.status == "skipped_own_pr"
+    assert store.state.last_status == "skipped_own_pr"
+
+
 def test_waiting_pr_rechecks_risk_limit_before_approving(monkeypatch, tmp_path) -> None:
     result, _, approvals = _recheck_waiting_pr(
         monkeypatch, tmp_path, merge_status=_CLEAN_MERGE_STATUS, saved_risk="medium"
