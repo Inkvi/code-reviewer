@@ -9,7 +9,12 @@ from code_reviewer.daemon import (
     start_daemon,
 )
 from code_reviewer.github import GitHubClient
-from code_reviewer.models import PRCandidate, ProcessingResult, SlashCommandTrigger
+from code_reviewer.models import (
+    PRCandidate,
+    ProcessedState,
+    ProcessingResult,
+    SlashCommandTrigger,
+)
 from code_reviewer.preflight import PreflightResult
 from code_reviewer.state import StateStore
 
@@ -143,8 +148,10 @@ def test_worker_clears_scheduled_on_exception(monkeypatch) -> None:
     assert pr.key not in scheduled
 
 
-def test_run_cycle_quiet_mode_suppresses_per_pr_logs(monkeypatch) -> None:
-    config = AppConfig(github_orgs=["polymerdao"], enabled_reviewers=["codex"])
+def test_run_cycle_quiet_mode_suppresses_per_pr_logs(monkeypatch, tmp_path) -> None:
+    config = AppConfig(
+        github_orgs=["polymerdao"], enabled_reviewers=["codex"], slash_command_enabled=False
+    )
     preflight = PreflightResult(viewer_login="inkvi")
     pr = _sample_pr(13)
 
@@ -177,7 +184,8 @@ def test_run_cycle_quiet_mode_suppresses_per_pr_logs(monkeypatch) -> None:
 
     monkeypatch.setattr("code_reviewer.daemon.process_candidate", fake_process_candidate)
 
-    processed = asyncio.run(run_cycle(config, preflight, object(), verbose=False))
+    store = StateStore(tmp_path / "state.json")
+    processed = asyncio.run(run_cycle(config, preflight, store, verbose=False))
 
     assert processed == 0
     assert verbose_args == [False]
@@ -376,3 +384,29 @@ def test_run_cycle_slash_command_replaces_existing_candidate(monkeypatch, tmp_pa
     assert len(processed_prs) == 1
     assert processed_prs[0].slash_command_trigger is not None
     assert processed_prs[0].slash_command_trigger.comment_id == 999
+
+
+def test_discover_candidates_adds_prs_waiting_on_checks(monkeypatch, tmp_path) -> None:
+    """A PR waiting on its checks is rechecked even when no search returns it."""
+    config = AppConfig(github_orgs=["polymerdao"], slash_command_enabled=False)
+    store = StateStore(tmp_path / "state.json")
+    for number, status in ((1, "waiting_for_checks"), (2, "waiting_for_checks"), (3, "posted")):
+        store.set(f"polymerdao/bridge-master#{number}", ProcessedState(last_status=status))
+
+    monkeypatch.setattr(
+        GitHubClient, "discover_pr_candidates", lambda _self, _config: [_sample_pr(1)]
+    )
+    loaded: list[str] = []
+
+    def fake_get_pr_candidate(_self, url):  # noqa: ANN001
+        loaded.append(url)
+        return _sample_pr(int(url.rsplit("/", 1)[1]))
+
+    monkeypatch.setattr(GitHubClient, "get_pr_candidate", fake_get_pr_candidate)
+
+    candidates = asyncio.run(
+        _discover_candidates(config, GitHubClient(viewer_login="inkvi"), store)
+    )
+
+    assert loaded == ["https://github.com/polymerdao/bridge-master/pull/2"]
+    assert [pr.number for pr in candidates] == [1, 2]

@@ -368,9 +368,9 @@ class GitHubClient:
 
     @staticmethod
     def get_pr_merge_status(pr: PRCandidate) -> dict:
-        """Fetch the live head commit, merge-conflict state, and CI check results for a PR."""
+        """Fetch the PR's state, live head commit, merge conflicts, and CI check results."""
         return run_json(
-            ["gh", "pr", "view", pr.url, "--json", "headRefOid,mergeable,statusCheckRollup"]
+            ["gh", "pr", "view", pr.url, "--json", "state,headRefOid,mergeable,statusCheckRollup"]
         )
 
     @staticmethod

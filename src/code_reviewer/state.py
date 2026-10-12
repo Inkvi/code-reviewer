@@ -118,6 +118,11 @@ class StateStore:
             last_risk_reason=item.get("last_risk_reason"),
         )
 
+    def keys_with_status(self, status: str) -> list[str]:
+        """PR keys ("owner/repo#number") whose last_status is *status*."""
+        with self._mutex:
+            return [key for key, item in self._data.items() if item.get("last_status") == status]
+
     def set(self, key: str, state: ProcessedState) -> None:
         with self._mutex:
             self._data[key] = {

@@ -791,10 +791,17 @@ def _recheck_waiting_approval(
     """
     pr.risk, pr.risk_reason = previous.last_risk, previous.last_risk_reason
     try:
-        blocked_reason = approval_blocker(client.get_pr_merge_status(pr), pr.head_sha)
+        merge_status = client.get_pr_merge_status(pr)
     except Exception as exc:  # noqa: BLE001
         warn(f"failed to read merge status, will check again: {exc} {pr.url}")
         return "waiting_for_checks"
+    if merge_status.get("state", "OPEN") != "OPEN":
+        info(f"PR is no longer open, stopped waiting to approve {pr.url}")
+        previous.last_status = "posted"
+        store.set(pr.key, previous)
+        store.save()
+        return "posted"
+    blocked_reason = approval_blocker(merge_status, pr.head_sha)
     if blocked_reason is not None and blocked_reason.startswith(CHECKS_RUNNING):
         return "waiting_for_checks"
 
@@ -815,7 +822,11 @@ def _recheck_waiting_approval(
             previous.last_posted_at = ProcessedState.now_iso()
             info(f"checks passed, approved {pr.url}")
         except Exception as exc:  # noqa: BLE001
-            warn(f"failed to approve after checks passed: {exc} {pr.url}")
+            if "Can not approve your own pull request" not in str(exc):
+                warn(f"failed to approve after checks passed, will try again: {exc} {pr.url}")
+                return "waiting_for_checks"
+            blocked_reason = "cannot approve your own pull request"
+            info(f"checks passed, but {blocked_reason} {pr.url}")
 
     previous.last_status = status
     previous.last_processed_at = ProcessedState.now_iso()

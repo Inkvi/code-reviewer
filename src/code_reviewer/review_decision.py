@@ -29,10 +29,12 @@ CHECKS_RUNNING = "checks still running"
 def approval_blocker(pr_status: dict, reviewed_head_sha: str) -> str | None:
     """Return why a PR must not be auto-approved, or None if it can be.
 
-    *pr_status* is ``gh pr view --json headRefOid,mergeable,statusCheckRollup`` output.
-    Blocks when the PR moved past the reviewed commit, on merge conflicts, and on any
-    check that failed or has not finished.
+    *pr_status* is ``gh pr view --json state,headRefOid,mergeable,statusCheckRollup`` output.
+    Blocks when the PR is closed or moved past the reviewed commit, on merge conflicts, and
+    on any check that failed or has not finished.
     """
+    if pr_status.get("state", "OPEN") != "OPEN":
+        return "the PR is no longer open"
     if pr_status.get("headRefOid") != reviewed_head_sha:
         return "new commits were pushed after the review"
     if pr_status.get("mergeable") == "CONFLICTING":

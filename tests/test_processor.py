@@ -2110,6 +2110,85 @@ def test_waiting_pr_stops_waiting_when_checks_fail(monkeypatch, tmp_path) -> Non
     assert store.state.last_status == "posted"
 
 
+def test_waiting_pr_keeps_waiting_when_approval_fails(monkeypatch, tmp_path) -> None:
+    def flaky_approve(_self, _pr, _body):
+        raise CommandError(["gh"], 1, "", "HTTP 503")
+
+    monkeypatch.setattr(GitHubClient, "approve_pr", flaky_approve)
+    store = DummyStore(
+        ProcessedState(
+            last_processed_at="2026-03-03T00:00:00+00:00",
+            last_reviewed_head_sha="deadbeef",
+            last_status="waiting_for_checks",
+            last_seen_rerequest_at="2026-03-02T00:00:00+00:00",
+            last_risk="low",
+        )
+    )
+    monkeypatch.setattr(GitHubClient, "get_pr_merge_status", lambda _self, _pr: _CLEAN_MERGE_STATUS)
+    cfg = AppConfig(
+        github_orgs=["polymerdao"], enabled_reviewers=["codex"], auto_submit_review_decision=True
+    )
+    client = GitHubClient(viewer_login="Inkvi")
+
+    result = asyncio.run(
+        process_candidate(cfg, client, store, DummyWorkspace(tmp_path), _sample_pr())
+    )
+    assert result.status == "waiting_for_checks"
+    assert store.state.last_status == "waiting_for_checks"
+
+    approvals: list[str] = []
+    monkeypatch.setattr(
+        GitHubClient, "approve_pr", lambda _self, pr, _body: approvals.append(pr.head_sha)
+    )
+    result = asyncio.run(
+        process_candidate(cfg, client, store, DummyWorkspace(tmp_path), _sample_pr())
+    )
+    assert approvals == ["deadbeef"]
+    assert store.state.last_status == "approved"
+
+
+def test_waiting_own_pr_stops_waiting(monkeypatch, tmp_path) -> None:
+    slack: list[str] = []
+
+    def own_pr(_self, _pr, _body):
+        raise CommandError(["gh"], 1, "", "Review Can not approve your own pull request")
+
+    _, store, _ = _recheck_waiting_pr(
+        monkeypatch, tmp_path, merge_status=_CLEAN_MERGE_STATUS, slack=slack
+    )
+    store.state.last_status = "waiting_for_checks"
+    monkeypatch.setattr(GitHubClient, "approve_pr", own_pr)
+    cfg = AppConfig(
+        github_orgs=["polymerdao"],
+        enabled_reviewers=["codex"],
+        auto_submit_review_decision=True,
+        slack_webhook_url="https://hooks.slack.com/x",
+    )
+    slack.clear()
+    result = asyncio.run(
+        process_candidate(
+            cfg, GitHubClient(viewer_login="Inkvi"), store, DummyWorkspace(tmp_path), _sample_pr()
+        )
+    )
+
+    assert result.status == "posted"
+    assert store.state.last_status == "posted"
+    assert ":eyes: Needs a human: cannot approve your own pull request." in slack[0]
+
+
+def test_waiting_pr_stops_quietly_once_closed(monkeypatch, tmp_path) -> None:
+    slack: list[str] = []
+    merged = dict(_CLEAN_MERGE_STATUS, state="MERGED")
+    result, store, approvals = _recheck_waiting_pr(
+        monkeypatch, tmp_path, merge_status=merged, slack=slack
+    )
+
+    assert approvals == []
+    assert result.status == "posted"
+    assert store.state.last_status == "posted"
+    assert slack == []
+
+
 def test_waiting_pr_rechecks_risk_limit_before_approving(monkeypatch, tmp_path) -> None:
     result, _, approvals = _recheck_waiting_pr(
         monkeypatch, tmp_path, merge_status=_CLEAN_MERGE_STATUS, saved_risk="medium"

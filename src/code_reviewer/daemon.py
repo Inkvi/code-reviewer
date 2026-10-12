@@ -48,6 +48,22 @@ async def _discover_candidates(
             else:
                 candidates = [sc if c.key.lower() == sc.key.lower() else c for c in candidates]
 
+    # PRs waiting on their checks drop out of the searches above when nobody requested a
+    # review (for example after /review), so pick them up from saved state.
+    existing_keys = {pr.key.lower() for pr in candidates}
+    for key in store.keys_with_status("waiting_for_checks"):
+        if key.lower() in existing_keys:
+            continue
+        repo_full, _, number = key.partition("#")
+        try:
+            candidates.append(
+                await asyncio.to_thread(
+                    client.get_pr_candidate, f"https://github.com/{repo_full}/pull/{number}"
+                )
+            )
+        except Exception as exc:  # noqa: BLE001
+            warn(f"Failed to load PR waiting on checks {key}: {exc}")
+
     return candidates
 
 

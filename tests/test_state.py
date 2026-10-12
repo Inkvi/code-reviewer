@@ -167,3 +167,11 @@ def test_acquire_lock_legacy_format_without_hostname(
         assert lines[0] == str(os.getpid())
     finally:
         store.release_lock()
+
+
+def test_keys_with_status(tmp_path) -> None:
+    store = StateStore(tmp_path / "state.json")
+    store.set("o/r#1", ProcessedState(last_status="waiting_for_checks"))
+    store.set("o/r#2", ProcessedState(last_status="posted"))
+
+    assert store.keys_with_status("waiting_for_checks") == ["o/r#1"]
