@@ -142,6 +142,33 @@ def test_parse_comment_fallback_to_issue_url():
 
 
 # ---------------------------------------------------------------------------
+# parse_event — check_suite (CI finished)
+# ---------------------------------------------------------------------------
+
+
+def _check_suite_payload(action: str = "completed", pull_requests: list | None = None) -> dict:
+    return {
+        "action": action,
+        "check_suite": {
+            "pull_requests": [{"number": 7}] if pull_requests is None else pull_requests
+        },
+        "repository": {"html_url": "https://github.com/o/r"},
+    }
+
+
+def test_parse_check_suite_completed():
+    assert parse_event("check_suite", _check_suite_payload()) == "https://github.com/o/r/pull/7"
+
+
+def test_parse_check_suite_not_completed_ignored():
+    assert parse_event("check_suite", _check_suite_payload(action="requested")) is None
+
+
+def test_parse_check_suite_without_pr_ignored():
+    assert parse_event("check_suite", _check_suite_payload(pull_requests=[])) is None
+
+
+# ---------------------------------------------------------------------------
 # parse_event — unknown event
 # ---------------------------------------------------------------------------
 

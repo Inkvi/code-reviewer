@@ -34,6 +34,7 @@ from code_reviewer.progress import ProgressComment
 from code_reviewer.prompts import PromptBundle, PromptOverrideError, format_prompt_bundle
 from code_reviewer.repos import fetch_remote_skills
 from code_reviewer.review_decision import (
+    CHECKS_RUNNING,
     ReviewDecision,
     approval_blocker,
     first_high_risk_path,
@@ -657,13 +658,16 @@ def _publish_and_persist(
 
     if blocked_reason is not None:
         warn(f"not approving ({blocked_reason}), posting as comment {pr.url}")
+        waiting = blocked_reason.startswith(CHECKS_RUNNING)
+        note = "\n\nThis PR will be approved automatically if the checks pass." if waiting else ""
         body = (
-            f"**Not auto-approved:** {_inert_markdown(blocked_reason)}\n\n{output_path.read_text()}"
+            f"**Not auto-approved:** {_inert_markdown(blocked_reason)}{note}\n\n"
+            f"{output_path.read_text()}"
         )
         try:
             client.post_pr_comment_inline(pr, body)
             posted_at = ProcessedState.now_iso()
-            status = "posted"
+            status = "waiting_for_checks" if waiting else "posted"
             info(f"posted review comment {pr.url}")
         except Exception as exc:  # noqa: BLE001
             warn(f"failed to post review comment: {exc} {pr.url}")
@@ -740,6 +744,52 @@ def _publish_and_persist(
         ),
     )
     store.save()
+
+
+def _recheck_waiting_approval(
+    config: AppConfig,
+    client: GitHubClient,
+    store: StateStore,
+    pr: PRCandidate,
+    previous: ProcessedState,
+) -> str:
+    """Approve a reviewed PR that was held back only because its checks were still running.
+
+    The review is already on the PR as a comment. Returns "waiting_for_checks" while checks
+    run, "approved" once approved, or "posted" when it stops waiting without approving.
+    """
+    try:
+        blocked_reason = approval_blocker(client.get_pr_merge_status(pr), pr.head_sha)
+    except Exception as exc:  # noqa: BLE001
+        warn(f"failed to read merge status, will check again: {exc} {pr.url}")
+        return "waiting_for_checks"
+    if blocked_reason is not None and blocked_reason.startswith(CHECKS_RUNNING):
+        return "waiting_for_checks"
+
+    if blocked_reason is None:
+        if not config.auto_submit_review_decision:
+            blocked_reason = "auto_submit_review_decision is off"
+        else:
+            _restore_saved_risk(config, client, pr, previous)
+            blocked_reason = risk_blocker(pr.risk, pr.risk_reason, config.auto_approve_max_risk)
+
+    status = "posted"
+    if blocked_reason is not None:
+        info(f"checks finished, not approving ({blocked_reason}) {pr.url}")
+    else:
+        try:
+            client.approve_pr(pr, "Checks passed, so approving based on the review above.")
+            status = "approved"
+            previous.last_posted_at = ProcessedState.now_iso()
+            info(f"checks passed, approved {pr.url}")
+        except Exception as exc:  # noqa: BLE001
+            warn(f"failed to approve after checks passed: {exc} {pr.url}")
+
+    previous.last_status = status
+    previous.last_processed_at = ProcessedState.now_iso()
+    store.set(pr.key, previous)
+    store.save()
+    return status
 
 
 class _NewCommitDetected(Exception):
@@ -1517,7 +1567,8 @@ async def process_candidate(
         already_reviewed = (
             not trigger.force
             and previous.last_reviewed_head_sha == pr.head_sha
-            and previous.last_status in ("posted", "approved", "changes_requested", "generated")
+            and previous.last_status
+            in ("posted", "approved", "changes_requested", "generated", "waiting_for_checks")
         )
         if already_reviewed:
             try:
@@ -1542,6 +1593,17 @@ async def process_candidate(
 
     else:
         decision = _compute_processing_decision(previous, pr, config.trigger_mode)
+        if (
+            not decision.should_process
+            and previous.last_status == "waiting_for_checks"
+            and previous.last_reviewed_head_sha == pr.head_sha
+        ):
+            status = await asyncio.to_thread(
+                _recheck_waiting_approval, config, client, store, pr, previous
+            )
+            return ProcessingResult(
+                processed=status == "approved", pr_url=pr.url, pr_key=pr.key, status=status
+            )
         if decision.should_process:
             detail(f"trigger check passed ({decision.reason}) {pr.url}")
         else:

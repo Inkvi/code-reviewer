@@ -263,6 +263,8 @@ auto_post_review = false
 # - approve when no P0/P1 findings, triage risk is at or below auto_approve_max_risk,
 #   CI checks have all passed, and there are no merge conflicts
 # - otherwise, a clean review is posted as a comment explaining why it was not approved
+# - if the only problem is checks that are still running, the PR is checked again on
+#   each later run (or check_suite webhook) and approved once they pass
 # - request changes when any P0/P1 finding exists
 auto_submit_review_decision = false
 
@@ -408,7 +410,7 @@ Run as a GitHub App webhook receiver instead of polling. The webhook server list
 ### Setup
 
 1. Create a GitHub App with permissions: `pull_requests: write`, `issues: read`, `contents: read`
-2. Subscribe to events: `pull_request`, `issue_comment`
+2. Subscribe to events: `pull_request`, `issue_comment`, `check_suite` (`check_suite` also needs the `checks: read` permission)
 3. Set the webhook URL to `https://<your-host>/webhook`
 4. Note the webhook secret
 
@@ -438,6 +440,7 @@ WEBHOOK_SECRET=your-secret code-reviewer webhook --host 127.0.0.1 --port 9090
 |-------|--------|----------|
 | `pull_request` | `opened`, `synchronize`, `review_requested` | Spawns review (skips drafts) |
 | `issue_comment` | `created` with `/review` or `/review force` | Spawns review |
+| `check_suite` | `completed` | Spawns a run, so a PR waiting on its checks can be approved |
 | `ping` | — | Returns pong |
 
 ## Docker

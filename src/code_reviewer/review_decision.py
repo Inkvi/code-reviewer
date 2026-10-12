@@ -22,6 +22,9 @@ def infer_review_decision(final_review: str) -> ReviewDecision:
 
 _PASSING_CHECK_CONCLUSIONS = {"SUCCESS", "NEUTRAL", "SKIPPED"}
 
+# approval_blocker reasons start with this when the only problem is unfinished checks.
+CHECKS_RUNNING = "checks still running"
+
 
 def approval_blocker(pr_status: dict, reviewed_head_sha: str) -> str | None:
     """Return why a PR must not be auto-approved, or None if it can be.
@@ -55,7 +58,7 @@ def approval_blocker(pr_status: dict, reviewed_head_sha: str) -> str | None:
     if failing:
         return f"checks failed: {', '.join(failing)}"
     if pending:
-        return f"checks still running: {', '.join(pending)}"
+        return f"{CHECKS_RUNNING}: {', '.join(pending)}"
     return None
 
 
