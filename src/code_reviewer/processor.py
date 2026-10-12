@@ -643,6 +643,19 @@ def _notify_slack(
         warn(f"failed to send Slack notification: {exc} {pr.url}")
 
 
+_POSTED_STATUSES = ("posted", "approved", "changes_requested", "waiting_for_checks")
+
+
+def _sync_labels(config: AppConfig, client: GitHubClient, pr: PRCandidate, status: str) -> None:
+    """Label the PR with its risk level, and ai-approved when approved. Never fails."""
+    if not config.risk_labels or status not in _POSTED_STATUSES:
+        return
+    try:
+        client.sync_review_labels(pr, pr.risk, approved=status == "approved")
+    except Exception as exc:  # noqa: BLE001
+        warn(f"failed to update risk labels: {exc} {pr.url}")
+
+
 def _publish_and_persist(
     config: AppConfig,
     client: GitHubClient,
@@ -760,6 +773,7 @@ def _publish_and_persist(
         ),
     )
     store.save()
+    _sync_labels(config, client, pr, status)
     _notify_slack(config, pr, status, blocked_reason)
 
 
@@ -775,6 +789,7 @@ def _recheck_waiting_approval(
     The review is already on the PR as a comment. Returns "waiting_for_checks" while checks
     run, "approved" once approved, or "posted" when it stops waiting without approving.
     """
+    pr.risk, pr.risk_reason = previous.last_risk, previous.last_risk_reason
     try:
         blocked_reason = approval_blocker(client.get_pr_merge_status(pr), pr.head_sha)
     except Exception as exc:  # noqa: BLE001
@@ -806,6 +821,7 @@ def _recheck_waiting_approval(
     previous.last_processed_at = ProcessedState.now_iso()
     store.set(pr.key, previous)
     store.save()
+    _sync_labels(config, client, pr, status)
     _notify_slack(config, pr, status, blocked_reason)
     return status
 

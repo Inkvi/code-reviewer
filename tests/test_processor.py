@@ -26,6 +26,7 @@ from code_reviewer.processor import (
     _single_reviewer_final_review,
     _start_claude_review_task,
     _start_codex_review_task,
+    _sync_labels,
     _validate_review_format,
     _workspace_changed_paths,
     process_candidate,
@@ -1653,10 +1654,12 @@ def _run_clean_review_with_auto_submit(
     high_risk_paths_by_repo: dict[str, list[str]] | None = None,
     changed_file_paths: list[str] | None = None,
     slack: list[str] | None = None,
+    labels: list[tuple] | None = None,
 ):
     """Run a review that finds nothing, with auto-submit on.
 
-    Pass *slack* to turn on Slack notifications and collect the messages in it.
+    Pass *slack* to turn on Slack notifications and collect the messages in it, and
+    *labels* to turn on risk labels and collect each (risk, approved) sync in it.
 
     Returns (store, submitted decisions, posted comments, merge status calls).
     """
@@ -1726,10 +1729,17 @@ def _run_clean_review_with_auto_submit(
         high_risk_paths=high_risk_paths or [],
         high_risk_paths_by_repo=high_risk_paths_by_repo or {},
         slack_webhook_url="https://hooks.slack.com/x" if slack is not None else None,
+        risk_labels=labels is not None,
     )
     if slack is not None:
         monkeypatch.setattr(
             "code_reviewer.processor.post_to_slack", lambda _url, text: slack.append(text)
+        )
+    if labels is not None:
+        monkeypatch.setattr(
+            GitHubClient,
+            "sync_review_labels",
+            lambda _self, _pr, risk, approved: labels.append((risk, approved)),
         )
     pr = _sample_pr(changed_file_paths=changed_file_paths)
     result = asyncio.run(process_candidate(cfg, client, store, workspace, pr))
@@ -2014,6 +2024,7 @@ def _recheck_waiting_pr(
     head_sha: str = "deadbeef",
     saved_risk: str = "low",
     slack: list[str] | None = None,
+    labels: list[tuple] | None = None,
 ):
     """Process a PR whose review is waiting on checks. Returns (result, store, approvals)."""
     saved_review = tmp_path / "pr-64.md"
@@ -2045,10 +2056,17 @@ def _recheck_waiting_pr(
         enabled_reviewers=["codex"],
         auto_submit_review_decision=True,
         slack_webhook_url="https://hooks.slack.com/x" if slack is not None else None,
+        risk_labels=labels is not None,
     )
     if slack is not None:
         monkeypatch.setattr(
             "code_reviewer.processor.post_to_slack", lambda _url, text: slack.append(text)
+        )
+    if labels is not None:
+        monkeypatch.setattr(
+            GitHubClient,
+            "sync_review_labels",
+            lambda _self, _pr, risk, approved: labels.append((risk, approved)),
         )
     pr = _sample_pr()
     pr.head_sha = head_sha
@@ -2148,6 +2166,52 @@ def test_slack_failure_does_not_raise(monkeypatch) -> None:
     cfg = AppConfig(github_orgs=["polymerdao"], slack_webhook_url="https://hooks.slack.com/x")
 
     _notify_slack(cfg, _sample_pr(), "approved", None)
+
+
+def test_risk_labels_mark_an_approved_pr(monkeypatch, tmp_path) -> None:
+    labels: list[tuple] = []
+    _run_clean_review_with_auto_submit(monkeypatch, tmp_path, risk="low", labels=labels)
+
+    assert labels == [("low", True)]
+
+
+def test_risk_labels_on_a_pr_that_needs_a_human(monkeypatch, tmp_path) -> None:
+    labels: list[tuple] = []
+    _run_clean_review_with_auto_submit(monkeypatch, tmp_path, risk="medium", labels=labels)
+
+    assert labels == [("medium", False)]
+
+
+def test_risk_labels_add_approved_once_checks_pass(monkeypatch, tmp_path) -> None:
+    labels: list[tuple] = []
+    _run_clean_review_with_auto_submit(
+        monkeypatch, tmp_path, risk="low", merge_status=_PENDING_MERGE_STATUS, labels=labels
+    )
+    _recheck_waiting_pr(monkeypatch, tmp_path, merge_status=_PENDING_MERGE_STATUS, labels=labels)
+    _recheck_waiting_pr(monkeypatch, tmp_path, merge_status=_CLEAN_MERGE_STATUS, labels=labels)
+
+    assert labels == [("low", False), ("low", True)]
+
+
+def test_risk_labels_are_off_by_default(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(
+        GitHubClient,
+        "sync_review_labels",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("labels are off")),
+    )
+    _, submitted, _, _ = _run_clean_review_with_auto_submit(monkeypatch, tmp_path, risk="low")
+
+    assert submitted == ["approve"]
+
+
+def test_label_failure_does_not_raise(monkeypatch) -> None:
+    def broken_labels(_self, _pr, _risk, approved):
+        raise CommandError(["gh"], 1, "", "forbidden")
+
+    monkeypatch.setattr(GitHubClient, "sync_review_labels", broken_labels)
+    cfg = AppConfig(github_orgs=["polymerdao"], risk_labels=True)
+
+    _sync_labels(cfg, GitHubClient(viewer_login="Inkvi"), _sample_pr(), "approved")
 
 
 def test_all_backends_failed_does_not_approve(monkeypatch, tmp_path) -> None:

@@ -817,3 +817,72 @@ def test_get_pr_changed_paths_raises_when_list_is_cut_short(monkeypatch) -> None
         assert "1 of 3001" in str(exc)
     else:
         raise AssertionError("expected RuntimeError for a cut-short file list")
+
+
+def test_approve_pr_pins_the_reviewed_commit(monkeypatch) -> None:
+    calls: list[list[str]] = []
+    monkeypatch.setattr(
+        "code_reviewer.github.run_command",
+        lambda args, **_kwargs: calls.append(args) or subprocess.CompletedProcess(args, 0, "", ""),
+    )
+
+    GitHubClient(viewer_login="Inkvi").approve_pr(_review_pr(), "Checks passed.")
+
+    assert calls == [
+        [
+            "gh",
+            "api",
+            "repos/polymerdao/obul/pulls/64/reviews",
+            "-f",
+            "commit_id=abc123",
+            "-f",
+            "event=APPROVE",
+            "-f",
+            "body=Checks passed.",
+        ]
+    ]
+
+
+def _fake_labels_api(monkeypatch, current: list[str]) -> list[list[str]]:
+    calls: list[list[str]] = []
+
+    def fake_run_command(args, **_kwargs):  # noqa: ANN001
+        calls.append(args)
+        stdout = "\n".join(current) + "\n" if "--jq" in args else "[]"
+        return subprocess.CompletedProcess(args, 0, stdout, "")
+
+    monkeypatch.setattr("code_reviewer.github.run_command", fake_run_command)
+    return calls
+
+
+def test_sync_review_labels_replaces_stale_labels(monkeypatch) -> None:
+    calls = _fake_labels_api(monkeypatch, ["bug", "ai-risk:medium", "ai-approved"])
+
+    GitHubClient.sync_review_labels(_review_pr(), "low", approved=False)
+
+    base = "repos/polymerdao/obul/issues/64/labels"
+    assert calls[1:] == [
+        ["gh", "api", "-X", "DELETE", f"{base}/ai-approved"],
+        ["gh", "api", "-X", "DELETE", f"{base}/ai-risk%3Amedium"],
+        ["gh", "api", base, "-f", "labels[]=ai-risk:low"],
+    ]
+
+
+def test_sync_review_labels_adds_approved_and_skips_labels_already_there(monkeypatch) -> None:
+    calls = _fake_labels_api(monkeypatch, ["ai-risk:low"])
+
+    GitHubClient.sync_review_labels(_review_pr(), "low", approved=True)
+
+    assert calls[1:] == [
+        ["gh", "api", "repos/polymerdao/obul/issues/64/labels", "-f", "labels[]=ai-approved"]
+    ]
+
+
+def test_sync_review_labels_removes_risk_label_when_risk_is_unknown(monkeypatch) -> None:
+    calls = _fake_labels_api(monkeypatch, ["ai-risk:low"])
+
+    GitHubClient.sync_review_labels(_review_pr(), None, approved=False)
+
+    assert calls[1:] == [
+        ["gh", "api", "-X", "DELETE", "repos/polymerdao/obul/issues/64/labels/ai-risk%3Alow"]
+    ]

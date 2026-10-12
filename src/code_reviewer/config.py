@@ -83,6 +83,7 @@ class AppConfig(BaseModel):
     high_risk_paths: list[str] = Field(default_factory=list)
     high_risk_paths_by_repo: dict[str, list[str]] = Field(default_factory=dict)
     slack_webhook_url: str | None = None
+    risk_labels: bool = False
     include_reviewer_stderr: bool = True
     post_mode: str = "pr_comment"
     output_dir: str = "./reviews"
