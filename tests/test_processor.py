@@ -1978,6 +1978,124 @@ def test_auto_reuse_saved_review_on_submission_failed(monkeypatch, tmp_path) -> 
     assert len(submitted_reviews) == 1
 
 
+_PENDING_MERGE_STATUS = dict(
+    _CLEAN_MERGE_STATUS,
+    statusCheckRollup=[{"__typename": "CheckRun", "name": "ci", "status": "IN_PROGRESS"}],
+)
+
+
+def test_pending_ci_posts_comment_and_waits(monkeypatch, tmp_path) -> None:
+    store, submitted, comments, _ = _run_clean_review_with_auto_submit(
+        monkeypatch, tmp_path, risk="low", merge_status=_PENDING_MERGE_STATUS
+    )
+
+    assert submitted == []
+    assert store.state.last_status == "waiting_for_checks"
+    assert comments[0].startswith(
+        "**Not auto-approved:** `checks still running: ci`\n\n"
+        "This PR will be approved automatically if the checks pass."
+    )
+
+
+def _recheck_waiting_pr(
+    monkeypatch,
+    tmp_path,
+    *,
+    merge_status: dict,
+    head_sha: str = "deadbeef",
+    saved_risk: str = "low",
+):
+    """Process a PR whose review is waiting on checks. Returns (result, store, approvals)."""
+    saved_review = tmp_path / "pr-64.md"
+    saved_review.write_text("### Findings\n- No material findings.\n")
+    store = DummyStore(
+        ProcessedState(
+            last_processed_at="2026-03-03T00:00:00+00:00",
+            last_reviewed_head_sha="deadbeef",
+            last_output_file=str(saved_review),
+            last_status="waiting_for_checks",
+            last_seen_rerequest_at="2026-03-02T00:00:00+00:00",
+            last_risk=saved_risk,
+        )
+    )
+    client = GitHubClient(viewer_login="Inkvi")
+
+    async def fail_triage(*_args, **_kwargs):
+        raise AssertionError("a PR waiting on checks must not be reviewed again")
+
+    monkeypatch.setattr("code_reviewer.processor.run_triage", fail_triage)
+    monkeypatch.setattr(GitHubClient, "get_pr_merge_status", lambda _self, _pr: merge_status)
+    approvals: list[str] = []
+    monkeypatch.setattr(
+        GitHubClient, "approve_pr", lambda _self, pr, _body: approvals.append(pr.head_sha)
+    )
+
+    cfg = AppConfig(
+        github_orgs=["polymerdao"],
+        enabled_reviewers=["codex"],
+        auto_submit_review_decision=True,
+    )
+    pr = _sample_pr()
+    pr.head_sha = head_sha
+    result = asyncio.run(process_candidate(cfg, client, store, DummyWorkspace(tmp_path), pr))
+    return result, store, approvals
+
+
+def test_waiting_pr_is_approved_when_checks_pass(monkeypatch, tmp_path) -> None:
+    result, store, approvals = _recheck_waiting_pr(
+        monkeypatch, tmp_path, merge_status=_CLEAN_MERGE_STATUS
+    )
+
+    assert approvals == ["deadbeef"]
+    assert result.processed is True
+    assert result.status == "approved"
+    assert store.state.last_status == "approved"
+    assert store.state.last_posted_at is not None
+
+
+def test_waiting_pr_keeps_waiting_while_checks_run(monkeypatch, tmp_path) -> None:
+    result, store, approvals = _recheck_waiting_pr(
+        monkeypatch, tmp_path, merge_status=_PENDING_MERGE_STATUS
+    )
+
+    assert approvals == []
+    assert result.processed is False
+    assert store.state.last_status == "waiting_for_checks"
+
+
+def test_waiting_pr_stops_waiting_when_checks_fail(monkeypatch, tmp_path) -> None:
+    failed = dict(
+        _CLEAN_MERGE_STATUS,
+        statusCheckRollup=[
+            {"__typename": "CheckRun", "name": "ci", "status": "COMPLETED", "conclusion": "FAILURE"}
+        ],
+    )
+    result, store, approvals = _recheck_waiting_pr(monkeypatch, tmp_path, merge_status=failed)
+
+    assert approvals == []
+    assert result.status == "posted"
+    assert store.state.last_status == "posted"
+
+
+def test_waiting_pr_rechecks_risk_limit_before_approving(monkeypatch, tmp_path) -> None:
+    result, _, approvals = _recheck_waiting_pr(
+        monkeypatch, tmp_path, merge_status=_CLEAN_MERGE_STATUS, saved_risk="medium"
+    )
+
+    assert approvals == []
+    assert result.status == "posted"
+
+
+def test_waiting_pr_with_new_commits_is_not_approved(monkeypatch, tmp_path) -> None:
+    result, store, approvals = _recheck_waiting_pr(
+        monkeypatch, tmp_path, merge_status=_CLEAN_MERGE_STATUS, head_sha="newer"
+    )
+
+    assert approvals == []
+    assert result.status == "skipped_no_new_trigger"
+    assert store.state.last_status == "skipped_no_new_trigger"
+
+
 def test_all_backends_failed_does_not_approve(monkeypatch, tmp_path) -> None:
     """When all reviewer backends fail, review_decision must be None (no approval)."""
     store = DummyStore()

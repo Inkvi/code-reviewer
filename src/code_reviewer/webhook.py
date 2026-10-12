@@ -1,6 +1,6 @@
 """GitHub App webhook receiver for code-reviewer.
 
-Receives pull_request and issue_comment events from a GitHub App,
+Receives pull_request, issue_comment, and check_suite events from a GitHub App,
 validates the HMAC-SHA256 signature, and spawns review jobs via
 ``code-reviewer run-once --pr-url``.
 """
@@ -63,6 +63,8 @@ def parse_event(event_type: str, payload: dict[str, Any]) -> str | None:
         return _handle_pull_request(payload)
     if event_type == "issue_comment":
         return _handle_issue_comment(payload)
+    if event_type == "check_suite":
+        return _handle_check_suite(payload)
     return None
 
 
@@ -104,6 +106,20 @@ def _handle_issue_comment(payload: dict[str, Any]) -> str | None:
             return html_url.replace("/issues/", "/pull/")
         return None
     return pr_url
+
+
+def _handle_check_suite(payload: dict[str, Any]) -> str | None:
+    """When CI finishes, run again so a PR waiting on its checks can be approved."""
+    if payload.get("action") != "completed":
+        return None
+    pull_requests = payload.get("check_suite", {}).get("pull_requests") or []
+    repo_url = payload.get("repository", {}).get("html_url")
+    if not pull_requests or not isinstance(repo_url, str) or not repo_url:
+        return None
+    number = pull_requests[0].get("number")
+    if not isinstance(number, int):
+        return None
+    return f"{repo_url}/pull/{number}"
 
 
 def _reap_process(proc: subprocess.Popen[bytes], pr_url: str) -> None:

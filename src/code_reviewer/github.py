@@ -656,3 +656,19 @@ class GitHubClient:
                 f"body=@{body_file}",
             ]
         )
+
+    def approve_pr(self, pr: PRCandidate, body: str) -> None:
+        """Approve the reviewed commit (pr.head_sha) with a short message."""
+        run_command(
+            [
+                "gh",
+                "api",
+                f"repos/{pr.owner}/{pr.repo}/pulls/{pr.number}/reviews",
+                "-f",
+                f"commit_id={pr.head_sha}",
+                "-f",
+                "event=APPROVE",
+                "-f",
+                f"body={body}",
+            ]
+        )
