@@ -41,6 +41,8 @@
 - Add or update tests for every behavior change, especially trigger-state decisions, state handling, CLI behavior, and reviewer reconciliation
 
 ## Commands
+- `cd web && bun install --frozen-lockfile`: install frontend dependencies (the frontend uses Bun, never npm)
+- `cd web && bun run build`: typecheck and build the frontend
 - `uv sync --extra dev`: install runtime + dev dependencies
 - `uv run code-reviewer check`: preflight checks and runtime config summary (requires config)
 - `uv run code-reviewer run-once`: one polling/review cycle (requires config with `github_orgs`)
@@ -60,6 +62,8 @@
 - To retrigger a Docker build on the same tag: `git tag -d <tag> && git push origin :refs/tags/<tag>` then re-tag and push
 
 ## Dockerfile
+- Uses Bun 1.3.14 for frontend and global CLI installs, with Node 22 for Node scripts
+- Trusts Claude and OpenCode install scripts to link their native CLI binaries
 - Runs as non-root user (UID 1000, `appuser`)
 - Installs Claude CLI (`@anthropic-ai/claude-code`), Codex CLI (`@openai/codex`), Antigravity CLI (`agy`), OpenCode CLI (`opencode-ai`), pi CLI (`@mariozechner/pi-coding-agent`)
 - Antigravity: seeds `/home/appuser/.gemini/antigravity-cli/settings.json` with `{"toolPermission": "always-proceed", "artifactReviewPolicy": "always-proceed", "enableTelemetry": false}` (artifactReviewPolicy prevents agy from blocking on interactive artifact approval in headless mode)

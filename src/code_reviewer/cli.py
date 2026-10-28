@@ -1278,7 +1278,7 @@ def history_command(
     if resolved_static:
         info(f"Serving frontend from: {resolved_static.resolve()}")
     elif not dev:
-        warn("No static directory found. Run 'npm run build' in web/ to enable the frontend.")
+        warn("No static directory found. Run 'bun run build' in web/ to enable the frontend.")
     app = create_history_app(
         reviews_dir=reviews_dir,
         static_dir=resolved_static,

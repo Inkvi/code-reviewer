@@ -21,6 +21,14 @@ uv sync --extra dev
 cp config.example.toml config.toml   # optional for run-once/review; required for check/start
 ```
 
+To build the review history frontend (uses Bun):
+
+```bash
+cd web
+bun install --frozen-lockfile
+bun run build
+```
+
 ## Commands
 
 ```bash
