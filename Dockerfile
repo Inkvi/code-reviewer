@@ -1,11 +1,16 @@
+FROM oven/bun:1.3.14 AS bun
+
 FROM node:22-slim AS web-builder
+COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
 WORKDIR /web
-COPY web/package.json web/package-lock.json ./
-RUN npm ci
+COPY web/package.json web/bun.lock ./
+RUN bun install --frozen-lockfile
 COPY web/ ./
-RUN npm run build
+RUN bun run build
 
 FROM python:3.12-slim AS base
+COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
+ENV BUN_INSTALL=/usr/local
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
@@ -23,21 +28,22 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Claude CLI
+# Install reviewer CLIs at the existing versions.
 ARG CLAUDE_CODE_VERSION=2.1.286
-RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
-
-# Install Codex CLI
 ARG CODEX_VERSION=0.159.3
-RUN npm install -g @openai/codex@${CODEX_VERSION}
-
-# Install OpenCode CLI
 ARG OPENCODE_VERSION=1.18.34
-RUN npm install -g opencode-ai@${OPENCODE_VERSION}
-
-# Install pi coding agent CLI
 ARG PI_VERSION=0.73.1
-RUN npm install -g @mariozechner/pi-coding-agent@${PI_VERSION}
+# Claude and OpenCode need postinstall scripts to link their native binaries.
+RUN mkdir -p /usr/local/install/global \
+    && printf '{"trustedDependencies":["@anthropic-ai/claude-code","opencode-ai"]}\n' \
+        > /usr/local/install/global/package.json \
+    && bun add --global --exact \
+        @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} @openai/codex@${CODEX_VERSION} \
+        opencode-ai@${OPENCODE_VERSION} @mariozechner/pi-coding-agent@${PI_VERSION} \
+    && cd /usr/local/install/global \
+    # Debian uses glibc, so discard musl-only optional packages and the download cache.
+    && find node_modules -mindepth 1 -maxdepth 2 -type d -name '*-musl' -prune -exec rm -rf {} + \
+    && bun pm cache rm
 
 # Install uv for fast Python dependency management
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
